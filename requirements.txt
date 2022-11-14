@@ -1,0 +1,5 @@
+matplotlib>=3.3.4
+numpy>=1.19.0
+pysam>=0.16.0
+pywt>=1.1.1
+regex>=2.5.96
