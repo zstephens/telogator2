@@ -214,7 +214,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
 			xtt = [n for n in range(0,max_tlen,X_STEP)]
 			xtl = [n for n in range(0,max_tlen,X_STEP)]
 	#
-	fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size))
+	fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size), dpi=100)
 	reads_plotted_thus_far = 0
 	for clust_i in range(len(read_clusters)):
 		for i in range(len(read_clusters[clust_i])):
@@ -683,51 +683,6 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
 	mpl.ylim([-q_ymax, p_ymax])
 	mpl.ylabel(plot_params['y_label'])
 	mpl.grid(linestyle='--', alpha=0.5)
-	mpl.tight_layout()
-	mpl.savefig(out_fn)
-	mpl.close(fig)
-
-#
-#
-#
-def anchor_confusion_matrix(conf_dat, out_fn):
-	#
-	# plotting constants
-	mpl.rcParams.update({'font.size': 14, 'font.weight':'bold'})
-	#
-	xlab = ['-'] + [str(n) for n in range(1,22+1)] + ['X']
-	xtck = list(range(1,len(xlab)+1))
-	#
-	ref_2_ci = {}
-	clab     = []
-	for ci in xlab:
-		if ci == '-':
-			ref_2_ci['-'] = 0
-			clab.append('-')
-		else:
-			ref_2_ci['chr' + ci + 'p'] = len(ref_2_ci)
-			ref_2_ci['chr' + ci + 'q'] = len(ref_2_ci)
-			clab.append('chr' + ci + 'p')
-			clab.append('chr' + ci + 'q')
-	ref_2_ci['unanchored'] = 0
-	#
-	Z = [[0 for n in range(len(ref_2_ci))] for m in range(len(ref_2_ci))]
-	for k1 in sorted(conf_dat.keys()):
-		Z[ref_2_ci[k1[0]]][ref_2_ci[k1[1]]] = conf_dat[k1]
-	#
-	fig = mpl.figure(3,figsize=(12,10))
-	Z = np.array(Z[::-1])
-	X, Y = np.meshgrid( range(0,len(Z[0])+1), range(0,len(Z)+1) )
-	mpl.pcolormesh(X,Y,Z)
-	mpl.axis([0,len(Z[0]),0,len(Z)])
-	mpl.yticks(np.arange(0,len(clab))+1.5, clab[::-1])
-	mpl.xticks(np.arange(0,len(clab))+0.5, clab, rotation=90)
-	mpl.grid(linestyle='--', alpha=0.5)
-	mpl.title('subtel confusion matrix')
-	mpl.ylabel('ground truth contig')
-	mpl.xlabel('where we ended up')
-	cb = mpl.colorbar()
-	cb.set_label('# reads')
 	mpl.tight_layout()
 	mpl.savefig(out_fn)
 	mpl.close(fig)

@@ -1,6 +1,7 @@
-import os
-import gzip
 import argparse
+import gzip
+import pathlib
+import pysam
 
 from source.tg_reader import TG_Reader
 from source.tg_util import exists_and_is_nonzero
@@ -15,23 +16,25 @@ def get_ccs_readname(rn):
 	return rn.split(' ')[0]
 
 def main(raw_args=None):
-	parser = argparse.ArgumentParser(description='grab_subreads_from_t2t-and-subtel_aln.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-	parser.add_argument('--bam',      type=str, required=True,  metavar='input.bam',        help="* Input BAM")
-	parser.add_argument('--fa',       type=str, required=True,  metavar='input.fa',         help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
-	parser.add_argument('--out',      type=str, required=True,  metavar='output.fa',        help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
-	parser.add_argument('--bed',      type=str, required=True,  metavar='subtel.bed',       help="* Subtel regions")
-	parser.add_argument('--samtools', type=str, required=False, metavar='samtools',         help="/path/to/samtools", default='samtools')
-	parser.add_argument('--readtype', type=str, required=False, metavar='CCS / CLR / SRA',  help="Read name format",  default='SRA')
+	parser = argparse.ArgumentParser(description='get_subtel_reads.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+	parser.add_argument('-b',         type=str, required=True,  metavar='input.bam',        help="* Input BAM")
+	parser.add_argument('-i',         type=str, required=True,  metavar='input.fa',         help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
+	parser.add_argument('-o',         type=str, required=True,  metavar='output.fa',        help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
+	parser.add_argument('--bed',      type=str, required=False, metavar='subtel.bed',       help="Subtel regions",   default='')
+	parser.add_argument('--readtype', type=str, required=False, metavar='CCS / CLR / SRA',  help="Read name format", default='SRA')
 	args = parser.parse_args()
 
 	IN_BAM     = args.bam
-	IN_READS   = args.fa
-	#
-	OUT_READS  = args.out
+	IN_READS   = args.in_reads
+	OUT_READS  = args.out_reads
 	#
 	SUBTEL_BED = args.bed
-	SAMTOOLS   = args.samtools
 	READTYPE   = args.readtype
+
+	if SUBTEL_BED == '':
+		print('using default subtelomere regions...')
+		sim_path  = pathlib.Path(__file__).resolve().parent
+		SUBTEL_BED = str(sim_path) + '/resources/subtel_regions.bed'
 
 	if exists_and_is_nonzero(IN_BAM) == False:
 		print('Error: input.bam not found.')
@@ -42,6 +45,8 @@ def main(raw_args=None):
 	if exists_and_is_nonzero(SUBTEL_BED) == False:
 		print('Error: subtel.bed not found.')
 		exit(1)
+
+	samfile = pysam.AlignmentFile(IN_BAM, "rb")
 
 	OUTPUT_IS_FASTQ = False
 	if OUT_READS[-3:].lower() == '.fq' or OUT_READS[-6:].lower() == '.fq.gz':
@@ -64,34 +69,27 @@ def main(raw_args=None):
 	if len(OUT_DIR) == 0:
 		OUT_DIR = '.'
 	OUT_DIR += '/'
-	TEMP_READNAMES = OUT_READS + '.readnames'
 
-	if exists_and_is_nonzero(TEMP_READNAMES) == False:
-		print('getting readnames from bam...')
-		os.system('touch ' + TEMP_READNAMES)
-		for i in range(len(bed_str)):
-			bed_dat = bed_str[i][0] + ':' + bed_str[i][1] + '-' + bed_str[i][2]
-			print('-', bed_dat)
-			cmd  = SAMTOOLS + ' view ' + IN_BAM + ' ' + bed_dat + ' | cut -f 1 >> ' + TEMP_READNAMES
-			os.system(cmd)
-
-	if exists_and_is_nonzero(TEMP_READNAMES) == False:
-		print('Error: failed to create readnames?')
-		exit(1)
-
+	print('getting readnames from bam...')
 	rn_dict = {}
-	f = open(TEMP_READNAMES, 'r')
-	for line in f:
-		if READTYPE == 'CLR':
-			rn_dict[get_clr_readname(line.strip())] = True
-		elif READTYPE == 'SRA':
-			rn_dict[get_sra_readname(line.strip())] = True
-		elif READTYPE == 'CCS':
-			rn_dict[get_ccs_readname(line.strip())] = True
-		else:
-			print('Error: unknown read type, must be: CCS / CLR / SRA')
-			exit(1)
-	f.close()
+	for i in range(len(bed_str)):
+		bed_dat = bed_str[i][0] + ':' + bed_str[i][1] + '-' + bed_str[i][2]
+		print('-', bed_dat)
+		try:
+			for aln in samfile.fetch(region=bed_dat):
+				sam_line = str(aln).split('\t')
+				my_rnm   = sam_line[0]
+				if READTYPE == 'CLR':
+					rn_dict[get_clr_readname(my_rnm)] = True
+				elif READTYPE == 'SRA':
+					rn_dict[get_sra_readname(my_rnm)] = True
+				elif READTYPE == 'CCS':
+					rn_dict[get_ccs_readname(my_rnm)] = True
+				else:
+					print('Error: unknown read type, must be: CCS / CLR / SRA')
+					exit(1)
+		except ValueError:
+			print('skipping contig that was not present in input BAM:', bed_str[i][0])
 
 	if OUT_READS[-3:].lower() == '.gz':
 		f_out = gzip.open(OUT_READS, 'wt')
@@ -115,10 +113,6 @@ def main(raw_args=None):
 	#
 	my_reader.close()
 	f_out.close()
-
-	# cleanup?
-	if exists_and_is_nonzero(OUT_READS) and exists_and_is_nonzero(TEMP_READNAMES):
-		os.system('rm ' + TEMP_READNAMES)
 
 if __name__ == '__main__':
 	main()

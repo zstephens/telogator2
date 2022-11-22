@@ -9,10 +9,12 @@ import time
 
 import numpy as np
 
-from source.tg_kmer import get_telomere_base_count, get_telomere_composition, read_kmer_tsv
-from source.tg_plot import tel_len_violin_plot
-from source.tg_tel  import get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job
-from source.tg_util import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC, repeated_matches_trimming
+from source.tg_kmer   import get_telomere_base_count, get_telomere_composition, read_kmer_tsv
+from source.tg_muscle import check_muscle_version
+from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
+from source.tg_tel    import get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job
+from source.tg_tvr    import cluster_tvrs, convert_colorvec_to_kmerhits
+from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC, repeated_matches_trimming
 
 # hardcoded parameters
 TEL_WINDOW_SIZE  = 100
@@ -24,6 +26,8 @@ MAX_NONTEL_MEDIAN_KMER_DENSITY = 0.25
 MIN_DOUBLE_ANCHOR_LEN   = 1000
 MIN_DOUBLE_ANCHOR_READS = 3
 MIN_CANONICAL_FRAC      = 0.15
+#
+DUMMY_TEL_MAPQ = 60
 
 # for debugging purposes
 DO_NOT_OVERWRITE = True
@@ -55,15 +59,21 @@ def main(raw_args=None):
 	#
 	parser.add_argument('-cd', type=int,   required=False, metavar='2000',        default=2000,      help="Maximum subtel distance to cluster anchored tels together")
 	parser.add_argument('-cr', type=int,   required=False, metavar='3',           default=3,         help="Minimum number of reads per anchored-tel cluster")
-	parser.add_argument('-ct', type=str,   required=False, metavar='p90',         default='p90',     help="Method for computing chr TL: mean / median / max / p90")
+	parser.add_argument('-cm', type=str,   required=False, metavar='p90',         default='p90',     help="Method for computing chr TL: mean / median / max / p90")
 	#
 	parser.add_argument('-vtm', type=int,  required=False, metavar='20000',       default=20000,     help="Violin plot (tel length) max value")
 	parser.add_argument('-vtt', type=int,  required=False, metavar='5000',        default=5000,      help="Violin plot (tel length) tick size")
 	parser.add_argument('-vrm', type=int,  required=False, metavar='50000',       default=50000,     help="Violin plot (read length) max value")
 	parser.add_argument('-vrt', type=int,  required=False, metavar='10000',       default=10000,     help="Violin plot (read length) tick size")
 	#
+	parser.add_argument('-m',   type=str,  required=False, metavar='muscle',      default='muscle',  help="/path/to/muscle executable")
+	parser.add_argument('-at',  type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
+	parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
+	parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
+	#
 	parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
 	parser.add_argument('--plot-filt',     required=False, action='store_true',   default=False,     help="Create read plots (filtered reads)")
+	parser.add_argument('--plot-filt-tvr', required=False, action='store_true',   default=False,     help="Plot denoised TVR instead of raw signal")
 	parser.add_argument('--debug',         required=False, action='store_true',   default=False,     help="Print results for each read as its processed")
 	#
 	parser.add_argument('-p',   type=int,  required=False, metavar='4',           default=4,         help="Number of processes to use")
@@ -99,9 +109,17 @@ def main(raw_args=None):
 	OUT_VIOLIN_TL = OUT_DIR + 'violin_tlens.png'
 	OUT_VIOLIN_RL = OUT_DIR + 'violin_rlens.png'
 	#
+	OUT_TVR_DIR  = OUT_DIR + 'tvr_clustering/'
+	OUT_TVR_TEMP = OUT_TVR_DIR + 'temp/'
+	makedir(OUT_TVR_DIR)
+	makedir(OUT_TVR_TEMP)
+	#
 	PLOT_READS      = args.plot
 	PLOT_FILT_READS = args.plot_filt
+	PLOT_FILT_CVECS = args.plot_filt_tvr
 	PRINT_DEBUG     = args.debug
+	#
+	MUSCLE_EXE = args.m
 	#
 	if PLOT_READS:
 		makedir(OUT_PLOT_DIR)
@@ -123,6 +141,26 @@ def main(raw_args=None):
 	CANONICAL_STRING_REV = RC(CANONICAL_STRING)
 
 	#
+	# parse custom treecut values, if provided
+	#
+	TREECUT_TSV = args.at
+	custom_treecut_vals = {}
+	if len(TREECUT_TSV):
+		f = open(TREECUT_TSV, 'r')
+		for line in f:
+			if len(line.strip()):
+				splt = line.strip().split('\t')
+				if ':' in splt[0]:
+					splt2  = splt[0].split(':')
+					tc_chr = splt2[0]
+					tc_pos = int(splt2[1])
+				else:
+					tc_chr = splt[0].replace('_','')
+					tc_pos = None
+				custom_treecut_vals[(tc_chr, tc_pos)] = float(splt[1])
+		f.close()
+
+	#
 	# various parameters
 	#
 	READ_TYPE         = args.r
@@ -137,7 +175,10 @@ def main(raw_args=None):
 	#
 	ANCHOR_CLUSTER_DIST = args.cd
 	MIN_READS_PER_CLUST = args.cr
-	CHR_TL_METHOD       = args.ct
+	CHR_TL_METHOD       = args.cm
+	#
+	MIN_READS_PER_PHASE = args.ar
+	ALLELE_TL_METHOD    = args.am
 	#
 	(VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
 	(VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
@@ -450,7 +491,7 @@ def main(raw_args=None):
 			gtc_params  = [my_chr, clust_num, KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING]
 			for i in ind_list:
 				clust_tcdat.append(get_telomere_composition(ANCHORED_TEL_BY_CHR[k][i], gtc_params))
-			clust_tcout = [my_chr, clust_num, ind_list, clust_tcdat]
+			clust_tcout = [my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, clust_tcdat]
 			tel_composition_data.append(copy.deepcopy(clust_tcout))
 			#
 		if num_clust != len(clusters):
@@ -488,6 +529,151 @@ def main(raw_args=None):
 	                      'y_step':VIOLIN_RLEN_TICK}
 	tel_len_violin_plot(TEL_LEN_OUT, OUT_VIOLIN_TL, custom_plot_params=tlen_violin_params)
 	tel_len_violin_plot(READLEN_OUT, OUT_VIOLIN_RL, custom_plot_params=rlen_violin_params)
+
+	####################################################
+	#                                                  #
+	# TELOGATOR 2.0: CLUSTERING ALLELES BY TVR PATTERN #
+	#                                                  #
+	####################################################
+
+	# first lets check to make sure the muscle executable works
+	check_muscle_version(MUSCLE_EXE)
+
+	#
+	#
+	#
+	print('pairwise comparing TVRs at each cluster...')
+	for tc_dat in tel_composition_data:
+		[my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tc_dat
+		sys.stdout.write(' - ' + my_chr + ':' + str(my_pos) + ' ' + str(len(ind_list)) + ' reads')
+		sys.stdout.flush()
+		tt = time.time()
+		#
+		my_tc = None
+		if (my_chr,None) in custom_treecut_vals:
+			my_tc = custom_treecut_vals[(my_chr,None)]
+		elif (my_chr,my_pos) in custom_treecut_vals:
+			my_tc = custom_treecut_vals[(my_chr,my_pos)]
+		#
+		if k[:3] == 'alt':
+			plotname_chr = 'alt-' + my_chr
+		else:
+			plotname_chr = my_chr
+		zfcn = str(clust_num).zfill(2)
+		telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_' + plotname_chr + '.png'
+		telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_' + plotname_chr + '.png'
+		dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-'    + zfcn + '_' + plotname_chr + '.png'
+		dist_matrix_fn = OUT_TVR_TEMP + 'cluster-'       + zfcn + '_' + plotname_chr + '.npy'
+		consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
+		#
+		read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos,
+			                          aln_mode='ds',
+						              alignment_processes=NUM_PROCESSES,
+						              tree_cut=my_tc,
+						              dist_in=dist_matrix_fn,
+						              fig_name=dendrogram_fn,
+						              save_msa=consensus_fn,
+						              muscle_dir=OUT_TVR_TEMP,
+						              muscle_exe=MUSCLE_EXE,
+						              PRINT_DEBUG=PRINT_DEBUG)
+		#
+		# values for output tsv
+		#
+		ALLELE_TEL_DAT      = []
+		allele_count_by_chr = {}
+		for allele_i in range(len(read_clust_dat[0])):
+			allele_tvrlen   = read_clust_dat[7][allele_i]
+			allele_cons_out = ''
+			if allele_tvrlen > 0:
+				if my_chr[-1] == 'p':	# p will be reversed so its in subtel --> tvr --> tel orientation
+					allele_cons_out = read_clust_dat[4][allele_i][-allele_tvrlen:][::-1]
+				elif my_chr[-1] == 'q':
+					allele_cons_out = read_clust_dat[4][allele_i][:allele_tvrlen]
+			#
+			# kmer_hit_dat[n][1]   = tlen + all the extra subtel buffers
+			# read_clust_dat[3][n] = the length of the subtel region present before tvr/tel region
+			#
+			# the difference of these two will be the actual size of the (tvr + tel) region in the read
+			#
+			allele_readcount = len(read_clust_dat[0][allele_i])
+			allele_tlen_mapq = sorted([(kmer_hit_dat[n][1] - read_clust_dat[3][n], my_rlens[n], kmer_hit_dat[n][5]) for n in read_clust_dat[0][allele_i]])
+			allele_tlens     = [n[0]-len(allele_cons_out) for n in allele_tlen_mapq]	# subtracting tvr so that "actual" TL is output. values can be negative
+			allele_tlen_str  = ','.join([str(n) for n in allele_tlens])
+			rlen_str         = ','.join([str(n[1]) for n in allele_tlen_mapq])
+			mapq_str         = ','.join([str(n[2]) for n in allele_tlen_mapq])
+			#
+			consensus_tl_allele = None
+			if ALLELE_TL_METHOD == 'mean':
+				consensus_tl_allele = np.mean(allele_tlens)
+			elif ALLELE_TL_METHOD == 'median':
+				consensus_tl_allele = np.median(allele_tlens)
+			elif ALLELE_TL_METHOD == 'max':
+				consensus_tl_allele = np.max(allele_tlens)
+			elif ALLELE_TL_METHOD[0] == 'p':
+				my_percentile = int(ALLELE_TL_METHOD[1:])
+				consensus_tl_allele = np.percentile(allele_tlens, my_percentile)
+			#
+			if allele_readcount >= MIN_READS_PER_PHASE:
+				if my_chr not in allele_count_by_chr:
+					allele_count_by_chr[my_chr] = 0
+				ALLELE_TEL_DAT.append([my_chr,
+					                   str(my_pos),
+					                   str(allele_count_by_chr[my_chr]),
+					                   str(int(consensus_tl_allele)),
+					                   allele_tlen_str,
+					                   rlen_str,
+					                   mapq_str,
+					                   str(len(allele_cons_out)),
+					                   allele_cons_out])
+				allele_count_by_chr[my_chr] += 1		
+		#
+		# adjust kmer_hit_dat based on the filters and etc that were applied during clustering
+		#
+		my_consensus_vecs = read_clust_dat[4]
+		my_color_vectors  = read_clust_dat[5]
+		my_end_err_lens   = read_clust_dat[6]
+		my_tvr_tel_bounds = read_clust_dat[7]
+		redrawn_consensus = convert_colorvec_to_kmerhits(my_consensus_vecs, KMER_METADATA)
+		# do we want to plot denoised tvrs of individual reads?
+		if PLOT_FILT_CVECS:
+			redrawn_kmerhits = convert_colorvec_to_kmerhits(my_color_vectors, KMER_METADATA)
+			for rdki in range(len(redrawn_kmerhits)):
+				kmer_hit_dat[rdki][0]  = redrawn_kmerhits[rdki]	# replace kmer hit tuples for plotting
+				kmer_hit_dat[rdki][1] -= my_end_err_lens[rdki]	# subtract size of artifacts at end of reads
+		#
+		consensus_kmer_hit_dat = []
+		consensus_clust_dat    = [[],[],[],[0]]	# fake data so that plot_kmer_hits doesn't complain
+		consensus_tvr_tel_pos  = []
+		for rdki in range(len(redrawn_consensus)):
+			cons_readcount = len(read_clust_dat[0][rdki])
+			cons_readname  = 'consensus-' + str(rdki) + ' [' + str(cons_readcount)
+			cons_tvrlen    = my_tvr_tel_bounds[rdki]
+			if cons_readcount == 1:
+				cons_readname += ' read]'
+			else:
+				cons_readname += ' reads]'
+			if cons_readcount >= MIN_READS_PER_PHASE:
+				consensus_kmer_hit_dat.append([redrawn_consensus[rdki], len(my_consensus_vecs[rdki]), 0, 'FWD', cons_readname, DUMMY_TEL_MAPQ])
+				consensus_clust_dat[0].append([rdki])
+				consensus_clust_dat[1].append([DUMMY_TEL_MAPQ])
+				consensus_clust_dat[2].append([0])
+				consensus_tvr_tel_pos.append(cons_tvrlen)
+		#
+		# TVR plotting (clustered reads + consensus for each allele)
+		#
+		custom_plot_params = {'xlim':[-1000,15000]}
+		#custom_plot_params = {'xlim':[0,13000], 'custom_title':'', 'fig_width':12} # params for plotting figs for paper
+		plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
+			           clust_dat=read_clust_dat,
+			           plot_params=custom_plot_params)
+		if len(consensus_clust_dat[0]):
+			plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
+				           clust_dat=consensus_clust_dat,
+				           draw_boundaries=consensus_tvr_tel_pos,
+				           plot_params=custom_plot_params)
+		#
+		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.flush()
 
 if __name__ == '__main__':
 	main()

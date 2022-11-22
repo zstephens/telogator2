@@ -2,6 +2,8 @@ import re
 import os
 import copy
 
+import numpy as np
+
 LEXICO_2_IND = {'chr1':1, 'chr2':2, 'chr3':3, 'chr10':10, 'chr11':11, 'chr12':12, 'chr19':19, 'chr20':20,
 				'chr4':4, 'chr5':5, 'chr6':6, 'chr13':13, 'chr14':14, 'chr15':15, 'chr21':21, 'chr22':22,
 				'chr7':7, 'chr8':8, 'chr9':9, 'chr16':16, 'chr17':17, 'chr18':18, 'chrX' :23, 'chrY' :24, 'chrM' :25}
@@ -41,11 +43,13 @@ def exists_and_is_nonzero(fn):
 
 def makedir(d):
 	if not os.path.isdir(d):
-		os.system('mkdir -p '+d)
+		os.mkdir(d)
 
 def rm(fn):
-	if exists_and_is_nonzero(fn):
-		os.system('rm '+fn)
+	if os.path.isdir(fn):
+		os.rmdir(fn)
+	elif os.path.isfile(fn):
+		os.remove(fn)
 
 #
 #
@@ -76,6 +80,7 @@ def parse_cigar(cigar):
 			radj += numbers[i]
 	return (startPos, adj, radj, endClip)
 
+#
 #
 #
 def parse_read(splt):
@@ -141,6 +146,7 @@ def parse_read(splt):
 	#
 	return [rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat]
 
+#
 # trim repeated matches in the same manner as pbmm2 (only affects read_pos coords)
 #
 def repeated_matches_trimming(alns, min_read_span_after_trimming=200, strategy='mapq', print_debug=False):
@@ -202,8 +208,6 @@ def repeated_matches_trimming(alns, min_read_span_after_trimming=200, strategy='
 					if clust[i][j][1] - clust[i][j][0] < min_read_span_after_trimming:
 						del_list.append(j)
 				#
-				####print('c/d:', clust[i], del_list)
-				#
 				del_list = sorted(list(set(del_list)), reverse=True)
 				for di in del_list:
 					del clust[i][di]
@@ -235,6 +239,7 @@ def repeated_matches_trimming(alns, min_read_span_after_trimming=200, strategy='
 		print()
 	return alns_out
 
+#
 # cluster a sorted list
 #
 # "which_val = None" - assume input is list of values to directly sort
@@ -266,6 +271,7 @@ def cluster_list(l, delta, which_val=None):
 
 #
 #
+#
 def cluster_ranges(l):
 	c = [[l[0]]]
 	for i in range(1,len(l)):
@@ -284,6 +290,7 @@ def cluster_ranges(l):
 
 #
 #
+#
 def posmax(seq):
 	m = seq[0]
 	index = 0
@@ -292,69 +299,3 @@ def posmax(seq):
 			m = x
 			index = i
 	return index
-
-#
-#
-def read_fq_entry(fq_file):
-	myName = fq_file.readline().strip()[1:]
-	if not myName:
-		return ('','','')
-	myRDat = fq_file.readline().strip()
-	skip   = fq_file.readline().strip()
-	myQDat = fq_file.readline().strip()
-	return (myRDat, myQDat, myName)
-
-#
-#
-def index_ref(ref_path):
-	fn = None
-	if os.path.isfile(ref_path+'i'):
-		print('found index '+ref_path+'i')
-		fn = ref_path+'i'
-	if os.path.isfile(ref_path+'.fai'):
-		print('found index '+ref_path+'.fai')
-		fn = ref_path+'.fai'
-	#
-	ref_inds = []
-	if fn != None:
-		fai = open(fn,'r')
-		for line in fai:
-			splt = line[:-1].split('\t')
-			seqLen = int(splt[1])
-			offset = int(splt[2])
-			lineLn = int(splt[3])
-			nLines = seqLen//lineLn
-			if seqLen%lineLn != 0:
-				nLines += 1
-			ref_inds.append((splt[0],offset,offset+seqLen+nLines,seqLen))
-		fai.close()
-		return ref_inds
-	#
-	refFile = open(ref_path,'r')
-	prevR   = None
-	prevP   = None
-	seqLen  = 0
-	while 1:
-		data = refFile.readline()
-		if not data:
-			ref_inds.append( (prevR, prevP, refFile.tell()-len(data), seqLen) )
-			break
-		if data[0] == '>':
-			if prevP != None:
-				ref_inds.append( (prevR, prevP, refFile.tell()-len(data), seqLen) )
-			seqLen = 0
-			prevP  = refFile.tell()
-			prevR  = data[1:-1]
-		else:
-			seqLen += len(data)-1
-	refFile.close()
-	return ref_inds
-
-#
-#
-def read_ref_py3(ref_path, ref_inds_i):
-	ref_file = open(ref_path,'r')
-	ref_file.seek(ref_inds_i[1])
-	my_dat = ''.join(ref_file.read(int(ref_inds_i[2])-int(ref_inds_i[1])).split('\n'))
-	ref_file.close()
-	return my_dat
