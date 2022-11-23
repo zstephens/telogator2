@@ -29,7 +29,7 @@ MIN_CANONICAL_FRAC      = 0.15
 #
 DUMMY_TEL_MAPQ = 60
 
-# for debugging purposes
+# for debugging purposes (don't replot figures if they already exist)
 DO_NOT_OVERWRITE = True
 
 #
@@ -663,14 +663,16 @@ def main(raw_args=None):
 		#
 		custom_plot_params = {'xlim':[-1000,15000]}
 		#custom_plot_params = {'xlim':[0,13000], 'custom_title':'', 'fig_width':12} # params for plotting figs for paper
-		plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
-			           clust_dat=read_clust_dat,
-			           plot_params=custom_plot_params)
-		if len(consensus_clust_dat[0]):
-			plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
-				           clust_dat=consensus_clust_dat,
-				           draw_boundaries=consensus_tvr_tel_pos,
+		if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompplot_fn) == False:
+			plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
+				           clust_dat=read_clust_dat,
 				           plot_params=custom_plot_params)
+		if len(consensus_clust_dat[0]):
+			if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompcons_fn) == False:
+				plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
+					           clust_dat=consensus_clust_dat,
+					           draw_boundaries=consensus_tvr_tel_pos,
+					           plot_params=custom_plot_params)
 		#
 		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
 		sys.stdout.flush()

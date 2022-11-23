@@ -15,7 +15,7 @@ def check_muscle_version(MUSCLE_EXE):
 	sys.stdout.flush()
 	found_muscle = False
 	try:
-		output = subprocess.check_output([MUSCLE_EXE, '-version'], text=True)
+		output = subprocess.check_output([MUSCLE_EXE, '-version']).decode('utf-8')
 		if output[:len(MUSCLE_VERS_STRING)] == MUSCLE_VERS_STRING:
 			found_muscle = True
 	except FileNotFoundError:
