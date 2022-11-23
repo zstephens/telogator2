@@ -24,9 +24,9 @@ def main(raw_args=None):
 	parser.add_argument('--readtype', type=str, required=False, metavar='CCS / CLR / SRA',  help="Read name format", default='SRA')
 	args = parser.parse_args()
 
-	IN_BAM     = args.bam
-	IN_READS   = args.in_reads
-	OUT_READS  = args.out_reads
+	IN_BAM     = args.b
+	IN_READS   = args.i
+	OUT_READS  = args.o
 	#
 	SUBTEL_BED = args.bed
 	READTYPE   = args.readtype
