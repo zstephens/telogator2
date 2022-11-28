@@ -185,8 +185,11 @@ def main(raw_args=None):
 	#
 	NUM_PROCESSES = args.p
 
-	reads_skipped = {'min_readlen':0,
-	                 'trim_filter':0,
+	reads_skipped = {'trim_filter':0,
+	                 'min_readlen':0,
+	                 'unmapped':0,
+	                 'unknown_ref':0,
+	                 'no_chr_aln':0,
 	                 'min_telbases':0}
 
 	ANCHORED_TEL_BY_CHR    = {}
@@ -218,7 +221,16 @@ def main(raw_args=None):
 		tt = time.time()
 		for aln in samfile.fetch(until_eof=True):
 			sam_line    = str(aln).split('\t')
-			sam_line[2] = refseqs[int(sam_line[2])]	# pysam is dumb and prints ref indices instead of contig name
+			my_ref_ind  = sam_line[2].replace('#','')	# why would there ever be a # symbol here? I don't know.
+			# pysam is dumb and prints ref indices instead of contig name
+			# - except unmapped, which is '*'
+			# - and I've also seen it spit out '-1' ...
+			if my_ref_ind.isdigit():
+				sam_line[2] = refseqs[int(my_ref_ind)]
+			elif my_ref_ind == '-1':
+				sam_line[2] = refseqs[-1]
+			else:
+				sam_line[2] = my_ref_ind
 			#
 			[rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
 			if rnm not in ALIGNMENTS_BY_RNAME:
@@ -226,6 +238,10 @@ def main(raw_args=None):
 			ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
 		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
 		sys.stdout.flush()
+		#
+		if len(ALIGNMENTS_BY_RNAME) == 0:
+			print('Error: unable to get any reads from input ' + INPUT_TYPE)
+			exit(1)
 
 		#
 		# INITIAL FILTERING
@@ -262,6 +278,16 @@ def main(raw_args=None):
 			refs_we_aln_to = sorted(list(set(refs_we_aln_to)))
 			if refs_we_aln_to == ['*']:
 				reads_skipped['unmapped'] += 1
+				continue
+			# check for alignments to unexpected reference contigs
+			any_chr = any([n[:3] == 'chr' for n in refs_we_aln_to])
+			any_tel = any([n[:3] == 'tel' for n in refs_we_aln_to])
+			if any_chr == False and any_tel == False:
+				reads_skipped['unknown_ref'] += 1
+				continue
+			# we need at least 1 chr alignment to be anchorable anywhere
+			if any_chr == False:
+				reads_skipped['no_chr_aln'] += 1
 				continue
 			# minimum tel content
 			tel_bc = get_telomere_base_count(rdat, [CANONICAL_STRING, CANONICAL_STRING_REV], mode=READ_TYPE)
@@ -359,11 +385,13 @@ def main(raw_args=None):
 		#
 		# print stats on reads that were filtered
 		#
-		print()
-		for k in sorted(reads_skipped.keys()):
-			if reads_skipped[k] > 0:
-				print(k, reads_skipped[k])
-		print()
+		if sum(reads_skipped.values()) > 0:
+			print()
+			print('reads filtered:')
+			for k in sorted(reads_skipped.keys()):
+				if reads_skipped[k] > 0:
+					print(' -', k, reads_skipped[k])
+			print()
 		#
 		# save output pickle
 		#
@@ -506,10 +534,10 @@ def main(raw_args=None):
 	print('writing TL results to "' + OUT_CHR_TL.split('/')[-1] + '"...')
 	f = open(OUT_CHR_TL, 'w')
 	f.write('#chr' + '\t' +
-		    'position' + '\t' +
-		    'TL_' + CHR_TL_METHOD + '\t' +
-		    'read_TLs' + '\t' +
-		    'read_lengths' + '\n')
+	        'position' + '\t' +
+	        'TL_' + CHR_TL_METHOD + '\t' +
+	        'read_TLs' + '\t' +
+	        'read_lengths' + '\n')
 	for i in range(len(CHR_TEL_DAT)):
 		f.write('\t'.join(CHR_TEL_DAT[i]) + '\n')
 	f.close()
@@ -567,15 +595,15 @@ def main(raw_args=None):
 		consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
 		#
 		read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos,
-			                          aln_mode='ds',
-						              alignment_processes=NUM_PROCESSES,
-						              tree_cut=my_tc,
-						              dist_in=dist_matrix_fn,
-						              fig_name=dendrogram_fn,
-						              save_msa=consensus_fn,
-						              muscle_dir=OUT_TVR_TEMP,
-						              muscle_exe=MUSCLE_EXE,
-						              PRINT_DEBUG=PRINT_DEBUG)
+		                              aln_mode='ds',
+		                              alignment_processes=NUM_PROCESSES,
+		                              tree_cut=my_tc,
+		                              dist_in=dist_matrix_fn,
+		                              fig_name=dendrogram_fn,
+		                              save_msa=consensus_fn,
+		                              muscle_dir=OUT_TVR_TEMP,
+		                              muscle_exe=MUSCLE_EXE,
+		                              PRINT_DEBUG=PRINT_DEBUG)
 		#
 		# values for output tsv
 		#
@@ -617,14 +645,14 @@ def main(raw_args=None):
 				if my_chr not in allele_count_by_chr:
 					allele_count_by_chr[my_chr] = 0
 				ALLELE_TEL_DAT.append([my_chr,
-					                   str(my_pos),
-					                   str(allele_count_by_chr[my_chr]),
-					                   str(int(consensus_tl_allele)),
-					                   allele_tlen_str,
-					                   rlen_str,
-					                   mapq_str,
-					                   str(len(allele_cons_out)),
-					                   allele_cons_out])
+				                       str(my_pos),
+				                       str(allele_count_by_chr[my_chr]),
+				                       str(int(consensus_tl_allele)),
+				                       allele_tlen_str,
+				                       rlen_str,
+				                       mapq_str,
+				                       str(len(allele_cons_out)),
+				                       allele_cons_out])
 				allele_count_by_chr[my_chr] += 1		
 		#
 		# adjust kmer_hit_dat based on the filters and etc that were applied during clustering
@@ -665,14 +693,14 @@ def main(raw_args=None):
 		#custom_plot_params = {'xlim':[0,13000], 'custom_title':'', 'fig_width':12} # params for plotting figs for paper
 		if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompplot_fn) == False:
 			plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
-				           clust_dat=read_clust_dat,
-				           plot_params=custom_plot_params)
+			               clust_dat=read_clust_dat,
+			               plot_params=custom_plot_params)
 		if len(consensus_clust_dat[0]):
 			if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompcons_fn) == False:
 				plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
-					           clust_dat=consensus_clust_dat,
-					           draw_boundaries=consensus_tvr_tel_pos,
-					           plot_params=custom_plot_params)
+				               clust_dat=consensus_clust_dat,
+				               draw_boundaries=consensus_tvr_tel_pos,
+				               plot_params=custom_plot_params)
 		#
 		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
 		sys.stdout.flush()
