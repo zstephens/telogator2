@@ -13,7 +13,7 @@ from source.tg_kmer   import get_telomere_base_count, get_telomere_composition, 
 from source.tg_muscle import check_muscle_version
 from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
 from source.tg_tel    import get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job
-from source.tg_tvr    import cluster_tvrs, convert_colorvec_to_kmerhits
+from source.tg_tvr    import cluster_consensus_tvr, cluster_tvrs, convert_colorvec_to_kmerhits, filter_by_denoise_frac
 from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC, repeated_matches_trimming
 
 # hardcoded parameters
@@ -26,6 +26,9 @@ MAX_NONTEL_MEDIAN_KMER_DENSITY = 0.25
 MIN_DOUBLE_ANCHOR_LEN   = 1000
 MIN_DOUBLE_ANCHOR_READS = 3
 MIN_CANONICAL_FRAC      = 0.15
+#
+MAX_NOISE_BASES = 5000
+MAX_NOISE_FRAC  = 0.60
 #
 DUMMY_TEL_MAPQ = 60
 
@@ -70,6 +73,7 @@ def main(raw_args=None):
 	parser.add_argument('-at',  type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
 	parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
 	parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
+	parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut val to use in clustering multimapped alleles")
 	#
 	parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
 	parser.add_argument('--plot-filt',     required=False, action='store_true',   default=False,     help="Create read plots (filtered reads)")
@@ -91,7 +95,7 @@ def main(raw_args=None):
 		INPUT_TYPE = 'sam'
 	elif INPUT_ALN[-4:].lower() == '.bam':
 		INPUT_TYPE = 'bam'
-	elif INPUT_ALN[-4:].lower() == '.cram':
+	elif INPUT_ALN[-5:].lower() == '.cram':
 		INPUT_TYPE = 'cram'
 	elif INPUT_ALN[-2:].lower() == '.p':
 		INPUT_TYPE = 'pickle'
@@ -106,6 +110,7 @@ def main(raw_args=None):
 	OUT_PICKLE    = OUT_DIR + 'tel-data.p'
 	OUT_PLOT_DIR  = OUT_DIR + 'read_plots/'
 	OUT_CHR_TL    = OUT_DIR + 'tlens_by_chr.tsv'
+	OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
 	OUT_VIOLIN_TL = OUT_DIR + 'violin_tlens.png'
 	OUT_VIOLIN_RL = OUT_DIR + 'violin_rlens.png'
 	#
@@ -179,6 +184,7 @@ def main(raw_args=None):
 	#
 	MIN_READS_PER_PHASE = args.ar
 	ALLELE_TL_METHOD    = args.am
+	TREECUT_MULTIMAPPED = args.atm
 	#
 	(VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
 	(VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
@@ -238,6 +244,7 @@ def main(raw_args=None):
 			ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
 		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
 		sys.stdout.flush()
+		samfile.close()
 		#
 		if len(ALIGNMENTS_BY_RNAME) == 0:
 			print('Error: unable to get any reads from input ' + INPUT_TYPE)
@@ -429,7 +436,8 @@ def main(raw_args=None):
 	sys.stdout.flush()
 	num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
 	#
-	gtbct_params = [MIN_CANONICAL_FRAC, CANONICAL_STRING, CANONICAL_STRING_REV, READ_TYPE]
+	my_kmer_list = [CANONICAL_STRING, CANONICAL_STRING_REV]
+	gtbct_params = [MIN_CANONICAL_FRAC, my_kmer_list, READ_TYPE]
 	del_keys     = get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params)
 	#
 	num_ending_reads = num_starting_reads - len(del_keys)
@@ -567,10 +575,44 @@ def main(raw_args=None):
 	# first lets check to make sure the muscle executable works
 	check_muscle_version(MUSCLE_EXE)
 
+	#####
+	##### for HiFi reads, remove noisy telomeres
+	#####
+	####if READ_TYPE in ['hifi']:
+	####	sys.stdout.write('[HiFi only] filtering reads with noisy telomeres...')
+	####	sys.stdout.flush()
+	####	tt = time.time()
+	####	num_starting_reads = 0
+	####	for tci in range(len(tel_composition_data)):
+	####		[my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tel_composition_data[tci]
+	####		num_starting_reads += len(kmer_hit_dat)
+	####		denoise_clust_dat   = filter_by_denoise_frac(kmer_hit_dat, KMER_METADATA, my_chr)
+	####		del_keys = []
+	####		for dci in range(len(denoise_clust_dat)):
+	####			if denoise_clust_dat[dci][0] > MAX_NOISE_BASES or denoise_clust_dat[dci][1] > MAX_NOISE_FRAC:
+	####				del_keys.append(dci)
+	####		for di in sorted(del_keys,reverse=True):
+	####			del tel_composition_data[tci][3][di]
+	####			del tel_composition_data[tci][4][di]
+	####			del tel_composition_data[tci][5][di]
+	####			del tel_composition_data[tci][6][di]
+	####	for tci in range(len(tel_composition_data)-1,-1,-1):
+	####		if len(tel_composition_data[tci][3]) == 0:
+	####			del tel_composition_data[tci]
+	####	num_ending_reads = 0
+	####	for tci in range(len(tel_composition_data)):
+	####		num_ending_reads += len(tel_composition_data[tci][6])
+	####	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+	####	sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
+	####	sys.stdout.flush()
+
 	#
 	#
 	#
 	print('pairwise comparing TVRs at each cluster...')
+	ALLELE_TEL_DAT      = []
+	allele_count_by_chr = {}
+	#
 	for tc_dat in tel_composition_data:
 		[my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tc_dat
 		sys.stdout.write(' - ' + my_chr + ':' + str(my_pos) + ' ' + str(len(ind_list)) + ' reads')
@@ -607,8 +649,6 @@ def main(raw_args=None):
 		#
 		# values for output tsv
 		#
-		ALLELE_TEL_DAT      = []
-		allele_count_by_chr = {}
 		for allele_i in range(len(read_clust_dat[0])):
 			allele_tvrlen   = read_clust_dat[7][allele_i]
 			allele_cons_out = ''
@@ -647,6 +687,7 @@ def main(raw_args=None):
 				ALLELE_TEL_DAT.append([my_chr,
 				                       str(my_pos),
 				                       str(allele_count_by_chr[my_chr]),
+				                       '0',									# allele id (will be filled out later)
 				                       str(int(consensus_tl_allele)),
 				                       allele_tlen_str,
 				                       rlen_str,
@@ -704,6 +745,60 @@ def main(raw_args=None):
 		#
 		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
 		sys.stdout.flush()
+
+	#
+	#
+	#
+	sys.stdout.write('pairwise comparing all consensus TVR sequences...')
+	sys.stdout.flush()
+	tt = time.time()
+	all_tvrs   = []
+	all_labels = []
+	allele_ids = {}
+	for i in range(len(ALLELE_TEL_DAT)):
+		if len(ALLELE_TEL_DAT[i][9]):
+			all_tvrs.append(ALLELE_TEL_DAT[i][9])
+			all_labels.append(ALLELE_TEL_DAT[i][0]+'_'+ALLELE_TEL_DAT[i][1]+'_'+ALLELE_TEL_DAT[i][2]+'_'+str(i))
+		else:
+			allele_ids[i] = 0	# id 0 = blank tvr
+	alltvr_clustdat = cluster_consensus_tvr(all_tvrs, KMER_METADATA,
+	                                        alignment_processes=NUM_PROCESSES,
+	                                        aln_mode='ms',
+	                                        dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
+	                                        fig_name=OUT_TVR_DIR+'all-tvrs.png',
+	                                        samp_labels=all_labels,
+	                                        linkage_method='complete',
+	                                        tree_cut=TREECUT_MULTIMAPPED,
+	                                        job=(1,1),
+	                                        dendrogram_height=12)
+	sort_alltvr_clustdat = sorted(alltvr_clustdat)
+	for i in range(len(sort_alltvr_clustdat)):
+		for j in sort_alltvr_clustdat[i]:
+			my_i = int(all_labels[j].split('_')[-1])
+			allele_ids[my_i] = i + 1
+	for i in range(len(ALLELE_TEL_DAT)):
+		ALLELE_TEL_DAT[i][3] = str(allele_ids[i])
+	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+	sys.stdout.flush()
+
+	#
+	# write out allele TLs
+	#
+	print('writing allele TL results to "' + OUT_ALLELE_TL.split('/')[-1] + '"...')
+	f = open(OUT_ALLELE_TL, 'w')
+	f.write('#chr' + '\t' +
+	        'position' + '\t' +
+	        'allele_num' + '\t' +
+	        'allele_id' + '\t' +
+	        'TL_' + ALLELE_TL_METHOD + '\t' +
+	        'read_TLs' + '\t' +
+	        'read_lengths' + '\t' + 
+	        'read_mapq' + '\t' +
+	        'tvr_len' + '\t' +
+	        'tvr_consensus' + '\n')
+	for i in range(len(ALLELE_TEL_DAT)):
+		f.write('\t'.join(ALLELE_TEL_DAT[i]) + '\n')
+	f.close()
 
 if __name__ == '__main__':
 	main()

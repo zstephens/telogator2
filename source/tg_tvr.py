@@ -83,10 +83,9 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
 		# aln score
 		#
 		if scoring_matrix == None:
-			aln = pairwise2.align.globalms(seq_i, seq_j, MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool)
+			aln_score = pairwise2.align.globalms(seq_i, seq_j, MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True)
 		else:
-			aln = pairwise2.align.globalds(seq_i, seq_j, scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool)
-		aln_score = int(aln[0].score)
+			aln_score = pairwise2.align.globalds(seq_i, seq_j, scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True)
 		#
 		# iden score
 		#
@@ -104,34 +103,10 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
 		rand_scores = []
 		for k in range(RAND_SHUFFLE_COUNT):
 			if scoring_matrix == None:
-				rand_aln = pairwise2.align.globalms(shuffle_seq(seq_i), shuffle_seq(seq_j), MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool)
+				rand_scores.append(pairwise2.align.globalms(shuffle_seq(seq_i), shuffle_seq(seq_j), MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True))
 			else:
-				rand_aln = pairwise2.align.globalds(shuffle_seq(seq_i), shuffle_seq(seq_j), scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool)
-			rand_scores.append(rand_aln[0].score)
+				rand_scores.append(pairwise2.align.globalds(shuffle_seq(seq_i), shuffle_seq(seq_j), scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True))
 		rand_score_shuffle = int(np.mean(rand_scores))
-		#
-		####gap_string = pairwise2.format_alignment(*aln[0]).split('\n')[1]
-		####gap_count  = gap_string.count(' ')
-		####rand_msum  = 0
-		####for k1 in c1.keys():
-		####	for k2 in c2.keys():
-		####		if scoring_matrix == None:
-		####			if k1 == k2:
-		####				rand_msum += MATCH_NORMAL*c1[k1]*c2[k2]
-		####			else:
-		####				rand_msum += XMATCH_NORMAL*c1[k1]*c2[k2]
-		####		else:
-		####			rand_msum += scoring_matrix[(k1,k2)]*c1[k1]*c2[k2]
-		####rand_score = int(rand_msum/float(len(gap_string)) + gap_count*GAP_OPEN)
-		####print('RRR', rand_score, rand_scores, rand_score_shuffle)
-		#
-		# distance calculation
-		#
-		####if rand_score >= aln_score:
-		####	my_dist = MAX_SEQ_DIST
-		####else:
-		####	my_dist = min(-np.log((aln_score - rand_score)/(iden_score - rand_score)), MAX_SEQ_DIST)
-		####my_dist = max(my_dist, MIN_SEQ_DIST)
 		#
 		if rand_score_shuffle >= aln_score:
 			my_dist_shuffle = MAX_SEQ_DIST
@@ -145,11 +120,52 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
 		results_dict[(i,j)] = my_dist_shuffle
 
 #
+#
+#
+def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
+	#
+	n_reads = len(kmer_dat)
+	pq      = my_chr[-1]
+	[kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
+	denoise_chars = []
+	for i in range(len(kmer_list)):
+		if 'denoise' in kmer_flags[i]:
+			denoise_chars.append(kmer_letters[i])
+	denoise_chars = list(set(denoise_chars))
+	#
+	# create color vector
+	#
+	my_out = []
+	for i in range(n_reads):
+		[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq] = kmer_dat[i]
+		my_letters = [UNKNOWN_LETTER for n in range(my_tlen)]
+		for ki in range(len(my_kmer_hits)):
+			if len(my_kmer_hits[ki]):
+				for kmer_span in my_kmer_hits[ki]:
+					for j in range(kmer_span[0], kmer_span[1]):
+						my_letters[j] = kmer_letters[ki]
+		my_cvec = ''.join(my_letters)
+		#
+		if pq == 'p':
+			(seq_left, seq_right) = find_density_boundary(my_cvec[::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+		elif pq == 'q':
+			(seq_left, seq_right) = find_density_boundary(my_cvec, UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+		#
+		my_count_unknown = seq_right.count(UNKNOWN_LETTER)
+		my_count_denoise = 0
+		for dc in denoise_chars:
+			my_count_denoise += seq_right.count(dc)
+		my_num = my_count_unknown + my_count_denoise
+		my_den = float(max([1, len(seq_right)]))
+		my_out.append((my_num, my_num/my_den))
+	return my_out
+
+#
 #	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read-orientation, readname, anchor_mapq]
 #
 #	repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
 #
-def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ms', dist_in=None, fig_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, tree_cut=None, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
+def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist_in=None, fig_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, tree_cut=None, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
 	#
 	[kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
 	#
@@ -572,3 +588,129 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
 				current_block = colorvecs[i][j]
 				current_start = j
 	return out_kmerhits
+
+#
+#
+#
+def cluster_consensus_tvr(sequences, repeats_metadata, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', linkage_method='complete', tree_cut=4.30, alignment_processes=8, job=(1,1), dendrogram_height=12):
+	#
+	n_seq = len(sequences)
+	#
+	[kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
+	#
+	canonical_letter = None
+	for i in range(len(kmer_list)):
+		if 'canonical' in kmer_flags[i]:
+			canonical_letter = kmer_letters[i]
+		if kmer_letters[i] == UNKNOWN_LETTER:
+			print('Error: character A is reserved for unknown sequence')
+			exit(1)
+	if canonical_letter == None:
+		print('Error: cluster_consensus_tvr() received a kmer list that does not have any canonical')
+		exit(1)
+	#
+	if dist_in == None or exists_and_is_nonzero(dist_in) == False:
+		dist_matrix = np.zeros((n_seq,n_seq))
+		all_indices = [[] for n in range(alignment_processes)]
+		k = 0
+		for i in range(n_seq):
+			for j in range(i+1,n_seq):
+				all_indices[k%alignment_processes].append((i,j))
+				k += 1
+		#
+		#	scoring matrix
+		#
+		letters = AMINO
+		scoring_matrix = {}
+		for i in range(len(letters)):
+			for j in range(len(letters)):
+				if i == j:
+					scoring_matrix[(letters[i],letters[j])] = MATCH_NORMAL
+				else:
+					scoring_matrix[(letters[i],letters[j])] = XMATCH_NORMAL
+					scoring_matrix[(letters[j],letters[i])] = XMATCH_NORMAL
+		for i in range(len(letters)):
+			scoring_matrix[(letters[i],canonical_letter)] = XMATCH_CANON
+			scoring_matrix[(canonical_letter,letters[i])] = XMATCH_CANON
+		for i in range(len(letters)):
+			scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
+			scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
+		scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON		# reduced award for matching canonical
+		scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN	# no reward for matching unknown regions
+		#
+		#	even more parallelization! Any problem can be solved by throwing tons of CPU at it.
+		#
+		if job[1] > 1:
+			my_job = job[0]-1
+			chunks = job[1]
+			for i in range(alignment_processes):
+				chunksize = int(len(all_indices[i])/chunks)
+				chunks_by_job = []
+				for j in range(chunks):
+					if j == chunks-1:
+						chunks_by_job.append(all_indices[i][j*chunksize:])
+					else:
+						chunks_by_job.append(all_indices[i][j*chunksize:(j+1)*chunksize])
+				all_indices[i] = [n for n in chunks_by_job[my_job]]
+		#
+		manager     = multiprocessing.Manager()
+		return_dict = manager.dict()
+		processes   = []
+		for i in range(alignment_processes):
+			if aln_mode == 'ms':
+				p = multiprocessing.Process(target=parallel_alignment_job,
+					                        args=(sequences, all_indices[i], 'q', return_dict, None, (True,True)))
+			elif aln_mode == 'ds':
+				p = multiprocessing.Process(target=parallel_alignment_job,
+					                        args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, (True,True)))
+			processes.append(p)
+		for i in range(alignment_processes):
+			processes[i].start()
+		for i in range(alignment_processes):
+			processes[i].join()
+		#
+		dist_matrix = np.zeros((n_seq,n_seq))
+		for (i,j) in return_dict.keys():
+			dist_matrix[i,j] = return_dict[(i,j)]
+			dist_matrix[j,i] = return_dict[(i,j)]
+		if job[1] > 1:
+			partial_dist_fn = dist_in[:-4] + '_job' + str(job[0]).zfill(3) + '.npy'
+			np.save(partial_dist_fn, dist_matrix)
+		else:
+			dist_norm    = max(np.max(dist_matrix), MIN_MSD)
+			dist_matrix /= dist_norm
+			if dist_in != None:
+				np.save(dist_in, dist_matrix)
+	else:
+		dist_matrix = np.load(dist_in, allow_pickle=True)
+	#
+	if job[1] == 1 or job[0] == 0:
+		d_arr = squareform(dist_matrix)
+		Zread = linkage(d_arr, method=linkage_method)
+		#
+		if fig_name != None:
+			mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
+			#
+			fig = mpl.figure(3, figsize=(8,dendrogram_height))
+			dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
+			mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
+			mpl.xlabel('distance')
+			#
+			mpl.tight_layout()
+			mpl.savefig(fig_name, dpi=200)	# default figure dpi = 100
+			mpl.close(fig)
+		#
+		labels_fromtop = dendro_dat['ivl'][::-1]
+		#
+		assignments = fcluster(Zread, tree_cut, 'distance').tolist()
+		by_class = {}
+		for i in range(len(assignments)):
+			if assignments[i] not in by_class:
+				by_class[assignments[i]] = []
+			by_class[assignments[i]].append(i)
+		out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
+		out_clust = [n[1] for n in out_clust]
+		#
+		return out_clust
+	#
+	return None
