@@ -780,6 +780,11 @@ def main(raw_args=None):
 		ALLELE_TEL_DAT[i][3] = str(allele_ids[i])
 	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
 	sys.stdout.flush()
+	num_starting_alleles = len(ALLELE_TEL_DAT)
+	num_unique_alleles   = max(allele_ids.values())
+	num_blank_alleles    = list(allele_ids.values()).count(0)
+	print(' -', num_starting_alleles, 'alleles -->', num_unique_alleles, 'unique tvrs')
+	print(' -', num_blank_alleles, 'blank')
 
 	#
 	# write out allele TLs
