@@ -416,7 +416,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	subtel_recovery = []
 	for i in range(len(out_consensus)):
 		if pq == 'p':
-			(scons_left, scons_right) = find_density_boundary(subtel_consensus[i], UNKNOWN_LETTER, 50, 0.800, thresh_dir='above', debug_plot=True)
+			(scons_left, scons_right) = find_density_boundary(subtel_consensus[i], UNKNOWN_LETTER, 50, 0.800, thresh_dir='above', debug_plot=False)
 			out_consensus[i] = out_consensus[i] + scons_left
 			subtel_recovery.append(scons_left)
 		elif pq == 'q':
@@ -490,15 +490,15 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				                       randshuffle=1)
 				dist_matrix_prefixmerge[i,j] = pref_score[(0,1)]
 				dist_matrix_prefixmerge[j,i] = pref_score[(0,1)]
-				print(i, j, pref_score[(0,1)])
+				#print(i, j, pref_score[(0,1)])
 		if dist_in_prefixmerge != None:
 			np.save(dist_in_prefixmerge, dist_matrix_prefixmerge)
 	else:
 		dist_matrix_prefixmerge = np.load(dist_in_prefixmerge, allow_pickle=True)
-	#
+	# an extremely sketchy way to accomplish single-linkage clustering
 	merge_clust = [[n] for n in range(len(out_consensus))]
 	for i in range(len(out_consensus)):
-		for j in range(i+1,len(out_consensus)):
+		for j in range(len(out_consensus)):
 			if dist_matrix_prefixmerge[i,j] <= PREFIX_MERGE_DIST:
 				#print('MERGE:', i, j)
 				for k in range(len(merge_clust)):
@@ -507,6 +507,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	merge_clust = list(set([tuple(n) for n in merge_clust]))											# collapse redundant
 	merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
 	merge_clust = [n[1] for n in merge_clust]
+	#print('merge_clust:', merge_clust)
 	new_out_clust              = []
 	new_out_consensus          = []
 	new_out_tvr_tel_boundaries = []
@@ -549,11 +550,17 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	for n in out_clust:
 		out_mapq.append([kmer_dat[m][5] for m in n])
 	#
-	if PRINT_DEBUG:
+	if True or PRINT_DEBUG:
 		print('cluster_tvr() results:')
 		print(out_clust)
+		print(out_mapq)
+		print(out_adj)
 		print(all_subtel_lens)
+		print('len(out_consensus):', len(out_consensus))
+		print('len(cleaned_colorvecs):', len(cleaned_colorvecs))
+		print(err_end_lens)
 		print(out_tvr_tel_boundaries)
+		
 	#
 	return [out_clust,
 	        out_mapq,
