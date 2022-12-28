@@ -214,7 +214,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
 			xtt = [n for n in range(0,max_tlen,X_STEP)]
 			xtl = [n for n in range(0,max_tlen,X_STEP)]
 	#
-	fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size), dpi=100)
+	fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size), dpi=200)
 	reads_plotted_thus_far = 0
 	for clust_i in range(len(read_clusters)):
 		for i in range(len(read_clusters[clust_i])):
@@ -279,7 +279,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
 				else:
 					draw_x = draw_boundaries[clust_i] - x_axis_adj
 				#mpl.plot([draw_x, draw_x], [-1,1], '-k', linewidth=3)
-				current_ax.add_line(lines.Line2D([draw_x, draw_x], [-1.5,1.5], color='black', linewidth=3, clip_on=False))
+				current_ax.add_line(lines.Line2D([draw_x, draw_x], [1.0 ,1.5], color='black', linewidth=3, clip_on=False))
 
 			#
 			if stock_params['number_label_rows']:

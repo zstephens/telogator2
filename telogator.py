@@ -33,7 +33,9 @@ MAX_NOISE_FRAC  = 0.60
 DUMMY_TEL_MAPQ = 60
 
 # for debugging purposes (don't replot figures if they already exist)
-DO_NOT_OVERWRITE = True
+DO_NOT_OVERWRITE = False
+# for debugging purposes (only cluster TVRs at specific arms)
+DEBUG_CHR_LIST = []
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -70,7 +72,8 @@ def main(raw_args=None):
 	parser.add_argument('-vrt', type=int,  required=False, metavar='10000',       default=10000,     help="Violin plot (read length) tick size")
 	#
 	parser.add_argument('-m',   type=str,  required=False, metavar='muscle',      default='muscle',  help="/path/to/muscle executable")
-	parser.add_argument('-at',  type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
+	parser.add_argument('-at',  type=float,required=False, metavar='0.180',       default=0.180,     help="Default treecut value to clustering TVRs")
+	parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
 	parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
 	parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
 	parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut val to use in clustering multimapped alleles")
@@ -148,7 +151,7 @@ def main(raw_args=None):
 	#
 	# parse custom treecut values, if provided
 	#
-	TREECUT_TSV = args.at
+	TREECUT_TSV = args.atc
 	custom_treecut_vals = {}
 	if len(TREECUT_TSV):
 		f = open(TREECUT_TSV, 'r')
@@ -184,6 +187,7 @@ def main(raw_args=None):
 	#
 	MIN_READS_PER_PHASE = args.ar
 	ALLELE_TL_METHOD    = args.am
+	TREECUT_DEFAULT     = args.at
 	TREECUT_MULTIMAPPED = args.atm
 	#
 	(VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
@@ -615,11 +619,14 @@ def main(raw_args=None):
 	#
 	for tc_dat in tel_composition_data:
 		[my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tc_dat
+		if len(DEBUG_CHR_LIST) and my_chr not in DEBUG_CHR_LIST:
+			print(' - skipping', my_chr, '(not in debug list)')
+			continue
 		sys.stdout.write(' - ' + my_chr + ':' + str(my_pos) + ' ' + str(len(ind_list)) + ' reads')
 		sys.stdout.flush()
 		tt = time.time()
 		#
-		my_tc = None
+		my_tc = TREECUT_DEFAULT
 		if (my_chr,None) in custom_treecut_vals:
 			my_tc = custom_treecut_vals[(my_chr,None)]
 		elif (my_chr,my_pos) in custom_treecut_vals:
@@ -634,13 +641,14 @@ def main(raw_args=None):
 		telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_' + plotname_chr + '.png'
 		dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-'    + zfcn + '_' + plotname_chr + '.png'
 		dist_matrix_fn = OUT_TVR_TEMP + 'cluster-'       + zfcn + '_' + plotname_chr + '.npy'
+		dist_prefix_fn = OUT_TVR_TEMP + 'prefix-'       + zfcn + '_' + plotname_chr + '.npy'
 		consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
 		#
-		read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos,
+		read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos, my_tc,
 		                              aln_mode='ds',
 		                              alignment_processes=NUM_PROCESSES,
-		                              tree_cut=my_tc,
 		                              dist_in=dist_matrix_fn,
+		                              dist_in_prefixmerge=dist_prefix_fn,
 		                              fig_name=dendrogram_fn,
 		                              save_msa=consensus_fn,
 		                              muscle_dir=OUT_TVR_TEMP,
@@ -749,42 +757,45 @@ def main(raw_args=None):
 	#
 	#
 	#
-	sys.stdout.write('pairwise comparing all consensus TVR sequences...')
-	sys.stdout.flush()
-	tt = time.time()
-	all_tvrs   = []
-	all_labels = []
-	allele_ids = {}
-	for i in range(len(ALLELE_TEL_DAT)):
-		if len(ALLELE_TEL_DAT[i][9]):
-			all_tvrs.append(ALLELE_TEL_DAT[i][9])
-			all_labels.append(ALLELE_TEL_DAT[i][0]+'_'+ALLELE_TEL_DAT[i][1]+'_'+ALLELE_TEL_DAT[i][2]+'_'+str(i))
-		else:
-			allele_ids[i] = 0	# id 0 = blank tvr
-	alltvr_clustdat = cluster_consensus_tvr(all_tvrs, KMER_METADATA,
-	                                        alignment_processes=NUM_PROCESSES,
-	                                        aln_mode='ms',
-	                                        dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
-	                                        fig_name=OUT_TVR_DIR+'all-tvrs.png',
-	                                        samp_labels=all_labels,
-	                                        linkage_method='complete',
-	                                        tree_cut=TREECUT_MULTIMAPPED,
-	                                        job=(1,1),
-	                                        dendrogram_height=12)
-	sort_alltvr_clustdat = sorted(alltvr_clustdat)
-	for i in range(len(sort_alltvr_clustdat)):
-		for j in sort_alltvr_clustdat[i]:
-			my_i = int(all_labels[j].split('_')[-1])
-			allele_ids[my_i] = i + 1
-	for i in range(len(ALLELE_TEL_DAT)):
-		ALLELE_TEL_DAT[i][3] = str(allele_ids[i])
-	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
-	sys.stdout.flush()
-	num_starting_alleles = len(ALLELE_TEL_DAT)
-	num_unique_alleles   = max(allele_ids.values())
-	num_blank_alleles    = list(allele_ids.values()).count(0)
-	print(' -', num_starting_alleles, 'alleles -->', num_unique_alleles, 'unique tvrs')
-	print(' -', num_blank_alleles, 'blank')
+	if len(DEBUG_CHR_LIST):
+		print('skipping pairwise comparison of all TVRs (debug mode)...')
+		print(' - all allele_ids are going to be 0')
+	else:
+		sys.stdout.write('pairwise comparing all consensus TVR sequences...')
+		sys.stdout.flush()
+		tt = time.time()
+		all_tvrs   = []
+		all_labels = []
+		allele_ids = {}
+		for i in range(len(ALLELE_TEL_DAT)):
+			if len(ALLELE_TEL_DAT[i][9]):
+				all_tvrs.append(ALLELE_TEL_DAT[i][9])
+				all_labels.append(ALLELE_TEL_DAT[i][0]+'_'+ALLELE_TEL_DAT[i][1]+'_'+ALLELE_TEL_DAT[i][2]+'_'+str(i))
+			else:
+				allele_ids[i] = 0	# id 0 = blank tvr
+		alltvr_clustdat = cluster_consensus_tvr(all_tvrs, KMER_METADATA, TREECUT_MULTIMAPPED,
+		                                        alignment_processes=NUM_PROCESSES,
+		                                        aln_mode='ms',
+		                                        dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
+		                                        fig_name=OUT_TVR_DIR+'all-tvrs.png',
+		                                        samp_labels=all_labels,
+		                                        linkage_method='complete',
+		                                        job=(1,1),
+		                                        dendrogram_height=12)
+		sort_alltvr_clustdat = sorted(alltvr_clustdat)
+		for i in range(len(sort_alltvr_clustdat)):
+			for j in sort_alltvr_clustdat[i]:
+				my_i = int(all_labels[j].split('_')[-1])
+				allele_ids[my_i] = i + 1
+		for i in range(len(ALLELE_TEL_DAT)):
+			ALLELE_TEL_DAT[i][3] = str(allele_ids[i])
+		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.flush()
+		num_starting_alleles = len(ALLELE_TEL_DAT)
+		num_unique_alleles   = max(allele_ids.values())
+		num_blank_alleles    = list(allele_ids.values()).count(0)
+		print(' -', num_starting_alleles, 'alleles -->', num_unique_alleles, 'unique tvrs')
+		print(' -', num_blank_alleles, 'blank')
 
 	#
 	# write out allele TLs

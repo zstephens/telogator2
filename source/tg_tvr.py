@@ -22,9 +22,6 @@ UNKNOWN_LETTER = AMINO[0]
 # how many blocks of gaps to consider for plotting adj
 MAX_GAP_BLOCK = 3
 
-# how many shuffles to perform for alignment score background model
-RAND_SHUFFLE_COUNT = 1
-
 # when comparing sequences of different lengths, choose min(len(seq1), len(seq2)), but only go this low
 MIN_VIABLE_SEQ_LEN = 1000
 # the log-based distance function can go to infinity so lets set an upper bound on it
@@ -45,11 +42,12 @@ XMATCH_CANON = -4
 MATCH_UNKNOWN  = 2
 XMATCH_UNKNOWN = -4
 
-DEFAULT_TREECUT = 0.250
-
-# density parameters for identifing subtel / tvr boundaries
+# density parameters for identifing subtel / tvr boundaries (individual reads)
 UNKNOWN_WIN_SIZE = 100
 UNKNOWN_END_DENS = 0.120
+# density parameters for recovering variant repeats from subtel consensus
+UNKNOWN_WIN_SIZE_CONS = 50
+UNKNOWN_END_DENS_CONS = 0.800
 # density parameters for discerning canonical regions from sequencing artifacts
 CANON_WIN_SIZE = 100
 CANON_END_DENS = 0.700
@@ -59,6 +57,8 @@ TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
 #
 MAX_TVR_LEN       = 8000	# ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000	# when examining TVRs with very few variant repeats
+TVR_BOUNDARY_BUFF = 20		# add this many bp to detected TVR boundary
+PREFIX_MERGE_DIST = 0.300	# if TVR consensuses are less than this distance apart join them in prefix merging
 
 import random
 def shuffle_seq(s):
@@ -67,18 +67,21 @@ def shuffle_seq(s):
 #
 #
 #
-def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None, gap_bool=(True,True)):
+def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None, gap_bool=(True,True), adjust_lens=True, randshuffle=1):
 	for (i,j) in ij:
 		#
-		min_len = min(len(sequences[i]), len(sequences[j]))
-		min_len = max(min_len, MIN_VIABLE_SEQ_LEN)
-		#
-		if pq == 'p':
-			seq_i = sequences[i][-min_len:]
-			seq_j = sequences[j][-min_len:]
-		elif pq == 'q':
-			seq_i = sequences[i][:min_len]
-			seq_j = sequences[j][:min_len]
+		if adjust_lens:
+			min_len = min(len(sequences[i]), len(sequences[j]))
+			min_len = max(min_len, MIN_VIABLE_SEQ_LEN)
+			if pq == 'p':
+				seq_i = sequences[i][-min_len:]
+				seq_j = sequences[j][-min_len:]
+			elif pq == 'q':
+				seq_i = sequences[i][:min_len]
+				seq_j = sequences[j][:min_len]
+		else:
+			seq_i = sequences[i]
+			seq_j = sequences[j]
 		#
 		# aln score
 		#
@@ -101,7 +104,7 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
 		# rand score
 		#
 		rand_scores = []
-		for k in range(RAND_SHUFFLE_COUNT):
+		for k in range(randshuffle):
 			if scoring_matrix == None:
 				rand_scores.append(pairwise2.align.globalms(shuffle_seq(seq_i), shuffle_seq(seq_j), MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True))
 			else:
@@ -165,15 +168,12 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
 #
 #	repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
 #
-def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist_in=None, fig_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, tree_cut=None, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
+def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode='ds', dist_in=None, dist_in_prefixmerge=None, fig_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
 	#
 	[kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
 	#
 	n_reads = len(kmer_dat)
 	pq      = my_chr[-1]
-	#
-	if tree_cut == None:
-		tree_cut = DEFAULT_TREECUT
 	#
 	canonical_letter = None
 	denoise_chars    = []
@@ -191,6 +191,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 	if canonical_letter == None:
 		print('Error: cluster_tvrs() received a kmer list that does not have any canonical')
 		exit(1)
+
 	#
 	# when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
 	#
@@ -228,6 +229,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 					for j in range(kmer_span[0], kmer_span[1]):
 						my_letters[j] = kmer_letters[ki]
 		all_colorvecs.append(''.join(my_letters))
+
 	#
 	# identify subtel / tvr boundary
 	#
@@ -275,11 +277,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 			if len(tvrtel_regions[-1]) > tvr_truncate:
 				tvrtel_regions[-1] = tvrtel_regions[-1][:tvr_truncate]
 			#cleaned_colorvecs[-1] = tvrtel_regions[-1]
-	#
-	# trivial case
-	#
-	if n_reads == 1:
-		return [ [[0]], [[kmer_dat[0][5]]], [[0]], tvrtel_regions, cleaned_colorvecs, err_end_lens ]
+
 	#
 	# PAIRWISE ALIGNMENT OF ALL SEQUENCES
 	#
@@ -325,6 +323,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 		#
 	else:
 		dist_matrix = np.load(dist_in, allow_pickle=True)
+
 	#
 	# hierarchal clustering + dendrogram plotting
 	#
@@ -354,17 +353,22 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 	for i in range(len(out_clust)):	# sort by length
 		out_clust[i] = sorted([(kmer_dat[n][1],n) for n in out_clust[i]], reverse=True)
 		out_clust[i] = [n[1] for n in out_clust[i]]
+
 	#
-	# do MSA to get a consensus sequence
+	# do MSA of TVRs (and also subtels) to get a consensus sequences
 	#
-	out_consensus = []
+	out_consensus    = []
+	subtel_consensus = []
 	if save_msa != None and exists_and_is_nonzero(save_msa):
 		my_reader = TG_Reader(save_msa, verbose=False)
 		while True:
 			read_dat = my_reader.get_next_read()
 			if not read_dat[0]:
 				break
-			out_consensus.append(read_dat[1])
+			if read_dat[0][:3] == 'tvr':
+				out_consensus.append(read_dat[1])
+			elif read_dat[0][:6] == 'subtel':
+				subtel_consensus.append(read_dat[1])
 		my_reader.close()
 		if len(out_consensus) != len(out_clust):	# msa we read from file has different number of clusters than we currently have, abort!
 			if PRINT_DEBUG:
@@ -372,41 +376,67 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 			out_consensus = []
 	if save_msa == None or len(out_consensus) == 0:
 		for i in range(len(out_clust)):
-			max_seq_len = max([len(colorvecs_for_msa[n]) for n in out_clust[i]])
+			max_tvr_len = max([len(colorvecs_for_msa[n]) for n in out_clust[i]])
+			max_sub_len = max([len(subtel_regions[n]) for n in out_clust[i]])
 			for ci in out_clust[i]:
-				buff_seq = canonical_letter*(max_seq_len - len(colorvecs_for_msa[ci]))
+				tvr_buff_seq = canonical_letter*(max_tvr_len - len(colorvecs_for_msa[ci]))
+				sub_buff_seq = UNKNOWN_LETTER*(max_sub_len - len(subtel_regions[ci]))
 				if pq == 'p':
-					colorvecs_for_msa[ci] = buff_seq + colorvecs_for_msa[ci]
+					colorvecs_for_msa[ci] = tvr_buff_seq + colorvecs_for_msa[ci]
+					subtel_regions[ci]    = subtel_regions[ci] + sub_buff_seq
 				elif pq == 'q':
-					colorvecs_for_msa[ci] = colorvecs_for_msa[ci] + buff_seq
+					colorvecs_for_msa[ci] = colorvecs_for_msa[ci] + tvr_buff_seq
+					subtel_regions[ci]    = sub_buff_seq + subtel_regions[ci]
 		# 
 		for i in range(len(out_clust)):
 			if len(out_clust[i]) == 1:
 				out_consensus.append(colorvecs_for_msa[out_clust[i][0]])
+				subtel_consensus.append(subtel_regions[out_clust[i][0]])
 			else:
 				clust_seq = [colorvecs_for_msa[n] for n in out_clust[i]]
 				[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir, char_score_adj=char_score_adj)
 				out_consensus.append(consensus_seq)
+				clust_seq = [subtel_regions[n] for n in out_clust[i]]
+				[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir)
+				subtel_consensus.append(consensus_seq)
 		#
 		if save_msa != None:
 			f = open(save_msa,'w')
 			for i in range(len(out_consensus)):
-				f.write('>msa-' + str(i+1).zfill(2) + '\n')
+				f.write('>tvr-' + str(i+1).zfill(2) + '\n')
 				f.write(out_consensus[i] + '\n')
+			for i in range(len(subtel_consensus)):
+				f.write('>subtel-' + str(i+1).zfill(2) + '\n')
+				f.write(subtel_consensus[i] + '\n')
 			f.close()
 
 	#
-	# prune subtel from consensus
+	# check subtel for variant repeats --> add to tvr
 	#
+	subtel_recovery = []
 	for i in range(len(out_consensus)):
 		if pq == 'p':
-			(cons_left, cons_right) = find_density_boundary(out_consensus[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
-			out_consensus[i] = cons_right[::-1]
+			(scons_left, scons_right) = find_density_boundary(subtel_consensus[i], UNKNOWN_LETTER, 50, 0.800, thresh_dir='above', debug_plot=True)
+			out_consensus[i] = out_consensus[i] + scons_left
+			subtel_recovery.append(scons_left)
 		elif pq == 'q':
-			(cons_left, cons_right) = find_density_boundary(out_consensus[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
-			out_consensus[i] = cons_right
+			(scons_left, scons_right) = find_density_boundary(subtel_consensus[i][::-1], UNKNOWN_LETTER, 50, 0.800, thresh_dir='above', debug_plot=False)
+			out_consensus[i] = scons_left[::-1] + out_consensus[i]
+			subtel_recovery.append(scons_left[::-1])
+
+	#####
+	##### prune subtel from consensus
+	#####
+	####for i in range(len(out_consensus)):
+	####	if pq == 'p':
+	####		(cons_left, cons_right) = find_density_boundary(out_consensus[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+	####		out_consensus[i] = cons_right[::-1]
+	####	elif pq == 'q':
+	####		(cons_left, cons_right) = find_density_boundary(out_consensus[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+	####		out_consensus[i] = cons_right
+
 	#
-	# identify tvr/tel boundary from consensus sequences
+	# identify tvr/tel boundary from consensus sequences [STRICT]
 	#
 	out_tvr_tel_boundaries = []
 	for i in range(len(out_consensus)):
@@ -422,9 +452,9 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 			denoised_consensus = denoised_consensus[::-1]
 		tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters, cum_thresh=TVR_CANON_FILT_PARAMS_STRICT[1], min_hits=TVR_CANON_FILT_PARAMS_STRICT[2])
 		#
+		# failed to find tel boundary, try again with [LENIENT] params
 		#
-		#
-		if tel_boundary == len(out_consensus[i])+1:	# failed to find tel boundary, try again with lenient params
+		if tel_boundary == len(out_consensus[i])+1:
 			if len(out_consensus[i]) > MAX_TVR_LEN_SHORT:
 				if pq == 'p':
 					current_cons = canonical_letter*(len(out_consensus[i])-MAX_TVR_LEN_SHORT) + out_consensus[i][-MAX_TVR_LEN_SHORT:]
@@ -437,18 +467,81 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 				denoised_consensus = denoised_consensus[::-1]
 			tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters, cum_thresh=TVR_CANON_FILT_PARAMS_LENIENT[1], min_hits=TVR_CANON_FILT_PARAMS_LENIENT[2])
 			#print('LENIENT TVR BOUNDARY (cluster '+str(i)+'):', len(out_consensus[i]) - tel_boundary + 1)
-		out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + 1)
+		out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + TVR_BOUNDARY_BUFF + 1)
+
+	#
+	# merge clusters of TVRs if they are a prefix of a larger TVR
+	# --- update out_clust
+	# --- update out_consensus
+	# --- update out_tvr_tel_boundaries
+	# --- update sub_recovery_adj
+	#
+	if dist_in_prefixmerge == None or exists_and_is_nonzero(dist_in_prefixmerge) == False:
+		dist_matrix_prefixmerge = np.zeros((len(out_consensus), len(out_consensus)))
+		for i in range(len(out_consensus)):
+			for j in range(i+1,len(out_consensus)):
+				min_len    = min(len(out_consensus[i]), len(out_consensus[j]))
+				trunc_seq  = [out_consensus[i][:min_len], out_consensus[j][:min_len]]
+				pref_score = {}
+				parallel_alignment_job(trunc_seq, [(0,1)], pq, pref_score,
+				                       scoring_matrix=scoring_matrix,
+				                       gap_bool=(True,True),
+				                       adjust_lens=False,
+				                       randshuffle=1)
+				dist_matrix_prefixmerge[i,j] = pref_score[(0,1)]
+				dist_matrix_prefixmerge[j,i] = pref_score[(0,1)]
+				print(i, j, pref_score[(0,1)])
+		if dist_in_prefixmerge != None:
+			np.save(dist_in_prefixmerge, dist_matrix_prefixmerge)
+	else:
+		dist_matrix_prefixmerge = np.load(dist_in_prefixmerge, allow_pickle=True)
+	#
+	merge_clust = [[n] for n in range(len(out_consensus))]
+	for i in range(len(out_consensus)):
+		for j in range(i+1,len(out_consensus)):
+			if dist_matrix_prefixmerge[i,j] <= PREFIX_MERGE_DIST:
+				#print('MERGE:', i, j)
+				for k in range(len(merge_clust)):
+					if i in merge_clust[k] or j in merge_clust[k]:
+						merge_clust[k] = list(set(merge_clust[k] + [i,j]))
+	merge_clust = list(set([tuple(n) for n in merge_clust]))											# collapse redundant
+	merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
+	merge_clust = [n[1] for n in merge_clust]
+	new_out_clust              = []
+	new_out_consensus          = []
+	new_out_tvr_tel_boundaries = []
+	new_subtel_recovery        = []
+	for mc in merge_clust:
+		ci_with_longest_tvr = sorted([(len(out_consensus[ci]), ci) for ci in mc])[-1][1]
+		new_out_clust.append([])
+		for ci in mc:
+			for ri in out_clust[ci]:
+				new_out_clust[-1].append((len(colorvecs_for_msa[ri]), ri))	# gonna sort by length
+		new_out_clust[-1] = [n[1] for n in sorted(new_out_clust[-1], reverse=True)]
+		new_out_consensus.append(out_consensus[ci_with_longest_tvr])
+		new_out_tvr_tel_boundaries.append(out_tvr_tel_boundaries[ci_with_longest_tvr])
+		new_subtel_recovery.append(subtel_recovery[ci_with_longest_tvr])
+	out_clust              = new_out_clust
+	out_consensus          = new_out_consensus
+	out_tvr_tel_boundaries = new_out_tvr_tel_boundaries
+	subtel_recovery        = new_subtel_recovery
+
 	#
 	# lets use tvr/subtel boundary as offset instead of msa offset
 	#
 	all_subtel_lens = [len(subtel_regions[n]) for n in range(len(subtel_regions))]
 	longest_subtel  = max(all_subtel_lens)
 	out_adj         = []
-	for i in range(len(out_clust)):
+	for i in range(len(out_clust)):		# this is strangely complicated...
 		my_subtel_lens    = [len(subtel_regions[n]) for n in out_clust[i]]
 		longest_subtel_cl = max(my_subtel_lens)
 		clust_subtel_adj  = longest_subtel - longest_subtel_cl
-		out_adj.append([longest_subtel_cl - n + clust_subtel_adj for n in my_subtel_lens])
+		if pq == 'p':
+			sub_recovery_adj = -len(subtel_recovery[i])
+		elif pq == 'q':
+			sub_recovery_adj = len(subtel_recovery[i])
+		out_adj.append([longest_subtel_cl - n + clust_subtel_adj + sub_recovery_adj for n in my_subtel_lens])
+
 	#
 	# output mapping quality as well (not sure what I'll do with this yet, maybe filtering?)
 	#
@@ -474,7 +567,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, aln_mode='ds', dist
 #
 #
 #
-def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below'):
+def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', debug_plot=False):
 	my_unknown = np.zeros(len(sequence))
 	for j in range(len(sequence)):
 		if sequence[j] == which_letter:
@@ -504,6 +597,16 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
 			if my_unknown_dens[-1] > lowest_dens_thus_far:
 				lowest_dens_thus_far = my_unknown_dens[-1]
 				pos_with_lowest_dens = j
+	#
+	if debug_plot:
+		fig = mpl.figure(0)
+		mpl.plot(list(range(len(my_unknown_dens))), my_unknown_dens)
+		mpl.plot([first_pos_below_thresh, first_pos_below_thresh], [0,1], '--r')
+		mpl.plot([pos_with_lowest_dens, pos_with_lowest_dens], [0,1], '--b')
+		mpl.title(which_letter + ' ' + thresh_dir)
+		mpl.show()
+		mpl.close(fig)
+	#
 	if first_pos_below_thresh == None:
 		first_pos_below_thresh = pos_with_lowest_dens
 	#
@@ -512,7 +615,7 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
 #
 #
 #
-def find_cumulative_boundary(sequence, which_letters, cum_thresh=0.05, min_hits=100):
+def find_cumulative_boundary(sequence, which_letters, cum_thresh=0.05, min_hits=100, debug_plot=False):
 	hits = [1*(n in which_letters) for n in sequence]
 	hits_cum = np.cumsum(hits)
 	if hits_cum[-1] < min_hits:	# not enough hits to even bother trying
@@ -524,6 +627,13 @@ def find_cumulative_boundary(sequence, which_letters, cum_thresh=0.05, min_hits=
 		if hits_cum[i] >= cum_thresh:
 			first_pos_below_thresh = i
 			break
+	#
+	if debug_plot:
+		fig = mpl.figure(0)
+		mpl.plot(list(range(len(hits_cum))), hits_cum)
+		mpl.plot([first_pos_below_thresh, first_pos_below_thresh], [0,1], '--r')
+		mpl.show()
+		mpl.close(fig)
 	#
 	return first_pos_below_thresh
 
@@ -592,7 +702,7 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
 #
 #
 #
-def cluster_consensus_tvr(sequences, repeats_metadata, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', linkage_method='complete', tree_cut=4.30, alignment_processes=8, job=(1,1), dendrogram_height=12):
+def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', linkage_method='complete', alignment_processes=8, job=(1,1), dendrogram_height=12):
 	#
 	n_seq = len(sequences)
 	#
