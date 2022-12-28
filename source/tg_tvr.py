@@ -504,7 +504,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				for k in range(len(merge_clust)):
 					if i in merge_clust[k] or j in merge_clust[k]:
 						merge_clust[k] = list(set(merge_clust[k] + [i,j]))
-	merge_clust = list(set([tuple(n) for n in merge_clust]))											# collapse redundant
+	merge_clust = list(set([tuple(sorted(n)) for n in merge_clust]))									# collapse redundant
 	merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
 	merge_clust = [n[1] for n in merge_clust]
 	#print('merge_clust:', merge_clust)
