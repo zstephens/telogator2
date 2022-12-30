@@ -168,7 +168,7 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
 #
 #	repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
 #
-def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode='ds', dist_in=None, dist_in_prefixmerge=None, fig_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
+def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode='ds', dist_in=None, dist_in_prefix=None, fig_name=None, fig_prefix_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
 	#
 	[kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
 	#
@@ -476,8 +476,8 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	# --- update out_tvr_tel_boundaries
 	# --- update sub_recovery_adj
 	#
-	if dist_in_prefixmerge == None or exists_and_is_nonzero(dist_in_prefixmerge) == False:
-		dist_matrix_prefixmerge = np.zeros((len(out_consensus), len(out_consensus)))
+	if dist_in_prefix == None or exists_and_is_nonzero(dist_in_prefix) == False:
+		dist_matrix_prefix = np.zeros((len(out_consensus), len(out_consensus)))
 		for i in range(len(out_consensus)):
 			for j in range(i+1,len(out_consensus)):
 				min_len    = min(len(out_consensus[i]), len(out_consensus[j]))
@@ -488,26 +488,38 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				                       gap_bool=(True,True),
 				                       adjust_lens=False,
 				                       randshuffle=1)
-				dist_matrix_prefixmerge[i,j] = pref_score[(0,1)]
-				dist_matrix_prefixmerge[j,i] = pref_score[(0,1)]
+				dist_matrix_prefix[i,j] = pref_score[(0,1)]
+				dist_matrix_prefix[j,i] = pref_score[(0,1)]
 				#print(i, j, pref_score[(0,1)])
-		if dist_in_prefixmerge != None:
-			np.save(dist_in_prefixmerge, dist_matrix_prefixmerge)
+		if dist_in_prefix != None:
+			np.save(dist_in_prefix, dist_matrix_prefix)
 	else:
-		dist_matrix_prefixmerge = np.load(dist_in_prefixmerge, allow_pickle=True)
-	# an extremely sketchy way to accomplish single-linkage clustering
-	merge_clust = [[n] for n in range(len(out_consensus))]
-	for i in range(len(out_consensus)):
-		for j in range(len(out_consensus)):
-			if dist_matrix_prefixmerge[i,j] <= PREFIX_MERGE_DIST:
-				#print('MERGE:', i, j)
-				for k in range(len(merge_clust)):
-					if i in merge_clust[k] or j in merge_clust[k]:
-						merge_clust[k] = list(set(merge_clust[k] + [i,j]))
-	merge_clust = list(set([tuple(sorted(n)) for n in merge_clust]))									# collapse redundant
+		dist_matrix_prefix = np.load(dist_in_prefix, allow_pickle=True)
+	#
+	dist_array_prefix  = squareform(dist_matrix_prefix)
+	Z_prefix           = linkage(dist_array_prefix, method='complete')
+	assignments_prefix = fcluster(Z_prefix, PREFIX_MERGE_DIST, 'distance').tolist()
+	#print('assignments_prefix:', assignments_prefix)
+	merge_clust = [[] for n in range(max(assignments_prefix))]
+	for i in range(len(assignments_prefix)):
+		merge_clust[assignments_prefix[i]-1].append(i)
+	#
+	if fig_prefix_name != None:
+		pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
+		fig = mpl.figure(3, figsize=(8,6))
+		mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
+		dendrogram(Z_prefix, color_threshold=PREFIX_MERGE_DIST, labels=pref_clust_labels)
+		mpl.axhline(y=[PREFIX_MERGE_DIST], linestyle='dashed', color='black', alpha=0.7)
+		mpl.xlabel('cluster #')
+		mpl.ylabel('distance')
+		mpl.title(my_chr + ' : ' + str(my_pos))
+		mpl.tight_layout()
+		mpl.savefig(fig_prefix_name)
+		mpl.close(fig)
+	#
 	merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
 	merge_clust = [n[1] for n in merge_clust]
-	#print('merge_clust:', merge_clust)
+	print('merge_clust:', merge_clust)
 	new_out_clust              = []
 	new_out_consensus          = []
 	new_out_tvr_tel_boundaries = []

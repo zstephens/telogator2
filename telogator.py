@@ -228,7 +228,7 @@ def main(raw_args=None):
 		refseqs = samfile.references
 		sys.stdout.write('getting all read data from input alignment...')
 		sys.stdout.flush()
-		tt = time.time()
+		tt = time.perf_counter()
 		for aln in samfile.fetch(until_eof=True):
 			sam_line    = str(aln).split('\t')
 			my_ref_ind  = sam_line[2].replace('#','')	# why would there ever be a # symbol here? I don't know.
@@ -246,7 +246,7 @@ def main(raw_args=None):
 			if rnm not in ALIGNMENTS_BY_RNAME:
 				ALIGNMENTS_BY_RNAME[rnm] = []
 			ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
-		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 		sys.stdout.flush()
 		samfile.close()
 		#
@@ -262,7 +262,7 @@ def main(raw_args=None):
 		sys.stdout.write('initial read filtering...')
 		sys.stdout.flush()
 		num_starting_reads = len(ALIGNMENTS_BY_RNAME.keys())
-		tt = time.time()
+		tt = time.perf_counter()
 		for readname in ALIGNMENTS_BY_RNAME.keys():
 			abns_k = repeated_matches_trimming(sorted(ALIGNMENTS_BY_RNAME[readname]), strategy=MATCH_TRIM_STRATEGY, print_debug=PRINT_DEBUG)
 			# did we lose all of our alignments during trimming?
@@ -314,7 +314,7 @@ def main(raw_args=None):
 			# we passed all filters?
 			FILTERED_READS.append([readname, rdat, copy.deepcopy(abns_k)])
 		#
-		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 		num_ending_reads = len(FILTERED_READS)
 		sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
 		sys.stdout.flush()
@@ -342,7 +342,7 @@ def main(raw_args=None):
 		sys.stdout.flush()
 		num_starting_reads = len(FILTERED_READS)
 		num_ending_reads   = 0
-		tt = time.time()
+		tt = time.perf_counter()
 		#
 		par_params      = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, ANCHORING_STRATEGY, PLOT_READS, INPUT_TYPE, OUT_PLOT_DIR, PRINT_DEBUG, PLOT_FILT_READS]
 		par_params_filt = [MAXIMUM_TEL_FRAC, MAXIMUM_MINOR_PQ, MAXIMUM_UNEXPLAINED_FRAC, MAX_NONTEL_MEDIAN_KMER_DENSITY]
@@ -384,7 +384,7 @@ def main(raw_args=None):
 					NONTEL_REFSPANS_BY_CHR[k] = []
 				NONTEL_REFSPANS_BY_CHR[k].extend(nontel_spans[k])
 		#
-		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 		sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
 		sys.stdout.flush()
 
@@ -416,7 +416,7 @@ def main(raw_args=None):
 	sys.stdout.write('removing anchored tels that double-anchored according to other reads...')
 	sys.stdout.flush()
 	num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
-	tt = time.time()
+	tt = time.perf_counter()
 	#
 	gdat_params = [MIN_DOUBLE_ANCHOR_LEN, MIN_DOUBLE_ANCHOR_READS, PRINT_DEBUG]
 	del_keys    = get_double_anchored_tels(ANCHORED_TEL_BY_CHR, NONTEL_REFSPANS_BY_CHR, gdat_params)
@@ -429,7 +429,7 @@ def main(raw_args=None):
 			del_keys2.append(k)
 	for k in del_keys2:
 		del ANCHORED_TEL_BY_CHR[k]
-	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+	sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 	sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
 	sys.stdout.flush()
 
@@ -452,7 +452,7 @@ def main(raw_args=None):
 			del_keys2.append(k)
 	for k in del_keys2:
 		del ANCHORED_TEL_BY_CHR[k]
-	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+	sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 	sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
 	sys.stdout.flush()
 
@@ -585,7 +585,7 @@ def main(raw_args=None):
 	####if READ_TYPE in ['hifi']:
 	####	sys.stdout.write('[HiFi only] filtering reads with noisy telomeres...')
 	####	sys.stdout.flush()
-	####	tt = time.time()
+	####	tt = time.perf_counter()
 	####	num_starting_reads = 0
 	####	for tci in range(len(tel_composition_data)):
 	####		[my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tel_composition_data[tci]
@@ -606,7 +606,7 @@ def main(raw_args=None):
 	####	num_ending_reads = 0
 	####	for tci in range(len(tel_composition_data)):
 	####		num_ending_reads += len(tel_composition_data[tci][6])
-	####	sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+	####	sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 	####	sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
 	####	sys.stdout.flush()
 
@@ -624,7 +624,7 @@ def main(raw_args=None):
 			continue
 		sys.stdout.write(' - ' + my_chr + ':' + str(my_pos) + ' ' + str(len(ind_list)) + ' reads')
 		sys.stdout.flush()
-		tt = time.time()
+		tt = time.perf_counter()
 		#
 		my_tc = TREECUT_DEFAULT
 		if (my_chr,None) in custom_treecut_vals:
@@ -640,16 +640,18 @@ def main(raw_args=None):
 		telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_' + plotname_chr + '.png'
 		telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_' + plotname_chr + '.png'
 		dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-'    + zfcn + '_' + plotname_chr + '.png'
+		dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-'  + zfcn + '_' + plotname_chr + '.png'
 		dist_matrix_fn = OUT_TVR_TEMP + 'cluster-'       + zfcn + '_' + plotname_chr + '.npy'
-		dist_prefix_fn = OUT_TVR_TEMP + 'prefix-'       + zfcn + '_' + plotname_chr + '.npy'
+		dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-'     + zfcn + '_' + plotname_chr + '.npy'
 		consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
 		#
 		read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos, my_tc,
 		                              aln_mode='ds',
 		                              alignment_processes=NUM_PROCESSES,
 		                              dist_in=dist_matrix_fn,
-		                              dist_in_prefixmerge=dist_prefix_fn,
+		                              dist_in_prefix=dist_prefix_fn,
 		                              fig_name=dendrogram_fn,
+		                              fig_prefix_name=dend_prefix_fn,
 		                              save_msa=consensus_fn,
 		                              muscle_dir=OUT_TVR_TEMP,
 		                              muscle_exe=MUSCLE_EXE,
@@ -751,7 +753,7 @@ def main(raw_args=None):
 				               draw_boundaries=consensus_tvr_tel_pos,
 				               plot_params=custom_plot_params)
 		#
-		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 		sys.stdout.flush()
 
 	#
@@ -763,7 +765,7 @@ def main(raw_args=None):
 	else:
 		sys.stdout.write('pairwise comparing all consensus TVR sequences...')
 		sys.stdout.flush()
-		tt = time.time()
+		tt = time.perf_counter()
 		all_tvrs   = []
 		all_labels = []
 		allele_ids = {}
@@ -789,7 +791,7 @@ def main(raw_args=None):
 				allele_ids[my_i] = i + 1
 		for i in range(len(ALLELE_TEL_DAT)):
 			ALLELE_TEL_DAT[i][3] = str(allele_ids[i])
-		sys.stdout.write(' (' + str(int(time.time() - tt)) + ' sec)\n')
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 		sys.stdout.flush()
 		num_starting_alleles = len(ALLELE_TEL_DAT)
 		num_unique_alleles   = max(allele_ids.values())
