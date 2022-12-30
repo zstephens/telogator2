@@ -476,68 +476,69 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	# --- update out_tvr_tel_boundaries
 	# --- update sub_recovery_adj
 	#
-	if dist_in_prefix == None or exists_and_is_nonzero(dist_in_prefix) == False:
-		dist_matrix_prefix = np.zeros((len(out_consensus), len(out_consensus)))
-		for i in range(len(out_consensus)):
-			for j in range(i+1,len(out_consensus)):
-				min_len    = min(len(out_consensus[i]), len(out_consensus[j]))
-				trunc_seq  = [out_consensus[i][:min_len], out_consensus[j][:min_len]]
-				pref_score = {}
-				parallel_alignment_job(trunc_seq, [(0,1)], pq, pref_score,
-				                       scoring_matrix=scoring_matrix,
-				                       gap_bool=(True,True),
-				                       adjust_lens=False,
-				                       randshuffle=1)
-				dist_matrix_prefix[i,j] = pref_score[(0,1)]
-				dist_matrix_prefix[j,i] = pref_score[(0,1)]
-				#print(i, j, pref_score[(0,1)])
-		if dist_in_prefix != None:
-			np.save(dist_in_prefix, dist_matrix_prefix)
-	else:
-		dist_matrix_prefix = np.load(dist_in_prefix, allow_pickle=True)
-	#
-	dist_array_prefix  = squareform(dist_matrix_prefix)
-	Z_prefix           = linkage(dist_array_prefix, method='complete')
-	assignments_prefix = fcluster(Z_prefix, PREFIX_MERGE_DIST, 'distance').tolist()
-	#print('assignments_prefix:', assignments_prefix)
-	merge_clust = [[] for n in range(max(assignments_prefix))]
-	for i in range(len(assignments_prefix)):
-		merge_clust[assignments_prefix[i]-1].append(i)
-	#
-	if fig_prefix_name != None:
-		pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
-		fig = mpl.figure(3, figsize=(8,6))
-		mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
-		dendrogram(Z_prefix, color_threshold=PREFIX_MERGE_DIST, labels=pref_clust_labels)
-		mpl.axhline(y=[PREFIX_MERGE_DIST], linestyle='dashed', color='black', alpha=0.7)
-		mpl.xlabel('cluster #')
-		mpl.ylabel('distance')
-		mpl.title(my_chr + ' : ' + str(my_pos))
-		mpl.tight_layout()
-		mpl.savefig(fig_prefix_name)
-		mpl.close(fig)
-	#
-	merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
-	merge_clust = [n[1] for n in merge_clust]
-	print('merge_clust:', merge_clust)
-	new_out_clust              = []
-	new_out_consensus          = []
-	new_out_tvr_tel_boundaries = []
-	new_subtel_recovery        = []
-	for mc in merge_clust:
-		ci_with_longest_tvr = sorted([(len(out_consensus[ci]), ci) for ci in mc])[-1][1]
-		new_out_clust.append([])
-		for ci in mc:
-			for ri in out_clust[ci]:
-				new_out_clust[-1].append((len(colorvecs_for_msa[ri]), ri))	# gonna sort by length
-		new_out_clust[-1] = [n[1] for n in sorted(new_out_clust[-1], reverse=True)]
-		new_out_consensus.append(out_consensus[ci_with_longest_tvr])
-		new_out_tvr_tel_boundaries.append(out_tvr_tel_boundaries[ci_with_longest_tvr])
-		new_subtel_recovery.append(subtel_recovery[ci_with_longest_tvr])
-	out_clust              = new_out_clust
-	out_consensus          = new_out_consensus
-	out_tvr_tel_boundaries = new_out_tvr_tel_boundaries
-	subtel_recovery        = new_subtel_recovery
+	if len(out_clust) > 1:
+		if dist_in_prefix == None or exists_and_is_nonzero(dist_in_prefix) == False:
+			dist_matrix_prefix = np.zeros((len(out_consensus), len(out_consensus)))
+			for i in range(len(out_consensus)):
+				for j in range(i+1,len(out_consensus)):
+					min_len    = min(len(out_consensus[i]), len(out_consensus[j]))
+					trunc_seq  = [out_consensus[i][:min_len], out_consensus[j][:min_len]]
+					pref_score = {}
+					parallel_alignment_job(trunc_seq, [(0,1)], pq, pref_score,
+					                       scoring_matrix=scoring_matrix,
+					                       gap_bool=(True,True),
+					                       adjust_lens=False,
+					                       randshuffle=1)
+					dist_matrix_prefix[i,j] = pref_score[(0,1)]
+					dist_matrix_prefix[j,i] = pref_score[(0,1)]
+					#print(i, j, pref_score[(0,1)])
+			if dist_in_prefix != None:
+				np.save(dist_in_prefix, dist_matrix_prefix)
+		else:
+			dist_matrix_prefix = np.load(dist_in_prefix, allow_pickle=True)
+		#
+		dist_array_prefix  = squareform(dist_matrix_prefix)
+		Z_prefix           = linkage(dist_array_prefix, method='complete')
+		assignments_prefix = fcluster(Z_prefix, PREFIX_MERGE_DIST, 'distance').tolist()
+		#print('assignments_prefix:', assignments_prefix)
+		merge_clust = [[] for n in range(max(assignments_prefix))]
+		for i in range(len(assignments_prefix)):
+			merge_clust[assignments_prefix[i]-1].append(i)
+		#
+		if fig_prefix_name != None:
+			pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
+			fig = mpl.figure(3, figsize=(8,6))
+			mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
+			dendrogram(Z_prefix, color_threshold=PREFIX_MERGE_DIST, labels=pref_clust_labels)
+			mpl.axhline(y=[PREFIX_MERGE_DIST], linestyle='dashed', color='black', alpha=0.7)
+			mpl.xlabel('cluster #')
+			mpl.ylabel('distance')
+			mpl.title(my_chr + ' : ' + str(my_pos))
+			mpl.tight_layout()
+			mpl.savefig(fig_prefix_name)
+			mpl.close(fig)
+		#
+		merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
+		merge_clust = [n[1] for n in merge_clust]
+		print('merge_clust:', merge_clust)
+		new_out_clust              = []
+		new_out_consensus          = []
+		new_out_tvr_tel_boundaries = []
+		new_subtel_recovery        = []
+		for mc in merge_clust:
+			ci_with_longest_tvr = sorted([(len(out_consensus[ci]), ci) for ci in mc])[-1][1]
+			new_out_clust.append([])
+			for ci in mc:
+				for ri in out_clust[ci]:
+					new_out_clust[-1].append((len(colorvecs_for_msa[ri]), ri))	# gonna sort by length
+			new_out_clust[-1] = [n[1] for n in sorted(new_out_clust[-1], reverse=True)]
+			new_out_consensus.append(out_consensus[ci_with_longest_tvr])
+			new_out_tvr_tel_boundaries.append(out_tvr_tel_boundaries[ci_with_longest_tvr])
+			new_subtel_recovery.append(subtel_recovery[ci_with_longest_tvr])
+		out_clust              = new_out_clust
+		out_consensus          = new_out_consensus
+		out_tvr_tel_boundaries = new_out_tvr_tel_boundaries
+		subtel_recovery        = new_subtel_recovery
 
 	#
 	# lets use tvr/subtel boundary as offset instead of msa offset
