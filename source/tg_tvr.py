@@ -467,7 +467,11 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				denoised_consensus = denoised_consensus[::-1]
 			tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters, cum_thresh=TVR_CANON_FILT_PARAMS_LENIENT[1], min_hits=TVR_CANON_FILT_PARAMS_LENIENT[2])
 			#print('LENIENT TVR BOUNDARY (cluster '+str(i)+'):', len(out_consensus[i]) - tel_boundary + 1)
-		out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + TVR_BOUNDARY_BUFF + 1)
+		# if we did find one, buffer slightly to include variant repeats at the edge
+		if tel_boundary != len(out_consensus[i])+1:
+			out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + TVR_BOUNDARY_BUFF + 1)
+		else:
+			out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + 1)
 
 	#
 	# merge clusters of TVRs if they are a prefix of a larger TVR
@@ -520,7 +524,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 		#
 		merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
 		merge_clust = [n[1] for n in merge_clust]
-		print('merge_clust:', merge_clust)
+		#print('merge_clust:', merge_clust)
 		new_out_clust              = []
 		new_out_consensus          = []
 		new_out_tvr_tel_boundaries = []
