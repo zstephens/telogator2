@@ -72,7 +72,7 @@ def main(raw_args=None):
 	parser.add_argument('-vrt', type=int,  required=False, metavar='10000',       default=10000,     help="Violin plot (read length) tick size")
 	#
 	parser.add_argument('-m',   type=str,  required=False, metavar='muscle',      default='muscle',  help="/path/to/muscle executable")
-	parser.add_argument('-at',  type=float,required=False, metavar='0.180',       default=0.180,     help="Default treecut value to clustering TVRs")
+	parser.add_argument('-at',  type=float,required=False, metavar='0.150',       default=0.150,     help="Default treecut value to clustering TVRs")
 	parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
 	parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
 	parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")

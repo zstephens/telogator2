@@ -178,6 +178,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	canonical_letter = None
 	denoise_chars    = []
 	tvr_letters      = []
+	nofilt_letters   = []
 	for i in range(len(kmer_list)):
 		if 'canonical' in kmer_flags[i]:
 			canonical_letter = kmer_letters[i]
@@ -185,6 +186,8 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 			denoise_chars.append(kmer_letters[i])
 		if 'tvr' in kmer_flags[i]:
 			tvr_letters.append(kmer_letters[i])
+		if 'nofilt' in kmer_flags[i]:
+			nofilt_letters.append(kmer_letters[i])
 		if kmer_letters[i] == UNKNOWN_LETTER:
 			print('Error: character A is reserved for unknown sequence')
 			exit(1)
@@ -447,10 +450,15 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				current_cons = out_consensus[i][:MAX_TVR_LEN] + canonical_letter*(len(out_consensus[i])-MAX_TVR_LEN)
 		else:
 			current_cons = out_consensus[i]
-		denoised_consensus = denoise_colorvec(current_cons, chars_to_delete=tvr_letters, min_size=TVR_CANON_FILT_PARAMS_STRICT[0], char_to_merge=canonical_letter)
+		denoised_consensus = denoise_colorvec(current_cons,
+		                                      chars_to_delete=[n for n in tvr_letters if n not in nofilt_letters],
+		                                      min_size=TVR_CANON_FILT_PARAMS_STRICT[0],
+		                                      char_to_merge=canonical_letter)
 		if pq == 'q':
 			denoised_consensus = denoised_consensus[::-1]
-		tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters, cum_thresh=TVR_CANON_FILT_PARAMS_STRICT[1], min_hits=TVR_CANON_FILT_PARAMS_STRICT[2])
+		tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters,
+		                                        cum_thresh=TVR_CANON_FILT_PARAMS_STRICT[1],
+		                                        min_hits=TVR_CANON_FILT_PARAMS_STRICT[2])
 		#
 		# failed to find tel boundary, try again with [LENIENT] params
 		#
@@ -462,10 +470,15 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 					current_cons = out_consensus[i][:MAX_TVR_LEN_SHORT] + canonical_letter*(len(out_consensus[i])-MAX_TVR_LEN_SHORT)
 			else:
 				current_cons = out_consensus[i]
-			denoised_consensus = denoise_colorvec(current_cons, chars_to_delete=tvr_letters, min_size=TVR_CANON_FILT_PARAMS_LENIENT[0], char_to_merge=canonical_letter)
+			denoised_consensus = denoise_colorvec(current_cons,
+			                                      chars_to_delete=[n for n in tvr_letters if n not in nofilt_letters],
+			                                      min_size=TVR_CANON_FILT_PARAMS_LENIENT[0],
+			                                      char_to_merge=canonical_letter)
 			if pq == 'q':
 				denoised_consensus = denoised_consensus[::-1]
-			tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters, cum_thresh=TVR_CANON_FILT_PARAMS_LENIENT[1], min_hits=TVR_CANON_FILT_PARAMS_LENIENT[2])
+			tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters,
+			                                        cum_thresh=TVR_CANON_FILT_PARAMS_LENIENT[1],
+			                                        min_hits=TVR_CANON_FILT_PARAMS_LENIENT[2])
 			#print('LENIENT TVR BOUNDARY (cluster '+str(i)+'):', len(out_consensus[i]) - tel_boundary + 1)
 		# if we did find one, buffer slightly to include variant repeats at the edge
 		if tel_boundary != len(out_consensus[i])+1:

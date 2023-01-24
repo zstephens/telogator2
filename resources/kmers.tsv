@@ -16,9 +16,9 @@ CCCTTAA	darkcyan	S	tvr
 CCCTAG	orange	G	tvr
 CCTAG	darkorange	Q	tvr
 
-CCCTCA	yellow	E	tvr
+CCCTCA	yellow	E	tvr,nofilt
 
-CCCTCG	tan	I	tvr
+CCCTCG	tan	I	tvr,nofilt
 
 CCCTGA	red	D	tvr
 
