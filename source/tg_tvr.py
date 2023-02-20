@@ -362,6 +362,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	#
 	out_consensus    = []
 	subtel_consensus = []
+	#
 	if save_msa != None and exists_and_is_nonzero(save_msa):
 		my_reader = TG_Reader(save_msa, verbose=False)
 		while True:
@@ -377,6 +378,10 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 			if PRINT_DEBUG:
 				print('mismatch #clusters from input consensus:', len(out_consensus), '!=', len(out_clust))
 			out_consensus = []
+	#
+	buffered_tvrs = {}
+	buffered_subs = {}
+	#
 	if save_msa == None or len(out_consensus) == 0:
 		for i in range(len(out_clust)):
 			max_tvr_len = max([len(colorvecs_for_msa[n]) for n in out_clust[i]])
@@ -385,21 +390,21 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				tvr_buff_seq = canonical_letter*(max_tvr_len - len(colorvecs_for_msa[ci]))
 				sub_buff_seq = UNKNOWN_LETTER*(max_sub_len - len(subtel_regions[ci]))
 				if pq == 'p':
-					colorvecs_for_msa[ci] = tvr_buff_seq + colorvecs_for_msa[ci]
-					subtel_regions[ci]    = subtel_regions[ci] + sub_buff_seq
+					buffered_tvrs[ci] = tvr_buff_seq + colorvecs_for_msa[ci]
+					buffered_subs[ci] = subtel_regions[ci] + sub_buff_seq
 				elif pq == 'q':
-					colorvecs_for_msa[ci] = colorvecs_for_msa[ci] + tvr_buff_seq
-					subtel_regions[ci]    = sub_buff_seq + subtel_regions[ci]
+					buffered_tvrs[ci] = colorvecs_for_msa[ci] + tvr_buff_seq
+					buffered_subs[ci] = sub_buff_seq + subtel_regions[ci]
 		# 
 		for i in range(len(out_clust)):
 			if len(out_clust[i]) == 1:
-				out_consensus.append(colorvecs_for_msa[out_clust[i][0]])
-				subtel_consensus.append(subtel_regions[out_clust[i][0]])
+				out_consensus.append(buffered_tvrs[out_clust[i][0]])
+				subtel_consensus.append(buffered_subs[out_clust[i][0]])
 			else:
-				clust_seq = [colorvecs_for_msa[n] for n in out_clust[i]]
+				clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
 				[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir, char_score_adj=char_score_adj)
 				out_consensus.append(consensus_seq)
-				clust_seq = [subtel_regions[n] for n in out_clust[i]]
+				clust_seq = [buffered_subs[n] for n in out_clust[i]]
 				[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir)
 				subtel_consensus.append(consensus_seq)
 		#

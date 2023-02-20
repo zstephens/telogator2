@@ -83,6 +83,8 @@ def main(raw_args=None):
 	parser.add_argument('--plot-filt-tvr', required=False, action='store_true',   default=False,     help="Plot denoised TVR instead of raw signal")
 	parser.add_argument('--debug',         required=False, action='store_true',   default=False,     help="Print results for each read as its processed")
 	#
+	parser.add_argument('--no-anchorfilt', required=False, action='store_true',   default=False,     help="Skip double-anchored read filtering")
+	#
 	parser.add_argument('-p',   type=int,  required=False, metavar='4',           default=4,         help="Number of processes to use")
 
 	args = parser.parse_args()
@@ -192,6 +194,8 @@ def main(raw_args=None):
 	#
 	(VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
 	(VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
+	#
+	SKIP_FILT_DOUBLEANCHOR = args.no_anchorfilt
 	#
 	NUM_PROCESSES = args.p
 
@@ -413,25 +417,26 @@ def main(raw_args=None):
 	#
 	# remove telomeres that we thought were single-anchored but other reads tell us it is actually double-anchored
 	#
-	sys.stdout.write('removing anchored tels that double-anchored according to other reads...')
-	sys.stdout.flush()
-	num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
-	tt = time.perf_counter()
-	#
-	gdat_params = [MIN_DOUBLE_ANCHOR_LEN, MIN_DOUBLE_ANCHOR_READS, PRINT_DEBUG]
-	del_keys    = get_double_anchored_tels(ANCHORED_TEL_BY_CHR, NONTEL_REFSPANS_BY_CHR, gdat_params)
-	#
-	num_ending_reads = num_starting_reads - len(del_keys)
-	del_keys2 = []
-	for (k,di) in del_keys:
-		del ANCHORED_TEL_BY_CHR[k][di]
-		if len(ANCHORED_TEL_BY_CHR[k]) == 0:
-			del_keys2.append(k)
-	for k in del_keys2:
-		del ANCHORED_TEL_BY_CHR[k]
-	sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-	sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
-	sys.stdout.flush()
+	if not SKIP_FILT_DOUBLEANCHOR:
+		sys.stdout.write('removing anchored tels that double-anchored according to other reads...')
+		sys.stdout.flush()
+		num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
+		tt = time.perf_counter()
+		#
+		gdat_params = [MIN_DOUBLE_ANCHOR_LEN, MIN_DOUBLE_ANCHOR_READS, PRINT_DEBUG]
+		del_keys    = get_double_anchored_tels(ANCHORED_TEL_BY_CHR, NONTEL_REFSPANS_BY_CHR, gdat_params)
+		#
+		num_ending_reads = num_starting_reads - len(del_keys)
+		del_keys2 = []
+		for (k,di) in del_keys:
+			del ANCHORED_TEL_BY_CHR[k][di]
+			if len(ANCHORED_TEL_BY_CHR[k]) == 0:
+				del_keys2.append(k)
+		for k in del_keys2:
+			del ANCHORED_TEL_BY_CHR[k]
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+		sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
+		sys.stdout.flush()
 
 	#
 	# remove reads where telomere region is insufficiently canonical
@@ -439,6 +444,7 @@ def main(raw_args=None):
 	sys.stdout.write('removing reads with tel regions that are insufficiently canonical...')
 	sys.stdout.flush()
 	num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
+	tt = time.perf_counter()
 	#
 	my_kmer_list = [CANONICAL_STRING, CANONICAL_STRING_REV]
 	gtbct_params = [MIN_CANONICAL_FRAC, my_kmer_list, READ_TYPE]
