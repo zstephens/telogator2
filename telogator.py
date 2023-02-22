@@ -35,7 +35,7 @@ DUMMY_TEL_MAPQ = 60
 # for debugging purposes (don't replot figures if they already exist)
 DO_NOT_OVERWRITE = False
 # for debugging purposes (only cluster TVRs at specific arms)
-DEBUG_CHR_LIST = ['chr5p']
+DEBUG_CHR_LIST = []
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
