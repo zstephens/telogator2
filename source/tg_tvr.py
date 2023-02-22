@@ -405,8 +405,11 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 				[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir, char_score_adj=char_score_adj)
 				out_consensus.append(consensus_seq)
 				clust_seq = [buffered_subs[n] for n in out_clust[i]]
-				[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir)
-				subtel_consensus.append(consensus_seq)
+				if clust_seq[0] == '':
+					subtel_consensus.append('')
+				else:
+					[msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir)
+					subtel_consensus.append(consensus_seq)
 		#
 		if save_msa != None:
 			f = open(save_msa,'w')
@@ -586,6 +589,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 		out_mapq.append([kmer_dat[m][5] for m in n])
 	#
 	if True or PRINT_DEBUG:
+		print()
 		print('cluster_tvr() results:')
 		print(out_clust)
 		print(out_mapq)

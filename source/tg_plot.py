@@ -206,7 +206,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
 			while xtt[-1] > X_STEP:
 				xtt.append(xtt[-1] - X_STEP)
 				xtl.append(xtl[-1] - X_STEP)
-	elif which_tel == 'q':
+	else:
 		if xlim != None:
 			xtt = [n for n in range(xlim[0],xlim[1]+1,X_STEP)]
 			xtl = [n for n in range(xlim[0],xlim[1]+1,X_STEP)]

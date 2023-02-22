@@ -35,7 +35,7 @@ DUMMY_TEL_MAPQ = 60
 # for debugging purposes (don't replot figures if they already exist)
 DO_NOT_OVERWRITE = False
 # for debugging purposes (only cluster TVRs at specific arms)
-DEBUG_CHR_LIST = []
+DEBUG_CHR_LIST = ['chr5p']
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -219,8 +219,8 @@ def main(raw_args=None):
 		f = open(INPUT_ALN, 'rb')
 		my_pickle = pickle.load(f)
 		f.close()
-		ANCHORED_TEL_BY_CHR = my_pickle['anchored-tels']
-		NONTEL_REFSPANS_BY_CHR   = my_pickle['non-tel-ref-spans']
+		ANCHORED_TEL_BY_CHR    = my_pickle['anchored-tels']
+		NONTEL_REFSPANS_BY_CHR = my_pickle['non-tel-ref-spans']
 	else:
 		if INPUT_TYPE == 'sam':
 			samfile = pysam.AlignmentFile(INPUT_ALN, "r")
