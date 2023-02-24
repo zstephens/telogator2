@@ -302,5 +302,6 @@ def get_telomere_composition(anchored_tel_dat, gtc_params):
 	                       my_dbta,
 	                       my_type,
 	                       my_rnm,
-	                       my_mapq]
+	                       my_mapq,
+	                       out_fasta_dat]
 	return tel_composition_dat

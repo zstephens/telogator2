@@ -158,7 +158,10 @@ def plot_all_read_data(density_data, tl_vals, aln_dat, tel_window, f_title, fig_
 #	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read_orientation, read_name, read_mapq]
 #
 def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=None, draw_boundaries=None, plot_params={}):
-	which_tel = my_chr[-1]
+	if my_chr:
+		which_tel = my_chr[-1]
+	else:
+		which_tel = 'q'
 	max_tlen  = max([n[1] for n in kmer_dat])
 	n_reads   = len(kmer_dat)
 	#
@@ -219,7 +222,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
 	for clust_i in range(len(read_clusters)):
 		for i in range(len(read_clusters[clust_i])):
 			my_ind_all = read_clusters[clust_i][i]
-			[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq] = kmer_dat[my_ind_all]
+			[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[my_ind_all]
 			msa_adj = read_msa_offsets[clust_i][i]
 			plot_i  = clust_i + reads_plotted_thus_far
 			if plot_i == 0:

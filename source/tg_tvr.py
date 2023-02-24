@@ -140,7 +140,7 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
 	#
 	my_out = []
 	for i in range(n_reads):
-		[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq] = kmer_dat[i]
+		[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[i]
 		my_letters = [UNKNOWN_LETTER for n in range(my_tlen)]
 		for ki in range(len(my_kmer_hits)):
 			if len(my_kmer_hits[ki]):
@@ -164,7 +164,7 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
 	return my_out
 
 #
-#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read-orientation, readname, anchor_mapq]
+#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read-orientation, readname, anchor_mapq, fasta_dat]
 #
 #	repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
 #
@@ -224,7 +224,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	#
 	all_colorvecs = []
 	for i in range(n_reads):
-		[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq] = kmer_dat[i]
+		[my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[i]
 		my_letters = [UNKNOWN_LETTER for n in range(my_tlen)]
 		for ki in range(len(my_kmer_hits)):
 			if len(my_kmer_hits[ki]):

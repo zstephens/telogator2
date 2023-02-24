@@ -710,7 +710,12 @@ def main(raw_args=None):
 				                       mapq_str,
 				                       str(len(allele_cons_out)),
 				                       allele_cons_out])
-				allele_count_by_chr[my_chr] += 1		
+				allele_count_by_chr[my_chr] += 1
+			#
+			# fasta data for subtel / tel, can be used for debugging
+			#
+			allele_fasta_all = [kmer_hit_dat[n][6] for n in read_clust_dat[0][allele_i]]
+			allele_fasta_tel = [n[0] for n in allele_fasta_all]
 		#
 		# adjust kmer_hit_dat based on the filters and etc that were applied during clustering
 		#
@@ -738,7 +743,7 @@ def main(raw_args=None):
 			else:
 				cons_readname += ' reads]'
 			if cons_readcount >= MIN_READS_PER_PHASE:
-				consensus_kmer_hit_dat.append([redrawn_consensus[rdki], len(my_consensus_vecs[rdki]), 0, 'FWD', cons_readname, DUMMY_TEL_MAPQ])
+				consensus_kmer_hit_dat.append([redrawn_consensus[rdki], len(my_consensus_vecs[rdki]), 0, 'FWD', cons_readname, DUMMY_TEL_MAPQ, None])
 				consensus_clust_dat[0].append([rdki])
 				consensus_clust_dat[1].append([DUMMY_TEL_MAPQ])
 				consensus_clust_dat[2].append([0])
