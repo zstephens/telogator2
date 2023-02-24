@@ -11,7 +11,9 @@ CCAA	darkgreen	Q	denoise
 CCCCAA	green	F	denoise,tvr
 
 CCCTTA	cyan	K	tvr
+CCTTAA	darkcyan	T	tvr
 CCCTTAA	darkcyan	T	tvr
+CCCTTGA	darkcyan	T	tvr
 
 CCCTAG	orange	G	tvr
 CCTAG	darkorange	R	tvr
@@ -22,6 +24,7 @@ CCCTCG	tan	I	tvr,nofilt
 
 CCCTGA	red	D	tvr
 
+CCCGGA	pink	W	tvr
 CCCGAA	violet	H	tvr
 CCCGA	darkviolet	S	tvr
 CCCCAG	purple	L	tvr

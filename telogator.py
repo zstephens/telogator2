@@ -716,6 +716,8 @@ def main(raw_args=None):
 			#
 			allele_fasta_all = [kmer_hit_dat[n][6] for n in read_clust_dat[0][allele_i]]
 			allele_fasta_tel = [n[0] for n in allele_fasta_all]
+			#print(allele_fasta_tel)
+			#exit(1)
 		#
 		# adjust kmer_hit_dat based on the filters and etc that were applied during clustering
 		#
