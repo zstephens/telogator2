@@ -89,21 +89,7 @@ def main(raw_args=None):
 				elif READTYPE == 'SRA':
 					rn_dict[get_sra_readname(my_rnm)] = True
 				elif READTYPE == 'CCS':
-					read_passes_filters = True
-					readname_splt = my_rnm.split(' ')
-					print(readname_splt)
-					if len(readname_splt) >= 2 and readname_splt[1][:3] == 'np=':
-						my_np = int(readname_splt[1][3:])
-						print(my_np)
-						if my_np < MIN_NP:
-							read_passes_filters = False
-					if read_passes_filters and len(readname_splt) >= 3 and readname_splt[2][:3] == 'rq=':
-						my_rq = float(readname_splt[2][3:])
-						print(my_rq)
-						if my_rq < MIN_RQ:
-							read_passes_filters = False
-					if read_passes_filters:
-						rn_dict[get_ccs_readname(my_rnm)] = True
+					rn_dict[get_ccs_readname(my_rnm)] = True
 				else:
 					print('Error: unknown read type, must be: CCS / CLR / SRA')
 					exit(1)
@@ -125,10 +111,25 @@ def main(raw_args=None):
 		            (READTYPE == 'SRA' and get_sra_readname(my_name) in rn_dict),
 		            (READTYPE == 'CCS' and get_ccs_readname(my_name) in rn_dict)]
 		if any(got_hits):
-			if OUTPUT_IS_FASTQ:
-				f_out.write('@' + my_name + '\n' + my_rdat + '\n' + '+' + '\n' + my_qdat + '\n')
-			else:
-				f_out.write('>' + my_name + '\n' + my_rdat + '\n')
+			read_passes_filters = True
+			readname_splt = my_name.split(' ')
+			print(readname_splt)
+			if len(readname_splt) >= 2 and readname_splt[1][:3] == 'np=':
+				my_np = int(readname_splt[1][3:])
+				print(my_np)
+				if my_np < MIN_NP:
+					read_passes_filters = False
+			if read_passes_filters and len(readname_splt) >= 3 and readname_splt[2][:3] == 'rq=':
+				my_rq = float(readname_splt[2][3:])
+				print(my_rq)
+				if my_rq < MIN_RQ:
+					read_passes_filters = False
+			print(read_passes_filters)
+			if read_passes_filters:
+				if OUTPUT_IS_FASTQ:
+					f_out.write('@' + my_name + '\n' + my_rdat + '\n' + '+' + '\n' + my_qdat + '\n')
+				else:
+					f_out.write('>' + my_name + '\n' + my_rdat + '\n')
 	#
 	my_reader.close()
 	f_out.close()
