@@ -17,11 +17,13 @@ def get_ccs_readname(rn):
 
 def main(raw_args=None):
 	parser = argparse.ArgumentParser(description='get_subtel_reads.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-	parser.add_argument('-b',         type=str, required=True,  metavar='input.bam',        help="* Input BAM")
-	parser.add_argument('-i',         type=str, required=True,  metavar='input.fa',         help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
-	parser.add_argument('-o',         type=str, required=True,  metavar='output.fa',        help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
-	parser.add_argument('--bed',      type=str, required=False, metavar='subtel.bed',       help="Subtel regions",   default='')
-	parser.add_argument('--readtype', type=str, required=False, metavar='CCS / CLR / SRA',  help="Read name format", default='SRA')
+	parser.add_argument('-b',         type=str,   required=True,  metavar='input.bam',        help="* Input BAM")
+	parser.add_argument('-i',         type=str,   required=True,  metavar='input.fa',         help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
+	parser.add_argument('-o',         type=str,   required=True,  metavar='output.fa',        help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
+	parser.add_argument('--bed',      type=str,   required=False, metavar='subtel.bed',       help="Subtel regions",              default='')
+	parser.add_argument('--readtype', type=str,   required=False, metavar='CCS / CLR / SRA',  help="Read name format",            default='SRA')
+	parser.add_argument('--min-np',   type=int,   required=False, metavar='3',                help="Min passes (CCS only)",       default=3)
+	parser.add_argument('--min-rq',   type=float, required=False, metavar='0.8',              help="Min read quality (CCS only)", default=0.8)
 	args = parser.parse_args()
 
 	IN_BAM     = args.b
@@ -30,6 +32,9 @@ def main(raw_args=None):
 	#
 	SUBTEL_BED = args.bed
 	READTYPE   = args.readtype
+	#
+	MIN_NP     = args.min_np
+	MIN_RQ     = args.min_rq
 
 	if SUBTEL_BED == '':
 		print('using default subtelomere regions...')
@@ -84,7 +89,18 @@ def main(raw_args=None):
 				elif READTYPE == 'SRA':
 					rn_dict[get_sra_readname(my_rnm)] = True
 				elif READTYPE == 'CCS':
-					rn_dict[get_ccs_readname(my_rnm)] = True
+					read_passes_filters = True
+					readname_splt = my_rnm.split(' ')
+					if len(readname_splt) >= 2 and readname_splt[1][:3] == 'np=':
+						my_np = int(readname_splt[1][3:])
+						if my_np < MIN_NP:
+							read_passes_filters = False
+					if read_passes_filters and len(readname_splt) >= 3 and readname_splt[2][:3] == 'rq=':
+						my_rq = float(readname_splt[2][3:])
+						if my_rq < MIN_RQ:
+							read_passes_filters = False
+					if read_passes_filters:
+						rn_dict[get_ccs_readname(my_rnm)] = True
 				else:
 					print('Error: unknown read type, must be: CCS / CLR / SRA')
 					exit(1)
