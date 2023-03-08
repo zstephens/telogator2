@@ -91,12 +91,15 @@ def main(raw_args=None):
 				elif READTYPE == 'CCS':
 					read_passes_filters = True
 					readname_splt = my_rnm.split(' ')
+					print(readname_splt)
 					if len(readname_splt) >= 2 and readname_splt[1][:3] == 'np=':
 						my_np = int(readname_splt[1][3:])
+						print(my_np)
 						if my_np < MIN_NP:
 							read_passes_filters = False
 					if read_passes_filters and len(readname_splt) >= 3 and readname_splt[2][:3] == 'rq=':
 						my_rq = float(readname_splt[2][3:])
+						print(my_rq)
 						if my_rq < MIN_RQ:
 							read_passes_filters = False
 					if read_passes_filters:
