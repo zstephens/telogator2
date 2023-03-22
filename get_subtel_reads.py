@@ -39,7 +39,7 @@ def main(raw_args=None):
 	if SUBTEL_BED == '':
 		print('using default subtelomere regions...')
 		sim_path  = pathlib.Path(__file__).resolve().parent
-		SUBTEL_BED = str(sim_path) + '/resources/subtel_regions.bed'
+		SUBTEL_BED = str(sim_path) + '/resources/subtel-regions.bed'
 
 	if exists_and_is_nonzero(IN_BAM) == False:
 		print('Error: input.bam not found.')

@@ -41,7 +41,7 @@ For Oxford Nanopore long (noisy) reads:
 
 We recommend using the [winnowmap](https://github.com/marbl/Winnowmap) aligner for best results:
 
-`winnowmap -W resources/repetitive_k15.txt \ `  
+`winnowmap -W resources/repetitive-k15.txt \ `  
 `    -ax map-pb \ `  
 `    -Y \ `  
 `    t2t-telogator-ref.fa \ `  
