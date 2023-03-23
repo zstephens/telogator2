@@ -5,7 +5,7 @@ from source.tg_reader import TG_Reader
 from source.tg_util   import RC
 
 def main(raw_args=None):
-	parser = argparse.ArgumentParser(description='Telogator v2.0', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+	parser = argparse.ArgumentParser(description='get_kmer_hits.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
 	parser.add_argument('-i', type=str, required=True,  metavar='input.fa',  help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
 	parser.add_argument('-o', type=str, required=True,  metavar='output.fa', help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
 	parser.add_argument('-k', type=str, required=False, metavar='TTAGGG',    help="Kmer to search")
@@ -19,10 +19,10 @@ def main(raw_args=None):
 	MIN_HITS  = args.m
 	#
 	OUTPUT_IS_FASTQ = False
-	if OUT_READS[-3:].lower() == '.fq' or OUT_READS[-6:].lower() == '.fq.gz':
+	if OUT_READS[-3:].lower() == '.fq' or OUT_READS[-6:].lower() == '.fq.gz' or OUT_READS[-6:] == '.fastq' or OUT_READS[-9:] == '.fastq.gz':
 		OUTPUT_IS_FASTQ = True
 	INPUT_IS_FASTQ = False
-	if IN_READS[-3:].lower() == '.fq' or IN_READS[-6:].lower() == '.fq.gz':
+	if IN_READS[-3:].lower() == '.fq' or IN_READS[-6:].lower() == '.fq.gz' or IN_READS[-6:] == '.fastq' or IN_READS[-9:] == '.fastq.gz':
 		INPUT_IS_FASTQ = True
 	if INPUT_IS_FASTQ == False and OUTPUT_IS_FASTQ == True:
 		print('Error: input is fasta and output is fastq.')

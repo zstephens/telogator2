@@ -54,10 +54,10 @@ def main(raw_args=None):
 	samfile = pysam.AlignmentFile(IN_BAM, "rb")
 
 	OUTPUT_IS_FASTQ = False
-	if OUT_READS[-3:].lower() == '.fq' or OUT_READS[-6:].lower() == '.fq.gz':
+	if OUT_READS[-3:].lower() == '.fq' or OUT_READS[-6:].lower() == '.fq.gz' or OUT_READS[-6:] == '.fastq' or OUT_READS[-9:] == '.fastq.gz':
 		OUTPUT_IS_FASTQ = True
 	INPUT_IS_FASTQ = False
-	if IN_READS[-3:].lower() == '.fq' or IN_READS[-6:].lower() == '.fq.gz':
+	if IN_READS[-3:].lower() == '.fq' or IN_READS[-6:].lower() == '.fq.gz' or IN_READS[-6:] == '.fastq' or IN_READS[-9:] == '.fastq.gz':
 		INPUT_IS_FASTQ = True
 	if INPUT_IS_FASTQ == False and OUTPUT_IS_FASTQ == True:
 		print('Error: input is fasta and output is fastq.')
