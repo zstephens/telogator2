@@ -9,7 +9,7 @@ def main(raw_args=None):
 	parser.add_argument('-i', type=str, required=True,  metavar='input.fa',                             help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
 	parser.add_argument('-o', type=str, required=True,  metavar='output.fa',                            help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
 	parser.add_argument('-k', type=str, required=False, metavar='TTAGGGTTAGGG', default='TTAGGGTTAGGG', help="Kmer to search")
-	parser.add_argument('-m', type=int, required=False, metavar='5',            default=5,              help="Minimum hit count to output read")
+	parser.add_argument('-m', type=int, required=False, metavar='10',           default=10,             help="Minimum hit count to output read")
 	args = parser.parse_args()
 	#
 	IN_READS  = args.i
