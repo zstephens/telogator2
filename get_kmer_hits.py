@@ -6,10 +6,10 @@ from source.tg_util   import RC
 
 def main(raw_args=None):
 	parser = argparse.ArgumentParser(description='get_kmer_hits.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-	parser.add_argument('-i', type=str, required=True,  metavar='input.fa',                    help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
-	parser.add_argument('-o', type=str, required=True,  metavar='output.fa',                   help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
-	parser.add_argument('-k', type=str, required=False, metavar='TTAGGG',    default='TTAGGG', help="Kmer to search")
-	parser.add_argument('-m', type=int, required=False, metavar='20',        default=20,       help="Minimum hit count to output read")
+	parser.add_argument('-i', type=str, required=True,  metavar='input.fa',                             help="* Input reads (.fa / .fa.gz / .fq / .fq.gz)")
+	parser.add_argument('-o', type=str, required=True,  metavar='output.fa',                            help="* Output reads (.fa / .fa.gz / .fq / .fq.gz)")
+	parser.add_argument('-k', type=str, required=False, metavar='TTAGGGTTAGGG', default='TTAGGGTTAGGG', help="Kmer to search")
+	parser.add_argument('-m', type=int, required=False, metavar='5',            default=5,              help="Minimum hit count to output read")
 	args = parser.parse_args()
 	#
 	IN_READS  = args.i
