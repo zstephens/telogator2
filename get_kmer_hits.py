@@ -1,3 +1,6 @@
+import argparse
+import gzip
+
 from source.tg_reader import TG_Reader
 from source.tg_util   import RC
 
