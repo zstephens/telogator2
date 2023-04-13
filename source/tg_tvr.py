@@ -11,6 +11,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance  import squareform
 
 from source.tg_muscle import get_muscle_msa
+from source.tg_plot   import plot_kmer_hits
 from source.tg_reader import TG_Reader
 from source.tg_util   import exists_and_is_nonzero
 
@@ -41,6 +42,7 @@ XMATCH_CANON = -4
 #
 MATCH_UNKNOWN  = 2
 XMATCH_UNKNOWN = -4
+MATCH_CANON_UNKNOWN = -2
 
 # density parameters for identifing subtel / tvr boundaries (individual reads)
 UNKNOWN_WIN_SIZE = 100
@@ -58,7 +60,7 @@ TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
 MAX_TVR_LEN       = 8000	# ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000	# when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 20		# add this many bp to detected TVR boundary
-PREFIX_MERGE_DIST = 0.300	# if TVR consensuses are less than this distance apart join them in prefix merging
+PREFIX_MERGE_DIST = 0.030	# if TVR consensuses are less than this distance apart join them in prefix merging
 
 import random
 def shuffle_seq(s):
@@ -67,12 +69,13 @@ def shuffle_seq(s):
 #
 #
 #
-def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None, gap_bool=(True,True), adjust_lens=True, randshuffle=1):
+def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None, gap_bool=(True,True), adjust_lens=True, min_viable=True, randshuffle=1):
 	for (i,j) in ij:
 		#
 		if adjust_lens:
 			min_len = min(len(sequences[i]), len(sequences[j]))
-			min_len = max(min_len, MIN_VIABLE_SEQ_LEN)
+			if min_viable:
+				min_len = max(min_len, MIN_VIABLE_SEQ_LEN)
 			if pq == 'p':
 				seq_i = sequences[i][-min_len:]
 				seq_j = sequences[j][-min_len:]
@@ -89,6 +92,9 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
 			aln_score = pairwise2.align.globalms(seq_i, seq_j, MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True)
 		else:
 			aln_score = pairwise2.align.globalds(seq_i, seq_j, scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True)
+		#####
+		####aln = pairwise2.align.globalms(seq_i, seq_j, MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool)
+		####print(pairwise2.format_alignment(*aln[0]))
 		#
 		# iden score
 		#
@@ -164,7 +170,7 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
 	return my_out
 
 #
-#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read-orientation, readname, anchor_mapq, fasta_dat]
+#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
 #
 #	repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
 #
@@ -200,7 +206,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	#
 	char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
 	#
-	#	scoring matrix
+	# scoring matrix
 	#
 	letters = AMINO
 	scoring_matrix = {}
@@ -217,8 +223,10 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	for i in range(len(letters)):
 		scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
 		scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
-	scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON		# reduced reward for matching canonical
-	scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN	# reduced reward for matching unknown
+	scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON			# matching canonical
+	scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN		# matching unknown
+	scoring_matrix[(canonical_letter, UNKNOWN_LETTER)]   = MATCH_CANON_UNKNOWN	# canon = unknown
+	scoring_matrix[(UNKNOWN_LETTER, canonical_letter)]   = MATCH_CANON_UNKNOWN	# canon = unknown
 	#
 	# create color vector
 	#
@@ -254,7 +262,8 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 			cleaned_colorvecs.append(err_right + seq_left[::-1])	# the entire denoised read (for plotting)
 			err_end_lens.append(len(err_left))						# needed for adjusting offsets in plots
 			#
-			colorvecs_for_msa.append(seq_right_denoise[::-1])
+			#colorvecs_for_msa.append(seq_right_denoise[::-1])		# I don't remember why I was using denoised tvr for msa...
+			colorvecs_for_msa.append(err_right)
 			#
 			subtel_regions.append(seq_left[::-1])					# subtel regions (currently not used for anything)
 			tvrtel_regions.append(err_right)						# tvr sequence used for clustering
@@ -273,7 +282,8 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 			cleaned_colorvecs.append(seq_left + err_right[::-1])	# the entire denoised read (for plotting)
 			err_end_lens.append(len(err_left))						# needed for adjusting offsets in plots
 			#
-			colorvecs_for_msa.append(seq_right_denoise)
+			#colorvecs_for_msa.append(seq_right_denoise)			# I don't remember why I was using denoised tvr for msa...
+			colorvecs_for_msa.append(err_right[::-1])
 			#
 			subtel_regions.append(seq_left)							# subtel regions (currently not used for anything)
 			tvrtel_regions.append(err_right[::-1])					# tvr sequence used for clustering
@@ -288,7 +298,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 		all_indices = [[] for n in range(alignment_processes)]
 		k = 0
 		for i in range(n_reads):
-			for j in range(i+1,n_reads):
+			for j in range(i+1, n_reads):
 				all_indices[k%alignment_processes].append((i,j))
 				k += 1
 		#
@@ -503,20 +513,34 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	#
 	if len(out_clust) > 1:
 		if dist_in_prefix == None or exists_and_is_nonzero(dist_in_prefix) == False:
-			dist_matrix_prefix = np.zeros((len(out_consensus), len(out_consensus)))
-			for i in range(len(out_consensus)):
-				for j in range(i+1,len(out_consensus)):
-					min_len    = min(len(out_consensus[i]), len(out_consensus[j]))
-					trunc_seq  = [out_consensus[i][:min_len], out_consensus[j][:min_len]]
-					pref_score = {}
-					parallel_alignment_job(trunc_seq, [(0,1)], pq, pref_score,
-					                       scoring_matrix=scoring_matrix,
-					                       gap_bool=(True,True),
-					                       adjust_lens=False,
-					                       randshuffle=1)
-					dist_matrix_prefix[i,j] = pref_score[(0,1)]
-					dist_matrix_prefix[j,i] = pref_score[(0,1)]
-					#print(i, j, pref_score[(0,1)])
+			pref_indices = [[] for n in range(alignment_processes)]
+			k = 0
+			n_consensus = len(out_consensus)
+			for i in range(n_consensus):
+				for j in range(i+1, n_consensus):
+					pref_indices[k%alignment_processes].append((i,j))
+					k += 1
+			#
+			manager   = multiprocessing.Manager()
+			pref_dist = manager.dict()
+			processes = []
+			for i in range(alignment_processes):
+				p = multiprocessing.Process(target=parallel_alignment_job,
+				                            args=(out_consensus, pref_indices[i], pq, pref_dist, scoring_matrix, (True,True), True, False))
+				processes.append(p)
+			for i in range(alignment_processes):
+				processes[i].start()
+			for i in range(alignment_processes):
+				processes[i].join()
+			#
+			dist_matrix_prefix = np.zeros((n_consensus, n_consensus))
+			for i in range(n_consensus):
+				for j in range(i+1, n_consensus):
+					ij_dist = pref_dist[(i,j)]
+					dist_matrix_prefix[i,j] = ij_dist
+					dist_matrix_prefix[j,i] = ij_dist
+			dist_norm = max(np.max(dist_matrix_prefix), MIN_MSD)
+			dist_matrix_prefix /= dist_norm
 			if dist_in_prefix != None:
 				np.save(dist_in_prefix, dist_matrix_prefix)
 		else:
@@ -525,7 +549,6 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 		dist_array_prefix  = squareform(dist_matrix_prefix)
 		Z_prefix           = linkage(dist_array_prefix, method='complete')
 		assignments_prefix = fcluster(Z_prefix, PREFIX_MERGE_DIST, 'distance').tolist()
-		#print('assignments_prefix:', assignments_prefix)
 		merge_clust = [[] for n in range(max(assignments_prefix))]
 		for i in range(len(assignments_prefix)):
 			merge_clust[assignments_prefix[i]-1].append(i)
@@ -545,7 +568,6 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 		#
 		merge_clust = sorted([(sum([len(out_clust[n]) for n in m]), m) for m in merge_clust], reverse=True)	# sort by readcount
 		merge_clust = [n[1] for n in merge_clust]
-		#print('merge_clust:', merge_clust)
 		new_out_clust              = []
 		new_out_consensus          = []
 		new_out_tvr_tel_boundaries = []
@@ -588,7 +610,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	for n in out_clust:
 		out_mapq.append([kmer_dat[m][5] for m in n])
 	#
-	if True or PRINT_DEBUG:
+	if PRINT_DEBUG:
 		print()
 		print('cluster_tvr() results:')
 		print(out_clust)
@@ -748,7 +770,7 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
 #
 #
 #
-def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', linkage_method='complete', alignment_processes=8, job=(1,1), dendrogram_height=12):
+def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', gap_bool=(True,True), linkage_method='complete', normalize_dist_matrix=True, alignment_processes=8, job=(1,1), dendrogram_title=None, dendrogram_height=12):
 	#
 	n_seq = len(sequences)
 	#
@@ -791,8 +813,10 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 		for i in range(len(letters)):
 			scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
 			scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
-		scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON		# reduced award for matching canonical
-		scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN	# no reward for matching unknown regions
+		scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON			# matching canonical
+		scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN		# matching unknown
+		scoring_matrix[(canonical_letter, UNKNOWN_LETTER)]   = MATCH_CANON_UNKNOWN	# canon = unknown
+		scoring_matrix[(UNKNOWN_LETTER, canonical_letter)]   = MATCH_CANON_UNKNOWN	# canon = unknown
 		#
 		#	even more parallelization! Any problem can be solved by throwing tons of CPU at it.
 		#
@@ -815,10 +839,10 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 		for i in range(alignment_processes):
 			if aln_mode == 'ms':
 				p = multiprocessing.Process(target=parallel_alignment_job,
-					                        args=(sequences, all_indices[i], 'q', return_dict, None, (True,True)))
+					                        args=(sequences, all_indices[i], 'q', return_dict, None, gap_bool, False))
 			elif aln_mode == 'ds':
 				p = multiprocessing.Process(target=parallel_alignment_job,
-					                        args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, (True,True)))
+					                        args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, gap_bool, False))
 			processes.append(p)
 		for i in range(alignment_processes):
 			processes[i].start()
@@ -833,8 +857,9 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 			partial_dist_fn = dist_in[:-4] + '_job' + str(job[0]).zfill(3) + '.npy'
 			np.save(partial_dist_fn, dist_matrix)
 		else:
-			dist_norm    = max(np.max(dist_matrix), MIN_MSD)
-			dist_matrix /= dist_norm
+			if normalize_dist_matrix:
+				dist_norm    = max(np.max(dist_matrix), MIN_MSD)
+				dist_matrix /= dist_norm
 			if dist_in != None:
 				np.save(dist_in, dist_matrix)
 	else:
@@ -851,6 +876,8 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 			dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
 			mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
 			mpl.xlabel('distance')
+			if dendrogram_title != None:
+				mpl.title(dendrogram_title)
 			#
 			mpl.tight_layout()
 			mpl.savefig(fig_name, dpi=200)	# default figure dpi = 100
@@ -870,3 +897,57 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 		return out_clust
 	#
 	return None
+
+#
+#
+#
+def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params):
+	#
+	[KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DO_NOT_OVERWRITE] = mtp_params
+	#
+	# adjust kmer_hit_dat based on the filters and etc that were applied during clustering
+	#
+	my_consensus_vecs = read_clust_dat[4]
+	my_color_vectors  = read_clust_dat[5]
+	my_end_err_lens   = read_clust_dat[6]
+	my_tvr_tel_bounds = read_clust_dat[7]
+	redrawn_consensus = convert_colorvec_to_kmerhits(my_consensus_vecs, KMER_METADATA)
+	# do we want to plot denoised tvrs of individual reads?
+	if PLOT_FILT_CVECS:
+		redrawn_kmerhits = convert_colorvec_to_kmerhits(my_color_vectors, KMER_METADATA)
+		for rdki in range(len(redrawn_kmerhits)):
+			kmer_hit_dat[rdki][0]  = redrawn_kmerhits[rdki]	# replace kmer hit tuples for plotting
+			kmer_hit_dat[rdki][1] -= my_end_err_lens[rdki]	# subtract size of artifacts at end of reads
+	#
+	consensus_kmer_hit_dat = []
+	consensus_clust_dat    = [[],[],[],[0]]	# fake data so that plot_kmer_hits doesn't complain
+	consensus_tvr_tel_pos  = []
+	for rdki in range(len(redrawn_consensus)):
+		cons_readcount = len(read_clust_dat[0][rdki])
+		cons_readname  = 'consensus-' + str(rdki) + ' [' + str(cons_readcount)
+		cons_tvrlen    = my_tvr_tel_bounds[rdki]
+		if cons_readcount == 1:
+			cons_readname += ' read]'
+		else:
+			cons_readname += ' reads]'
+		if cons_readcount >= MIN_READS_PER_PHASE:
+			consensus_kmer_hit_dat.append([redrawn_consensus[rdki], len(my_consensus_vecs[rdki]), 0, 'FWD', cons_readname, DUMMY_TEL_MAPQ, None])
+			consensus_clust_dat[0].append([rdki])
+			consensus_clust_dat[1].append([DUMMY_TEL_MAPQ])
+			consensus_clust_dat[2].append([0])
+			consensus_tvr_tel_pos.append(cons_tvrlen)
+	#
+	# TVR plotting (clustered reads + consensus for each allele)
+	#
+	custom_plot_params = {'xlim':[-1000,15000]}
+	#custom_plot_params = {'xlim':[0,13000], 'custom_title':'', 'fig_width':12} # params for plotting figs for paper
+	if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompplot_fn) == False:
+		plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
+		               clust_dat=read_clust_dat,
+		               plot_params=custom_plot_params)
+	if len(consensus_clust_dat[0]):
+		if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompcons_fn) == False:
+			plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
+			               clust_dat=consensus_clust_dat,
+			               draw_boundaries=consensus_tvr_tel_pos,
+			               plot_params=custom_plot_params)

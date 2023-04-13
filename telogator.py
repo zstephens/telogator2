@@ -11,9 +11,9 @@ import numpy as np
 
 from source.tg_kmer   import get_telomere_base_count, get_telomere_composition, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
-from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
-from source.tg_tel    import get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job
-from source.tg_tvr    import cluster_consensus_tvr, cluster_tvrs, convert_colorvec_to_kmerhits, filter_by_denoise_frac
+from source.tg_plot   import tel_len_violin_plot
+from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job
+from source.tg_tvr    import cluster_consensus_tvr, cluster_tvrs, convert_colorvec_to_kmerhits, filter_by_denoise_frac, make_tvr_plots
 from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC, repeated_matches_trimming
 
 # hardcoded parameters
@@ -31,11 +31,15 @@ MAX_NOISE_BASES = 5000
 MAX_NOISE_FRAC  = 0.60
 #
 DUMMY_TEL_MAPQ = 60
+#
+ORR_SWAP = {'FWD':'REV', 'REV':'FWD', 'p':'q', 'q':'p'}
+# how much subtel should we use for de-clustering alleles?
+MAX_SUBTEL_SIZE_DECLUSTER = 3000
 
 # for debugging purposes (don't replot figures if they already exist)
 DO_NOT_OVERWRITE = False
 # for debugging purposes (only cluster TVRs at specific arms)
-DEBUG_CHR_LIST = []
+DEBUG_CHR_LIST = ['chr9q', 'chr16q', 'chr22p']
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -72,11 +76,13 @@ def main(raw_args=None):
 	parser.add_argument('-vrt', type=int,  required=False, metavar='10000',       default=10000,     help="Violin plot (read length) tick size")
 	#
 	parser.add_argument('-m',   type=str,  required=False, metavar='muscle',      default='muscle',  help="/path/to/muscle executable")
-	parser.add_argument('-at',  type=float,required=False, metavar='0.150',       default=0.150,     help="Default treecut value to clustering TVRs")
-	parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
 	parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
 	parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
-	parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut val to use in clustering multimapped alleles")
+	parser.add_argument('-at',  type=float,required=False, metavar='0.150',       default=0.150,     help="Default treecut value to cluster TVRs")
+	parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
+	parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut value: clustering multimapped alleles")
+	parser.add_argument('-ato', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: clustering orphaned alleles")
+	parser.add_argument('-ats', type=float,required=False, metavar='0.250',       default=0.250,     help="Treecut value: declustering alleles using subtels")
 	#
 	parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
 	parser.add_argument('--plot-filt',     required=False, action='store_true',   default=False,     help="Create read plots (filtered reads)")
@@ -191,6 +197,8 @@ def main(raw_args=None):
 	ALLELE_TL_METHOD    = args.am
 	TREECUT_DEFAULT     = args.at
 	TREECUT_MULTIMAPPED = args.atm
+	TREECUT_ORPHANS     = args.ato
+	TREECUT_SUBTELS     = args.ats
 	#
 	(VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
 	(VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
@@ -446,8 +454,7 @@ def main(raw_args=None):
 	num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
 	tt = time.perf_counter()
 	#
-	my_kmer_list = [CANONICAL_STRING, CANONICAL_STRING_REV]
-	gtbct_params = [MIN_CANONICAL_FRAC, my_kmer_list, READ_TYPE]
+	gtbct_params = [MINIMUM_TEL_BASES, MIN_CANONICAL_FRAC, [CANONICAL_STRING], [CANONICAL_STRING_REV], READ_TYPE]
 	del_keys     = get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params)
 	#
 	num_ending_reads = num_starting_reads - len(del_keys)
@@ -509,18 +516,8 @@ def main(raw_args=None):
 			my_rlens       = [n_sbtl[1] for n_sbtl in sorted_by_tlen]
 			my_rnames      = [n_sbtl[2] for n_sbtl in sorted_by_tlen]
 			#
-			if CHR_TL_METHOD == 'mean':
-				consensus_tl = np.mean(my_tlens)
-			elif CHR_TL_METHOD == 'median':
-				consensus_tl = np.median(my_tlens)
-			elif CHR_TL_METHOD == 'max':
-				consensus_tl = np.max(my_tlens)
-			elif CHR_TL_METHOD[0] == 'p':
-				my_percentile = int(CHR_TL_METHOD[1:])
-				consensus_tl = np.percentile(my_tlens, my_percentile)
-			else:
-				print('Error: unknown chr TL summary method')
-				exit(1)
+			consensus_tl = choose_tl_from_observations(my_tlens, CHR_TL_METHOD)
+			#
 			CHR_TEL_DAT.append([my_chr,
 			                    str(my_pos),
 			                    str(int(consensus_tl)),
@@ -620,8 +617,13 @@ def main(raw_args=None):
 	#
 	#
 	print('pairwise comparing TVRs at each cluster...')
+	allele_tel_dat_temp = []
 	ALLELE_TEL_DAT      = []
-	allele_count_by_chr = {}
+	orphaned_read_dat   = []
+	temp_read_dat       = {}	# contains read fastas for downstream purposes. indexed by (chr, pos, allele_i)
+	#
+	gatd_params = [ALLELE_TL_METHOD, MIN_READS_PER_PHASE]
+	mtp_params  = [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DO_NOT_OVERWRITE]
 	#
 	for tc_dat in tel_composition_data:
 		[my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tc_dat
@@ -642,7 +644,7 @@ def main(raw_args=None):
 			plotname_chr = 'alt-' + my_chr
 		else:
 			plotname_chr = my_chr
-		zfcn = str(clust_num).zfill(2)
+		zfcn = str(clust_num).zfill(3)
 		telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_' + plotname_chr + '.png'
 		telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_' + plotname_chr + '.png'
 		dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-'    + zfcn + '_' + plotname_chr + '.png'
@@ -663,154 +665,300 @@ def main(raw_args=None):
 		                              muscle_exe=MUSCLE_EXE,
 		                              PRINT_DEBUG=PRINT_DEBUG)
 		#
+		# lets retain reads that didn't make it into a cluster
+		#
+		read_was_clustered = {n:-1 for n in range(len(kmer_hit_dat))}
+		####read_subtel_adj    = {n:0 for n in range(len(kmer_hit_dat))}
+		for allele_i in range(len(read_clust_dat[0])):
+			allele_readcount = len(read_clust_dat[0][allele_i])
+			if allele_readcount >= MIN_READS_PER_PHASE:
+				for rcd_i, read_i in enumerate(read_clust_dat[0][allele_i]):
+					read_was_clustered[read_i] = allele_i
+					####read_subtel_adj[read_i]    = read_clust_dat[2][allele_i][rcd_i]
+		for khd_i, allele_i in read_was_clustered.items():
+			if allele_i == -1:
+				orphaned_read_dat.append((my_chr, my_pos, my_rlens[khd_i], copy.deepcopy(kmer_hit_dat[khd_i])))
+			else:	# save read fastas for final clustering of all alleles
+				my_key = (my_chr, my_pos, allele_i)
+				####my_adj = read_subtel_adj[khd_i]
+				if my_key not in temp_read_dat:
+					temp_read_dat[my_key] = []
+				temp_read_dat[my_key].append([(n[0], n[1]) for n in kmer_hit_dat[khd_i][6]])
+		#
 		# values for output tsv
 		#
+		allele_tel_dat_temp.extend(get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, gatd_params))
+		#
+		# plotting!
+		#
+		make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+		#
+		# fasta data for subtel / tel, can be used for debugging
+		#
 		for allele_i in range(len(read_clust_dat[0])):
-			allele_tvrlen   = read_clust_dat[7][allele_i]
-			allele_cons_out = ''
-			if allele_tvrlen > 0:
-				if my_chr[-1] == 'p':	# p will be reversed so its in subtel --> tvr --> tel orientation
-					allele_cons_out = read_clust_dat[4][allele_i][-allele_tvrlen:][::-1]
-				elif my_chr[-1] == 'q':
-					allele_cons_out = read_clust_dat[4][allele_i][:allele_tvrlen]
-			#
-			# kmer_hit_dat[n][1]   = tlen + all the extra subtel buffers
-			# read_clust_dat[3][n] = the length of the subtel region present before tvr/tel region
-			#
-			# the difference of these two will be the actual size of the (tvr + tel) region in the read
-			#
-			allele_readcount = len(read_clust_dat[0][allele_i])
-			allele_tlen_mapq = sorted([(kmer_hit_dat[n][1] - read_clust_dat[3][n], my_rlens[n], kmer_hit_dat[n][5]) for n in read_clust_dat[0][allele_i]])
-			allele_tlens     = [n[0]-len(allele_cons_out) for n in allele_tlen_mapq]	# subtracting tvr so that "actual" TL is output. values can be negative
-			allele_tlen_str  = ','.join([str(n) for n in allele_tlens])
-			rlen_str         = ','.join([str(n[1]) for n in allele_tlen_mapq])
-			mapq_str         = ','.join([str(n[2]) for n in allele_tlen_mapq])
-			#
-			consensus_tl_allele = None
-			if ALLELE_TL_METHOD == 'mean':
-				consensus_tl_allele = np.mean(allele_tlens)
-			elif ALLELE_TL_METHOD == 'median':
-				consensus_tl_allele = np.median(allele_tlens)
-			elif ALLELE_TL_METHOD == 'max':
-				consensus_tl_allele = np.max(allele_tlens)
-			elif ALLELE_TL_METHOD[0] == 'p':
-				my_percentile = int(ALLELE_TL_METHOD[1:])
-				consensus_tl_allele = np.percentile(allele_tlens, my_percentile)
-			#
-			if allele_readcount >= MIN_READS_PER_PHASE:
-				if my_chr not in allele_count_by_chr:
-					allele_count_by_chr[my_chr] = 0
-				ALLELE_TEL_DAT.append([my_chr,
-				                       str(my_pos),
-				                       str(allele_count_by_chr[my_chr]),
-				                       '0',									# allele id (will be filled out later)
-				                       str(int(consensus_tl_allele)),
-				                       allele_tlen_str,
-				                       rlen_str,
-				                       mapq_str,
-				                       str(len(allele_cons_out)),
-				                       allele_cons_out])
-				allele_count_by_chr[my_chr] += 1
-			#
-			# fasta data for subtel / tel, can be used for debugging
-			#
 			allele_fasta_all = [kmer_hit_dat[n][6] for n in read_clust_dat[0][allele_i]]
 			allele_fasta_tel = [n[0] for n in allele_fasta_all]
 			#print(allele_fasta_tel)
 			#exit(1)
 		#
-		# adjust kmer_hit_dat based on the filters and etc that were applied during clustering
+		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+		sys.stdout.flush()
+
+	#
+	# analyze orphaned reads
+	#
+	#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
+	#
+	if len(orphaned_read_dat):
+		sys.stdout.write('clustering ' + str(len(orphaned_read_dat)) + ' orphan reads...')
+		sys.stdout.flush()
+		orphans_kmer_hit_dat = []
+		orphans_chr   = 'chrUq'
+		orphans_pos   = 0
+		orphans_rlens = [n[2] for n in orphaned_read_dat]
+		for ori in range(len(orphaned_read_dat)):
+			# reverse p-arm kmer hits so everything is in same orientation
+			if orphaned_read_dat[ori][0][-1] == 'p':
+				# reverse kmer hits
+				or_tlen = orphaned_read_dat[ori][3][1]
+				orphaned_read_dat[ori][3][0] = [[[or_tlen-n[1], or_tlen-n[0]] for n in m[::-1]] for m in orphaned_read_dat[ori][3][0]]
+				# swap orientation label
+				orphaned_read_dat[ori][3][3] = ORR_SWAP[orphaned_read_dat[ori][3][3]]
+				# swap read sequence fasta
+				orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], RC(orphaned_read_dat[ori][3][6][0][1])),	# tel
+				                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),	# sub (truncated and manipulated so that ps can be compared to qs downstream)
+				                                (orphaned_read_dat[ori][3][6][2][0], RC(orphaned_read_dat[ori][3][6][2][1]))]	# entire read
+			orphans_kmer_hit_dat.append(orphaned_read_dat[ori][3])
+		orphans_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads_orphans.png'
+		orphans_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus_orphans.png'
+		orphans_dendrogram_fn  = OUT_TVR_TEMP + 'orphans_dendrogram.png'
+		orphans_dend_prefix_fn = OUT_TVR_TEMP + 'orphans_p_dendrogram.png'
+		orphans_dist_matrix_fn = OUT_TVR_TEMP + 'orphans_cluster.npy'
+		orphans_dist_prefix_fn = OUT_TVR_TEMP + 'orphans_p_cluster.npy'
+		orphans_consensus_fn   = OUT_TVR_TEMP + 'orphans_consensus-seq.fa'
 		#
-		my_consensus_vecs = read_clust_dat[4]
-		my_color_vectors  = read_clust_dat[5]
-		my_end_err_lens   = read_clust_dat[6]
-		my_tvr_tel_bounds = read_clust_dat[7]
-		redrawn_consensus = convert_colorvec_to_kmerhits(my_consensus_vecs, KMER_METADATA)
-		# do we want to plot denoised tvrs of individual reads?
-		if PLOT_FILT_CVECS:
-			redrawn_kmerhits = convert_colorvec_to_kmerhits(my_color_vectors, KMER_METADATA)
-			for rdki in range(len(redrawn_kmerhits)):
-				kmer_hit_dat[rdki][0]  = redrawn_kmerhits[rdki]	# replace kmer hit tuples for plotting
-				kmer_hit_dat[rdki][1] -= my_end_err_lens[rdki]	# subtract size of artifacts at end of reads
+		orphans_clust_dat = cluster_tvrs(orphans_kmer_hit_dat, KMER_METADATA, orphans_chr, orphans_pos, TREECUT_ORPHANS,
+		                                 aln_mode='ds',
+		                                 alignment_processes=NUM_PROCESSES,
+		                                 dist_in=orphans_dist_matrix_fn,
+		                                 dist_in_prefix=orphans_dist_prefix_fn,
+		                                 fig_name=orphans_dendrogram_fn,
+		                                 fig_prefix_name=orphans_dend_prefix_fn,
+		                                 save_msa=orphans_consensus_fn,
+		                                 muscle_dir=OUT_TVR_TEMP,
+		                                 muscle_exe=MUSCLE_EXE,
+		                                 PRINT_DEBUG=PRINT_DEBUG)
 		#
-		consensus_kmer_hit_dat = []
-		consensus_clust_dat    = [[],[],[],[0]]	# fake data so that plot_kmer_hits doesn't complain
-		consensus_tvr_tel_pos  = []
-		for rdki in range(len(redrawn_consensus)):
-			cons_readcount = len(read_clust_dat[0][rdki])
-			cons_readname  = 'consensus-' + str(rdki) + ' [' + str(cons_readcount)
-			cons_tvrlen    = my_tvr_tel_bounds[rdki]
-			if cons_readcount == 1:
-				cons_readname += ' read]'
-			else:
-				cons_readname += ' reads]'
-			if cons_readcount >= MIN_READS_PER_PHASE:
-				consensus_kmer_hit_dat.append([redrawn_consensus[rdki], len(my_consensus_vecs[rdki]), 0, 'FWD', cons_readname, DUMMY_TEL_MAPQ, None])
-				consensus_clust_dat[0].append([rdki])
-				consensus_clust_dat[1].append([DUMMY_TEL_MAPQ])
-				consensus_clust_dat[2].append([0])
-				consensus_tvr_tel_pos.append(cons_tvrlen)
+		for allele_i in range(len(orphans_clust_dat[0])):
+			allele_readcount = len(orphans_clust_dat[0][allele_i])
+			if allele_readcount >= MIN_READS_PER_PHASE:
+				for read_i in orphans_clust_dat[0][allele_i]:
+					my_key = (orphans_chr, orphans_pos, allele_i)
+					if my_key not in temp_read_dat:
+						temp_read_dat[my_key] = []
+					temp_read_dat[my_key].append(copy.deepcopy(orphaned_read_dat[read_i][3][6]))
 		#
-		# TVR plotting (clustered reads + consensus for each allele)
+		allele_tel_dat_temp.extend(get_allele_tsv_dat(orphans_kmer_hit_dat, orphans_clust_dat, orphans_chr, orphans_pos, orphans_rlens, gatd_params))
 		#
-		custom_plot_params = {'xlim':[-1000,15000]}
-		#custom_plot_params = {'xlim':[0,13000], 'custom_title':'', 'fig_width':12} # params for plotting figs for paper
-		if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompplot_fn) == False:
-			plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
-			               clust_dat=read_clust_dat,
-			               plot_params=custom_plot_params)
-		if len(consensus_clust_dat[0]):
-			if DO_NOT_OVERWRITE == False or exists_and_is_nonzero(telcompcons_fn) == False:
-				plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
-				               clust_dat=consensus_clust_dat,
-				               draw_boundaries=consensus_tvr_tel_pos,
-				               plot_params=custom_plot_params)
+		make_tvr_plots(orphans_kmer_hit_dat, orphans_clust_dat, orphans_chr, orphans_pos, orphans_telcompplot_fn, orphans_telcompcons_fn, mtp_params)
 		#
 		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
 		sys.stdout.flush()
 
 	#
+	# collapse all blank TVRs into a single allele
 	#
+	del_inds_blank = []
+	blank_read_keys = []
+	blank_chr   = 'chrBq'
+	blank_pos   = 0
+	blank_entry = [blank_chr, str(blank_pos), '0', '0', '', '', '', '', '0', '', '']
+	for i in range(len(allele_tel_dat_temp)):
+		if len(allele_tel_dat_temp[i][9]) == 0:
+			del_inds_blank.append(i)
+			blank_entry[5] += allele_tel_dat_temp[i][5] + ','
+			blank_entry[6] += allele_tel_dat_temp[i][6] + ','
+			blank_entry[7] += allele_tel_dat_temp[i][7] + ','
+			blank_entry[10] += allele_tel_dat_temp[i][10] + ','
+			blank_read_keys.append((allele_tel_dat_temp[i][0], int(allele_tel_dat_temp[i][1]), int(allele_tel_dat_temp[i][2])))
+	for di in sorted(del_inds_blank, reverse=True):
+		del allele_tel_dat_temp[di]
+	if blank_entry[5][-1] == ',':
+		blank_entry[5] = blank_entry[5][:-1]
+	if blank_entry[6][-1] == ',':
+		blank_entry[6] = blank_entry[6][:-1]
+	if blank_entry[7][-1] == ',':
+		blank_entry[7] = blank_entry[7][:-1]
+	if blank_entry[10][-1] == ',':
+		blank_entry[10] = blank_entry[10][:-1]
+
 	#
-	if len(DEBUG_CHR_LIST):
-		print('skipping pairwise comparison of all TVRs (debug mode)...')
-		print(' - all allele_ids are going to be 0')
-	else:
-		sys.stdout.write('pairwise comparing all consensus TVR sequences...')
-		sys.stdout.flush()
-		tt = time.perf_counter()
-		all_tvrs   = []
-		all_labels = []
-		allele_ids = {}
-		for i in range(len(ALLELE_TEL_DAT)):
-			if len(ALLELE_TEL_DAT[i][9]):
-				all_tvrs.append(ALLELE_TEL_DAT[i][9])
-				all_labels.append(ALLELE_TEL_DAT[i][0]+'_'+ALLELE_TEL_DAT[i][1]+'_'+ALLELE_TEL_DAT[i][2]+'_'+str(i))
+	# organize read data and clustered alleles for the final stretch of processing
+	#
+	clustered_read_dat  = {}
+	for atdat in allele_tel_dat_temp:
+		ALLELE_TEL_DAT.append(copy.deepcopy(atdat))
+		my_key = (atdat[0], int(atdat[1]), int(atdat[2]))
+		clustered_read_dat[my_key] = copy.deepcopy(temp_read_dat[my_key])
+	#
+	# blank tvr sequences need to be manipulated so that ps and qs can be compared to each other later
+	#
+	if len(blank_read_keys):
+		clustered_read_dat[(blank_chr, blank_pos, 0)] = []
+		for k in blank_read_keys:
+			if k[0][-1] == 'p':
+				clustered_read_dat[(blank_chr, blank_pos, 0)] += [[(n[0][0], RC(n[0][1])),
+				                                                   (n[1][0], RC(n[1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),
+				                                                   (n[2][0], RC(n[2][1]))] for n in temp_read_dat[k]]
 			else:
-				allele_ids[i] = 0	# id 0 = blank tvr
+				clustered_read_dat[(blank_chr, blank_pos, 0)] += [[(n[0][0], n[0][1]),
+				                                                   (n[1][0], n[1][1][-MAX_SUBTEL_SIZE_DECLUSTER:]),
+				                                                   (n[2][0], n[2][1])] for n in temp_read_dat[k]]
+		ALLELE_TEL_DAT.append(blank_entry)
+	del allele_tel_dat_temp
+	del temp_read_dat
+
+	#
+	#
+	#
+	if len(ALLELE_TEL_DAT) == 0:
+		print('No telomere alleles found, something probably went wrong?...')
+		exit(1)
+
+	#
+	# pairwise tvr comparison --> fill out allele_id field
+	#
+	sys.stdout.write('pairwise comparing all consensus TVR sequences...')
+	sys.stdout.flush()
+	tt = time.perf_counter()
+	all_tvrs     = []
+	tvr_labels   = []
+	all_labels   = []
+	blank_cluster = []
+	blank_labels  = []
+	for i in range(len(ALLELE_TEL_DAT)):
+		if len(ALLELE_TEL_DAT[i][9]):
+			all_tvrs.append(ALLELE_TEL_DAT[i][9])
+			tvr_labels.append(ALLELE_TEL_DAT[i][0]+'_'+ALLELE_TEL_DAT[i][1]+'_'+ALLELE_TEL_DAT[i][2]+'_'+str(i))
+		else:
+			blank_cluster.append(i)
+		all_labels.append(ALLELE_TEL_DAT[i][0]+'_'+ALLELE_TEL_DAT[i][1]+'_'+ALLELE_TEL_DAT[i][2]+'_'+str(i))
+	if len(all_tvrs) == 1:		# this can happen when debugging individual arms
+		alltvr_clustdat = [[0]]
+	else:
 		alltvr_clustdat = cluster_consensus_tvr(all_tvrs, KMER_METADATA, TREECUT_MULTIMAPPED,
 		                                        alignment_processes=NUM_PROCESSES,
 		                                        aln_mode='ms',
+		                                        gap_bool=(True,True),
 		                                        dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
 		                                        fig_name=OUT_TVR_DIR+'all-tvrs.png',
-		                                        samp_labels=all_labels,
+		                                        samp_labels=tvr_labels,
 		                                        linkage_method='complete',
 		                                        job=(1,1),
 		                                        dendrogram_height=12)
-		sort_alltvr_clustdat = sorted(alltvr_clustdat)
-		for i in range(len(sort_alltvr_clustdat)):
-			for j in sort_alltvr_clustdat[i]:
-				my_i = int(all_labels[j].split('_')[-1])
-				allele_ids[my_i] = i + 1
-		for i in range(len(ALLELE_TEL_DAT)):
-			ALLELE_TEL_DAT[i][3] = str(allele_ids[i])
-		sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-		sys.stdout.flush()
-		num_starting_alleles = len(ALLELE_TEL_DAT)
-		num_unique_alleles   = max(allele_ids.values())
-		num_blank_alleles    = list(allele_ids.values()).count(0)
-		print(' -', num_starting_alleles, 'alleles -->', num_unique_alleles, 'unique tvrs')
-		print(' -', num_blank_alleles, 'blank')
+	sort_alltvr_clustdat = sorted(alltvr_clustdat + [blank_cluster])
+	sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+	sys.stdout.flush()
+
+	#
+	# decluster alleles that have the same TVR if their subtelomeres are different enough
+	#
+	print('checking for subtelomere discrepancies...')
+	new_allele_tel_dat_entries = []
+	num_allelles_added_because_subtel = 0
+	for i in range(len(sort_alltvr_clustdat)):
+		subtels_for_this_cluster = []
+		subtel_labels            = []
+		chrs_hit = {}
+		for j in sort_alltvr_clustdat[i]:
+			splt = all_labels[j].split('_')
+			my_c = splt[0]
+			my_p = int(splt[1])
+			my_a = int(splt[2])
+			my_key = (my_c, my_p, my_a)
+			if my_c[-1] == 'p':
+				subtels_for_this_cluster.extend([RC(n[1][1][:MAX_SUBTEL_SIZE_DECLUSTER]) for n in clustered_read_dat[my_key]])
+			elif my_c[-1] == 'q':
+				subtels_for_this_cluster.extend([n[1][1][-MAX_SUBTEL_SIZE_DECLUSTER:] for n in clustered_read_dat[my_key]])
+			subtel_labels.extend([n[1][0].split('_')[-1] for n in clustered_read_dat[my_key]])
+			#
+			chrs_hit[my_c] = True
+		my_dendro_title = 'all-tvrs-cluster ' + str(i) + ' : ' + '/'.join(chrs_hit.keys())
+		#print('SUBTEL LENS:', [len(n) for n in subtels_for_this_cluster])
+		subtel_clustdat = cluster_consensus_tvr(subtels_for_this_cluster, KMER_METADATA, TREECUT_SUBTELS,
+		                                        alignment_processes=NUM_PROCESSES,
+		                                        aln_mode='ms',
+		                                        gap_bool=(False,False),
+		                                        dist_in=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy',
+		                                        fig_name=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.png',
+		                                        samp_labels=subtel_labels,
+		                                        linkage_method='ward',
+		                                        normalize_dist_matrix=False,
+		                                        job=(1,1),
+		                                        dendrogram_title=my_dendro_title,
+		                                        dendrogram_height=8)
+		usable_clusters = [n for n in subtel_clustdat if len(n) >= MIN_READS_PER_PHASE]
+		allele_tel_dat_by_subtel_clust = [[] for n in usable_clusters]
+		subtel_clust_by_readname = {}
+		for j in range(len(usable_clusters)):
+			for k in usable_clusters[j]:
+				subtel_clust_by_readname[subtel_labels[k]] = j
+		#
+		# it's kind of silly how much I need to unpack and repack data in order to do this.
+		#
+		for j in sort_alltvr_clustdat[i]:
+			splt_tls   = ALLELE_TEL_DAT[j][5].split(',')
+			splt_rlens = ALLELE_TEL_DAT[j][6].split(',')
+			splt_mapq  = ALLELE_TEL_DAT[j][7].split(',')
+			splt_rname = ALLELE_TEL_DAT[j][10].split(',')
+			for k in range(len(splt_rname)):
+				if splt_rname[k] in subtel_clust_by_readname:
+					allele_tel_dat_by_subtel_clust[subtel_clust_by_readname[splt_rname[k]]].append((int(splt_tls[k]), splt_rlens[k], splt_mapq[k], splt_rname[k]))
+		for j in range(len(allele_tel_dat_by_subtel_clust)):
+			allele_tel_dat_by_subtel_clust[j] = sorted(allele_tel_dat_by_subtel_clust[j])
+		#
+		for j in sort_alltvr_clustdat[i]:
+			splt = all_labels[j].split('_')
+			my_i = int(splt[3])
+			if len(usable_clusters) == 1:
+				ALLELE_TEL_DAT[j][3] = str(i+1)
+			else:
+				ALLELE_TEL_DAT[j][3] = str(i+1)+'a'
+			ALLELE_TEL_DAT[j][4]  = str(int(choose_tl_from_observations([n[0] for n in allele_tel_dat_by_subtel_clust[0]], ALLELE_TL_METHOD)))
+			ALLELE_TEL_DAT[j][5]  = ','.join([str(n[0]) for n in allele_tel_dat_by_subtel_clust[0]])
+			ALLELE_TEL_DAT[j][6]  = ','.join([n[1] for n in allele_tel_dat_by_subtel_clust[0]])
+			ALLELE_TEL_DAT[j][7]  = ','.join([n[2] for n in allele_tel_dat_by_subtel_clust[0]])
+			ALLELE_TEL_DAT[j][10] = ','.join([n[3] for n in allele_tel_dat_by_subtel_clust[0]])
+			for k in range(1,len(allele_tel_dat_by_subtel_clust)):
+				new_allele_tel_dat_entries.append((j, [ALLELE_TEL_DAT[j][0],
+				                                       ALLELE_TEL_DAT[j][1],
+				                                       ALLELE_TEL_DAT[j][2],
+				                                       str(i+1)+chr(97+k),
+				                                       str(int(choose_tl_from_observations([n[0] for n in allele_tel_dat_by_subtel_clust[k]], ALLELE_TL_METHOD))),
+				                                       ','.join([str(n[0]) for n in allele_tel_dat_by_subtel_clust[k]]),
+				                                       ','.join([n[1] for n in allele_tel_dat_by_subtel_clust[k]]),
+				                                       ','.join([n[2] for n in allele_tel_dat_by_subtel_clust[k]]),
+				                                       ALLELE_TEL_DAT[j][8],
+				                                       ALLELE_TEL_DAT[j][9],
+				                                       ','.join([n[3] for n in allele_tel_dat_by_subtel_clust[k]])]))
+		num_allelles_added_because_subtel += len(usable_clusters) - 1
+	new_allele_tel_dat_entries = sorted(new_allele_tel_dat_entries, reverse=True)
+	for n in new_allele_tel_dat_entries:
+		ALLELE_TEL_DAT.insert(n[0]+1, n[1])
+	#
+	tvr_nums = {}
+	for n in ALLELE_TEL_DAT:
+		if n[3].isdigit():
+			tvr_nums[int(n[3])] = True
+		else:
+			tvr_nums[int(n[3][:-1])] = True
+	num_unique_tvrs    = len(tvr_nums)
+	num_unique_alleles = len(set([n[3] for n in ALLELE_TEL_DAT]))
+	num_blank_alleles  = len([n[0] for n in ALLELE_TEL_DAT if n[0] == blank_chr])
+	print(' -', num_unique_alleles, 'unique alleles')
+	print(' -', num_unique_tvrs, 'unique TVRs')
+	print(' -', num_blank_alleles, 'blank TVRs')
+	print(' -', num_allelles_added_because_subtel, 'alleles split to different subtels')
 
 	#
 	# write out allele TLs
@@ -826,7 +974,8 @@ def main(raw_args=None):
 	        'read_lengths' + '\t' + 
 	        'read_mapq' + '\t' +
 	        'tvr_len' + '\t' +
-	        'tvr_consensus' + '\n')
+	        'tvr_consensus' + '\t' +
+	        'supporting_reads' + '\n')
 	for i in range(len(ALLELE_TEL_DAT)):
 		f.write('\t'.join(ALLELE_TEL_DAT[i]) + '\n')
 	f.close()

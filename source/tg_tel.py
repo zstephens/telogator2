@@ -384,7 +384,7 @@ def get_double_anchored_tels(ANCHORED_TEL_BY_CHR, NONTEL_REFSPANS_BY_CHR, gdat_p
 #
 #
 def get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params):
-	[MIN_CANONICAL_FRAC, KMER_SEARCH_LIST, READ_TYPE] = gtbct_params
+	[MINIMUM_TEL_BASES, MIN_CANONICAL_FRAC, KMER_LIST, KMER_LIST_REV, READ_TYPE] = gtbct_params
 	del_keys = []
 	for k in sorted(ANCHORED_TEL_BY_CHR.keys()):
 		del_list = []
@@ -393,18 +393,85 @@ def get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params):
 			my_type = ANCHORED_TEL_BY_CHR[k][i][4]
 			my_rdat = ANCHORED_TEL_BY_CHR[k][i][6]
 			if k[-1] == 'p':
+				kmers_to_use = KMER_LIST
 				if my_type == 'p':
 					my_telseq = my_rdat[:my_tlen]
 				elif my_type == 'q':
 					my_telseq = RC(my_rdat[-my_tlen:])
 			elif k[-1] == 'q':
+				kmers_to_use = KMER_LIST_REV
 				if my_type == 'p':
 					my_telseq = RC(my_rdat[:my_tlen])
 				elif my_type == 'q':
 					my_telseq = my_rdat[-my_tlen:]
-			my_canonical_frac = get_telomere_base_count(my_telseq, KMER_SEARCH_LIST, mode=READ_TYPE) / float(len(my_telseq))
-			if my_canonical_frac < MIN_CANONICAL_FRAC:
+			my_canonical_bases = get_telomere_base_count(my_telseq, kmers_to_use, mode=READ_TYPE)
+			my_canonical_frac  = my_canonical_bases / float(len(my_telseq))
+			if my_canonical_bases < MINIMUM_TEL_BASES or my_canonical_frac < MIN_CANONICAL_FRAC:
 				del_list.append(i)
 		for di in sorted(del_list, reverse=True):
 			del_keys.append((k,di))
 	return del_keys
+
+#
+#
+#
+def get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, gatd_params):
+	[ALLELE_TL_METHOD, MIN_READS_PER_PHASE] = gatd_params
+	out_dat = []
+	for allele_i in range(len(read_clust_dat[0])):
+		allele_tvrlen   = read_clust_dat[7][allele_i]
+		allele_cons_out = ''
+		if allele_tvrlen > 0:
+			if my_chr[-1] == 'p':	# p will be reversed so its in subtel --> tvr --> tel orientation
+				allele_cons_out = read_clust_dat[4][allele_i][-allele_tvrlen:][::-1]
+			elif my_chr[-1] == 'q':
+				allele_cons_out = read_clust_dat[4][allele_i][:allele_tvrlen]
+		#
+		# kmer_hit_dat[n][1]   = tlen + all the extra subtel buffers
+		# kmer_hit_dat[n][4]   = readname (needed for downstream analyses)
+		# read_clust_dat[3][n] = the length of the subtel region present before tvr/tel region
+		# read_clust_dat[6][n] = the length of filtered regions past canonical telomere region
+		#
+		# the difference of these two will be the actual size of the (tvr + tel) region in the read
+		# -- also subtract length of filtered error regions
+		#
+		allele_readcount = len(read_clust_dat[0][allele_i])
+		allele_tlen_mapq = sorted([(kmer_hit_dat[n][1] - read_clust_dat[3][n] - read_clust_dat[6][n], my_rlens[n], kmer_hit_dat[n][4], kmer_hit_dat[n][5]) for n in read_clust_dat[0][allele_i]])
+		# subtracting tvr so that "actual" TL is output. values can be negative
+		allele_tlens     = [n[0]-len(allele_cons_out) for n in allele_tlen_mapq]
+		allele_tlen_str  = ','.join([str(n) for n in allele_tlens])
+		rlen_str         = ','.join([str(n[1]) for n in allele_tlen_mapq])
+		rname_str        = ','.join([str(n[2]) for n in allele_tlen_mapq])
+		mapq_str         = ','.join([str(n[3]) for n in allele_tlen_mapq])
+		#
+		consensus_tl_allele = choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD)
+		#
+		if allele_readcount >= MIN_READS_PER_PHASE:
+			out_dat.append([my_chr,
+			                str(my_pos),
+			                str(allele_i),
+			                '0',							# allele id (will be filled out later)
+			                str(int(consensus_tl_allele)),
+			                allele_tlen_str,
+			                rlen_str,
+			                mapq_str,
+			                str(len(allele_cons_out)),
+			                allele_cons_out,
+			                rname_str])
+	return out_dat
+
+#
+#
+#
+def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD):
+	consensus_tl_allele = None
+	if ALLELE_TL_METHOD == 'mean':
+		consensus_tl_allele = np.mean(allele_tlens)
+	elif ALLELE_TL_METHOD == 'median':
+		consensus_tl_allele = np.median(allele_tlens)
+	elif ALLELE_TL_METHOD == 'max':
+		consensus_tl_allele = np.max(allele_tlens)
+	elif ALLELE_TL_METHOD[0] == 'p':
+		my_percentile = int(ALLELE_TL_METHOD[1:])
+		consensus_tl_allele = np.percentile(allele_tlens, my_percentile)
+	return consensus_tl_allele

@@ -155,7 +155,7 @@ def plot_all_read_data(density_data, tl_vals, aln_dat, tel_window, f_title, fig_
 	mpl.close(fig)
 
 #
-#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read_orientation, read_name, read_mapq]
+#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read_orientation, read_name, read_mapq, read_fasta]
 #
 def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=None, draw_boundaries=None, plot_params={}):
 	if my_chr:
