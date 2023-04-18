@@ -140,7 +140,9 @@ def main(raw_args=None):
 	# for debugging purposes (don't replot figures if they already exist)
 	DO_NOT_OVERWRITE = False
 	# for debugging purposes (only cluster TVRs at specific arms)
-	DEBUG_CHR_LIST   = [n for n in args.debug_chr.split(',')]
+	DEBUG_CHR_LIST = []
+	if len(args.debug_chr):
+		DEBUG_CHR_LIST = [n for n in args.debug_chr.split(',')]
 
 	#
 	# parse telomere kmer data
