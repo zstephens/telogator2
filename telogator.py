@@ -143,6 +143,13 @@ def main(raw_args=None):
 	DEBUG_CHR_LIST = []
 	if len(args.debug_chr):
 		DEBUG_CHR_LIST = [n for n in args.debug_chr.split(',')]
+	# merge all blank TVRs into "chrBq"
+	MERGE_BLANK = True
+	#
+	orphans_chr = 'chrUq'
+	orphans_pos = 0
+	blank_chr   = 'chrBq'
+	blank_pos   = 0
 
 	#
 	# parse telomere kmer data
@@ -681,23 +688,24 @@ def main(raw_args=None):
 					read_subtel_adj[read_i]    = kmer_hit_dat[read_i][1] - read_clust_dat[3][read_i]
 		# save fasta sequences for final clustering of all alleles
 		for khd_i, allele_i in read_was_clustered.items():
+			# refine initial fasta sequences based on sub/tel lens determined during clustering
+			my_tel_sequence_len = read_subtel_adj[khd_i]
+			my_sub_sequence_len = len(kmer_hit_dat[khd_i][6][2][1]) - my_tel_sequence_len
+			my_tel_type         = kmer_hit_dat[khd_i][6][0][0].split('_')[2][-1]
+			if my_chr[-1] == 'p':
+				if my_tel_type == 'q':
+					kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))
+				kmer_hit_dat[khd_i][6][0] = (kmer_hit_dat[khd_i][6][0][0], kmer_hit_dat[khd_i][6][2][1][:my_tel_sequence_len])
+				kmer_hit_dat[khd_i][6][1] = (kmer_hit_dat[khd_i][6][1][0], kmer_hit_dat[khd_i][6][2][1][my_tel_sequence_len:])
+			else:
+				if my_tel_type == 'p':
+					kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))
+				kmer_hit_dat[khd_i][6][0] = (kmer_hit_dat[khd_i][6][0][0], kmer_hit_dat[khd_i][6][2][1][my_sub_sequence_len:])
+				kmer_hit_dat[khd_i][6][1] = (kmer_hit_dat[khd_i][6][1][0], kmer_hit_dat[khd_i][6][2][1][:my_sub_sequence_len])
+			#
 			if allele_i == -1:
 				orphaned_read_dat.append((my_chr, my_pos, my_rlens[khd_i], copy.deepcopy(kmer_hit_dat[khd_i])))
 			else:
-				# refine initial fasta sequences based on sub/tel lens determined during clustering
-				my_tel_sequence_len = read_subtel_adj[khd_i]
-				my_sub_sequence_len = len(kmer_hit_dat[khd_i][6][2][1]) - my_tel_sequence_len
-				my_tel_type         = kmer_hit_dat[khd_i][6][0][0].split('_')[2][-1]
-				if my_chr[-1] == 'p':
-					if my_tel_type == 'q':
-						kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))
-					kmer_hit_dat[khd_i][6][0] = (kmer_hit_dat[khd_i][6][0][0], kmer_hit_dat[khd_i][6][2][1][:my_tel_sequence_len])
-					kmer_hit_dat[khd_i][6][1] = (kmer_hit_dat[khd_i][6][1][0], kmer_hit_dat[khd_i][6][2][1][my_tel_sequence_len:])
-				else:
-					if my_tel_type == 'p':
-						kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))
-					kmer_hit_dat[khd_i][6][0] = (kmer_hit_dat[khd_i][6][0][0], kmer_hit_dat[khd_i][6][2][1][my_sub_sequence_len:])
-					kmer_hit_dat[khd_i][6][1] = (kmer_hit_dat[khd_i][6][1][0], kmer_hit_dat[khd_i][6][2][1][:my_sub_sequence_len])
 				my_key = (my_chr, my_pos, allele_i)
 				if my_key not in temp_read_dat:
 					temp_read_dat[my_key] = []
@@ -725,14 +733,13 @@ def main(raw_args=None):
 	#
 	# analyze orphaned reads
 	#
-	#	kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
+	#	kmer_dat[i]          = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
+	#	orphaned_read_dat[i] = [my_chr, my_pos, my_rlen, my_kmer_dat]
 	#
 	if len(orphaned_read_dat) >= MIN_READS_PER_PHASE:
 		sys.stdout.write('clustering ' + str(len(orphaned_read_dat)) + ' orphan reads...')
 		sys.stdout.flush()
 		orphans_kmer_hit_dat = []
-		orphans_chr   = 'chrUq'
-		orphans_pos   = 0
 		orphans_rlens = [n[2] for n in orphaned_read_dat]
 		for ori in range(len(orphaned_read_dat)):
 			# reverse p-arm kmer hits so everything is in same orientation
@@ -740,15 +747,18 @@ def main(raw_args=None):
 				# reverse kmer hits
 				or_tlen = orphaned_read_dat[ori][3][1]
 				orphaned_read_dat[ori][3][0] = [[[or_tlen-n[1], or_tlen-n[0]] for n in m[::-1]] for m in orphaned_read_dat[ori][3][0]]
-				# swap orientation label
+				# swap orientation label (not sure if this is ever used anywhere, honestly)
 				orphaned_read_dat[ori][3][3] = ORR_SWAP[orphaned_read_dat[ori][3][3]]
-				# swap read sequence fasta
-				orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], RC(orphaned_read_dat[ori][3][6][0][1])),	# tel
-				                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),	# sub (truncated and manipulated so that ps can be compared to qs downstream)
-				                                (orphaned_read_dat[ori][3][6][2][0], RC(orphaned_read_dat[ori][3][6][2][1]))]	# entire read
-			orphans_kmer_hit_dat.append(orphaned_read_dat[ori][3])
-		orphans_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-999_orphans.png'
-		orphans_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-999_orphans.png'
+				##### swap read sequence fasta
+				####orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], RC(orphaned_read_dat[ori][3][6][0][1])),	# tel
+				####                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),	# sub (truncated and manipulated so that ps can be compared to qs downstream)
+				####                                (orphaned_read_dat[ori][3][6][2][0], RC(orphaned_read_dat[ori][3][6][2][1]))]	# entire read
+			orphans_kmer_hit_dat.append(copy.deepcopy(orphaned_read_dat[ori][3]))
+			# embed original chromosome in the read name
+			orphans_kmer_hit_dat[-1][4] = orphans_kmer_hit_dat[-1][4] + ' ' + orphaned_read_dat[ori][0] + ':' + str(orphaned_read_dat[ori][1])
+		#
+		orphans_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_orphans.png'
+		orphans_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_orphans.png'
 		orphans_dendrogram_fn  = OUT_TVR_TEMP + 'orphans_dendrogram.png'
 		orphans_dend_prefix_fn = OUT_TVR_TEMP + 'orphans_p_dendrogram.png'
 		orphans_dist_matrix_fn = OUT_TVR_TEMP + 'orphans_cluster.npy'
@@ -786,33 +796,32 @@ def main(raw_args=None):
 	#
 	# collapse all blank TVRs into a single allele
 	#
-	del_inds_blank = []
+	del_inds_blank  = []
 	blank_read_keys = []
-	blank_chr   = 'chrBq'
-	blank_pos   = 0
-	blank_entry = [blank_chr, str(blank_pos), '0', '0', '', '', '', '', '0', '', '']
+	blank_entry = [blank_chr, str(blank_pos), '0', '0', '', '', '', '', '0', '', '', '']
 	original_chr_mapping_of_blank_reads = {}
-	for i in range(len(allele_tel_dat_temp)):
-		if len(allele_tel_dat_temp[i][9]) == 0:
-			del_inds_blank.append(i)
-			blank_entry[5]  += allele_tel_dat_temp[i][5] + ','
-			blank_entry[6]  += allele_tel_dat_temp[i][6] + ','
-			blank_entry[7]  += allele_tel_dat_temp[i][7] + ','
-			blank_entry[10] += allele_tel_dat_temp[i][10] + ','
-			blank_read_keys.append((allele_tel_dat_temp[i][0], int(allele_tel_dat_temp[i][1]), int(allele_tel_dat_temp[i][2])))
-			for rname in allele_tel_dat_temp[i][10].split(','):
-				original_chr_mapping_of_blank_reads[rname] = (allele_tel_dat_temp[i][0], int(allele_tel_dat_temp[i][1]))
-	for di in sorted(del_inds_blank, reverse=True):
-		del allele_tel_dat_temp[di]
-	if len(blank_entry[5]):
-		if blank_entry[5][-1] == ',':
-			blank_entry[5] = blank_entry[5][:-1]
-		if blank_entry[6][-1] == ',':
-			blank_entry[6] = blank_entry[6][:-1]
-		if blank_entry[7][-1] == ',':
-			blank_entry[7] = blank_entry[7][:-1]
-		if blank_entry[10][-1] == ',':
-			blank_entry[10] = blank_entry[10][:-1]
+	if MERGE_BLANK:
+		for i in range(len(allele_tel_dat_temp)):
+			if len(allele_tel_dat_temp[i][9]) == 0:
+				del_inds_blank.append(i)
+				blank_entry[5]  += allele_tel_dat_temp[i][5] + ','
+				blank_entry[6]  += allele_tel_dat_temp[i][6] + ','
+				blank_entry[7]  += allele_tel_dat_temp[i][7] + ','
+				blank_entry[10] += allele_tel_dat_temp[i][10] + ','
+				blank_read_keys.append((allele_tel_dat_temp[i][0], int(allele_tel_dat_temp[i][1]), int(allele_tel_dat_temp[i][2])))
+				for rname in allele_tel_dat_temp[i][10].split(','):
+					original_chr_mapping_of_blank_reads[rname] = (allele_tel_dat_temp[i][0], int(allele_tel_dat_temp[i][1]))
+		for di in sorted(del_inds_blank, reverse=True):
+			del allele_tel_dat_temp[di]
+		if len(blank_entry[5]):
+			if blank_entry[5][-1] == ',':
+				blank_entry[5] = blank_entry[5][:-1]
+			if blank_entry[6][-1] == ',':
+				blank_entry[6] = blank_entry[6][:-1]
+			if blank_entry[7][-1] == ',':
+				blank_entry[7] = blank_entry[7][:-1]
+			if blank_entry[10][-1] == ',':
+				blank_entry[10] = blank_entry[10][:-1]
 
 	#
 	# organize read data and clustered alleles for the final stretch of processing
@@ -823,10 +832,12 @@ def main(raw_args=None):
 		my_key = (atdat[0], int(atdat[1]), int(atdat[2]))
 		clustered_read_dat[my_key] = copy.deepcopy(temp_read_dat[my_key])
 	#
-	# blank tvr sequences need to be manipulated so that ps and qs can be compared to each other later
+	# blank tvr/subtel sequences need to be manipulated so that ps and qs can be compared to each other later
 	#
-	if len(blank_read_keys):
+	if MERGE_BLANK and len(blank_read_keys):
 		clustered_read_dat[(blank_chr, blank_pos, 0)] = []
+		#for k in blank_read_keys:
+		#	clustered_read_dat[(blank_chr, blank_pos, 0)] += [copy.deepcopy(n) for n in temp_read_dat[k]]
 		for k in blank_read_keys:
 			if k[0][-1] == 'p':
 				clustered_read_dat[(blank_chr, blank_pos, 0)] += [[(n[0][0], RC(n[0][1])),
@@ -878,8 +889,8 @@ def main(raw_args=None):
 		                                        linkage_method='complete',
 		                                        job=(1,1),
 		                                        dendrogram_height=12)
-	if len(blank_cluster):
-		sort_alltvr_clustdat = sorted(alltvr_clustdat + [blank_cluster])
+	if MERGE_BLANK and len(blank_cluster):
+		sort_alltvr_clustdat = sorted(alltvr_clustdat) + [blank_cluster]
 	else:
 		sort_alltvr_clustdat = sorted(alltvr_clustdat)
 	sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
@@ -888,7 +899,7 @@ def main(raw_args=None):
 	#
 	# decluster alleles that have the same TVR if their subtelomeres are different enough
 	#
-	print('checking for subtelomere discrepancies...')
+	print('comparing subtelomeres...')
 	new_allele_tel_dat_entries = []
 	num_allelles_added_because_subtel = 0
 	for i in range(len(sort_alltvr_clustdat)):
@@ -907,11 +918,8 @@ def main(raw_args=None):
 			elif my_c[-1] == 'q':
 				subtels_for_this_cluster.extend([n[1][1][-MAX_SUBTEL_SIZE_DECLUSTER:] for n in clustered_read_dat[my_key]])
 			subtel_labels.extend([n[1][0].split('_')[-1] for n in clustered_read_dat[my_key]])
-		#for j in range(len(subtel_labels)):
-		#	if subtel_labels[j] in ['SRR14856445.517382', 'SRR14856444.50650']:#'SRR14856444.332479']:
-		#		print(subtels_for_this_cluster[j])
 		my_dendro_title = 'all-tvrs-cluster ' + str(i) + ' : ' + '/'.join(chrs_hit.keys())
-		#print('SUBTEL LENS:', [len(n) for n in subtels_for_this_cluster])
+		#
 		if len(subtels_for_this_cluster) == 1:		# this can happen when debugging individual arms
 			subtel_clustdat = [[0]]
 		else:
@@ -960,6 +968,9 @@ def main(raw_args=None):
 				ALLELE_TEL_DAT[j][6]  = ','.join([n[1] for n in allele_tel_dat_by_subtel_clust[0]])
 				ALLELE_TEL_DAT[j][7]  = ','.join([n[2] for n in allele_tel_dat_by_subtel_clust[0]])
 				ALLELE_TEL_DAT[j][10] = ','.join([n[3] for n in allele_tel_dat_by_subtel_clust[0]])
+				if ALLELE_TEL_DAT[j][0] == blank_chr:
+					rname_list = [n[3] for n in allele_tel_dat_by_subtel_clust[0]]
+					ALLELE_TEL_DAT[j][11] = ','.join([original_chr_mapping_of_blank_reads[n][0] for n in rname_list])
 				for k in range(1,len(allele_tel_dat_by_subtel_clust)):
 					new_allele_tel_dat_entries.append((j, [ALLELE_TEL_DAT[j][0],
 					                                       ALLELE_TEL_DAT[j][1],
@@ -971,7 +982,11 @@ def main(raw_args=None):
 					                                       ','.join([n[2] for n in allele_tel_dat_by_subtel_clust[k]]),
 					                                       ALLELE_TEL_DAT[j][8],
 					                                       ALLELE_TEL_DAT[j][9],
-					                                       ','.join([n[3] for n in allele_tel_dat_by_subtel_clust[k]])]))
+					                                       ','.join([n[3] for n in allele_tel_dat_by_subtel_clust[k]]),
+					                                       '']))
+					if new_allele_tel_dat_entries[-1][1][0] == blank_chr:
+						rname_list = [n[3] for n in allele_tel_dat_by_subtel_clust[k]]
+						new_allele_tel_dat_entries[-1][1][11] = ','.join([original_chr_mapping_of_blank_reads[n][0] for n in rname_list])
 			num_allelles_added_because_subtel += len(usable_clusters) - 1
 	#
 	if len(new_allele_tel_dat_entries):
@@ -1008,7 +1023,8 @@ def main(raw_args=None):
 	        'read_mapq' + '\t' +
 	        'tvr_len' + '\t' +
 	        'tvr_consensus' + '\t' +
-	        'supporting_reads' + '\n')
+	        'supporting_reads' + '\t' +
+	        'original_chr' + '\n')
 	for i in range(len(ALLELE_TEL_DAT)):
 		f.write('\t'.join(ALLELE_TEL_DAT[i]) + '\n')
 	f.close()
