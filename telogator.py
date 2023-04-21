@@ -138,7 +138,7 @@ def main(raw_args=None):
 		makedir(OUT_PLOT_DIR)
 	#
 	# for debugging purposes (don't replot figures if they already exist)
-	DO_NOT_OVERWRITE = False
+	DO_NOT_OVERWRITE = True
 	# for debugging purposes (only cluster TVRs at specific arms)
 	DEBUG_CHR_LIST = []
 	if len(args.debug_chr):
@@ -682,16 +682,19 @@ def main(raw_args=None):
 		read_subtel_adj    = {n:0 for n in range(len(kmer_hit_dat))}
 		for allele_i in range(len(read_clust_dat[0])):
 			allele_readcount = len(read_clust_dat[0][allele_i])
-			if allele_readcount >= MIN_READS_PER_PHASE:
-				for rcd_i, read_i in enumerate(read_clust_dat[0][allele_i]):
+			for rcd_i, read_i in enumerate(read_clust_dat[0][allele_i]):
+				if allele_readcount >= MIN_READS_PER_PHASE:
 					read_was_clustered[read_i] = allele_i
-					read_subtel_adj[read_i]    = kmer_hit_dat[read_i][1] - read_clust_dat[3][read_i]
+				read_subtel_adj[read_i]    = kmer_hit_dat[read_i][1] - read_clust_dat[3][read_i]
+				print('AGH', kmer_hit_dat[read_i][6][2][0], kmer_hit_dat[read_i][1], read_clust_dat[3][read_i])
 		# save fasta sequences for final clustering of all alleles
 		for khd_i, allele_i in read_was_clustered.items():
 			# refine initial fasta sequences based on sub/tel lens determined during clustering
 			my_tel_sequence_len = read_subtel_adj[khd_i]
 			my_sub_sequence_len = len(kmer_hit_dat[khd_i][6][2][1]) - my_tel_sequence_len
 			my_tel_type         = kmer_hit_dat[khd_i][6][0][0].split('_')[2][-1]
+			print('RAWR', kmer_hit_dat[khd_i][6][2][0])
+			print(my_tel_sequence_len, my_sub_sequence_len, my_tel_type)
 			if my_chr[-1] == 'p':
 				if my_tel_type == 'q':
 					kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))
@@ -749,21 +752,25 @@ def main(raw_args=None):
 				orphaned_read_dat[ori][3][0] = [[[or_tlen-n[1], or_tlen-n[0]] for n in m[::-1]] for m in orphaned_read_dat[ori][3][0]]
 				# swap orientation label (not sure if this is ever used anywhere, honestly)
 				orphaned_read_dat[ori][3][3] = ORR_SWAP[orphaned_read_dat[ori][3][3]]
-				##### swap read sequence fasta
-				####orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], RC(orphaned_read_dat[ori][3][6][0][1])),	# tel
-				####                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),	# sub (truncated and manipulated so that ps can be compared to qs downstream)
-				####                                (orphaned_read_dat[ori][3][6][2][0], RC(orphaned_read_dat[ori][3][6][2][1]))]	# entire read
+				# swap read sequence fasta
+				orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], RC(orphaned_read_dat[ori][3][6][0][1])),
+				                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),
+				                                (orphaned_read_dat[ori][3][6][2][0], RC(orphaned_read_dat[ori][3][6][2][1]))]
+			else:
+				orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], orphaned_read_dat[ori][3][6][0][1]),
+				                                (orphaned_read_dat[ori][3][6][1][0], orphaned_read_dat[ori][3][6][1][1][-MAX_SUBTEL_SIZE_DECLUSTER:]),
+				                                (orphaned_read_dat[ori][3][6][2][0], orphaned_read_dat[ori][3][6][2][1])]
 			orphans_kmer_hit_dat.append(copy.deepcopy(orphaned_read_dat[ori][3]))
 			# embed original chromosome in the read name
 			orphans_kmer_hit_dat[-1][4] = orphans_kmer_hit_dat[-1][4] + ' ' + orphaned_read_dat[ori][0] + ':' + str(orphaned_read_dat[ori][1])
 		#
 		orphans_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_orphans.png'
 		orphans_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_orphans.png'
-		orphans_dendrogram_fn  = OUT_TVR_TEMP + 'orphans_dendrogram.png'
-		orphans_dend_prefix_fn = OUT_TVR_TEMP + 'orphans_p_dendrogram.png'
-		orphans_dist_matrix_fn = OUT_TVR_TEMP + 'orphans_cluster.npy'
-		orphans_dist_prefix_fn = OUT_TVR_TEMP + 'orphans_p_cluster.npy'
-		orphans_consensus_fn   = OUT_TVR_TEMP + 'orphans_consensus-seq.fa'
+		orphans_dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-998_orphans.png'
+		orphans_dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-998_orphans.png'
+		orphans_dist_matrix_fn = OUT_TVR_TEMP + 'cluster-998_orphans.npy'
+		orphans_dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-998_orphans.npy'
+		orphans_consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-998_orphans.fa'
 		#
 		orphans_clust_dat = cluster_tvrs(orphans_kmer_hit_dat, KMER_METADATA, orphans_chr, orphans_pos, TREECUT_ORPHANS,
 		                                 aln_mode='ds',
@@ -989,10 +996,20 @@ def main(raw_args=None):
 						new_allele_tel_dat_entries[-1][1][11] = ','.join([original_chr_mapping_of_blank_reads[n][0] for n in rname_list])
 			num_allelles_added_because_subtel += len(usable_clusters) - 1
 	#
+	# insert subcluster splits
 	if len(new_allele_tel_dat_entries):
 		new_allele_tel_dat_entries = sorted(new_allele_tel_dat_entries, reverse=True)
 		for n in new_allele_tel_dat_entries:
 			ALLELE_TEL_DAT.insert(n[0]+1, n[1])
+	#
+	# at this point allele_id == 0 means cluster was declustered due to different subtels and no subcluster had enough reads
+	if MERGE_BLANK:
+		del_inds = []
+		for i in range(len(ALLELE_TEL_DAT)):
+			if ALLELE_TEL_DAT[i][3] == '0':
+				del_inds.append(i)
+		for di in sorted(del_inds, reverse=True):
+			del ALLELE_TEL_DAT[di]
 	#
 	tvr_nums = {}
 	for n in ALLELE_TEL_DAT:
