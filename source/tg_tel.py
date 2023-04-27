@@ -478,4 +478,7 @@ def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD):
 	elif ALLELE_TL_METHOD[0] == 'p':
 		my_percentile = int(ALLELE_TL_METHOD[1:])
 		consensus_tl_allele = np.percentile(allele_tlens, my_percentile)
+	elif ALLELE_TL_METHOD[-7:] == 'fromtop':
+		my_fromtop = min(len(allele_tlens), int(ALLELE_TL_METHOD[:-7]))
+		consensus_tl_allele = allele_tlens[-my_fromtop]
 	return consensus_tl_allele
