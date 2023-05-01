@@ -15,7 +15,7 @@ INCLUDE_SUBTEL_BUFF = 500
 #
 #
 #
-def read_kmer_tsv(fn):
+def read_kmer_tsv(fn, READ_TYPE):
 	if exists_and_is_nonzero(fn) == False:
 		print('Error: ' + fn + ' not found.')
 		exit(1)
@@ -24,17 +24,22 @@ def read_kmer_tsv(fn):
 	KMER_COLORS = []
 	KMER_LETTER = []
 	KMER_FLAGS  = []
+	CANONICAL_STRINGS = []
 	#
 	f = open(fn,'r')
 	for line in f:
 		if line[0] != '#' and len(line.strip()):
 			splt = line.strip().split('\t')
+			if 'pacbio_only' in splt[3] and READ_TYPE not in ['hifi', 'clr']:
+				continue
+			if 'nanopore_only' in splt[3] and READ_TYPE not in ['ont']:
+				continue
 			KMER_LIST.append(splt[0])
 			KMER_COLORS.append(splt[1])
 			KMER_LETTER.append(splt[2])
 			KMER_FLAGS.append(splt[3])
 			if 'canonical' in KMER_FLAGS[-1]:
-				CANONICAL_STRING = KMER_LIST[-1]
+				CANONICAL_STRINGS.append(KMER_LIST[-1])
 	f.close()
 	#
 	sorted_kmer_dat  = sorted(list(set([(len(KMER_LIST[n]), KMER_LIST[n], KMER_COLORS[n], KMER_LETTER[n], KMER_FLAGS[n]) for n in range(len(KMER_LIST))])), reverse=True)	# sort by length
@@ -47,7 +52,7 @@ def read_kmer_tsv(fn):
 	for i in range(len(KMER_LIST)):
 		KMER_ISSUBSTRING.append([j for j in range(len(KMER_LIST)) if (j != i and KMER_LIST[i] in KMER_LIST[j])])
 	#
-	return (KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRING)
+	return (KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRINGS)
 
 #
 #

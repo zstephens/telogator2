@@ -62,6 +62,31 @@ MAX_TVR_LEN_SHORT = 3000	# when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 20		# add this many bp to detected TVR boundary
 PREFIX_MERGE_DIST = 0.030	# if TVR consensuses are less than this distance apart join them in prefix merging
 
+#
+#
+#
+def get_scoring_matrix(letters, canonical_letter):
+	letters = AMINO
+	scoring_matrix = {}
+	for i in range(len(letters)):
+		for j in range(len(letters)):
+			if i == j:
+				scoring_matrix[(letters[i],letters[j])] = MATCH_NORMAL
+			else:
+				scoring_matrix[(letters[i],letters[j])] = XMATCH_NORMAL
+				scoring_matrix[(letters[j],letters[i])] = XMATCH_NORMAL
+	for i in range(len(letters)):
+		scoring_matrix[(letters[i],canonical_letter)] = XMATCH_CANON
+		scoring_matrix[(canonical_letter,letters[i])] = XMATCH_CANON
+	for i in range(len(letters)):
+		scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
+		scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
+	scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON			# matching canonical
+	scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN		# matching unknown
+	scoring_matrix[(canonical_letter, UNKNOWN_LETTER)]   = MATCH_CANON_UNKNOWN	# canon = unknown
+	scoring_matrix[(UNKNOWN_LETTER, canonical_letter)]   = MATCH_CANON_UNKNOWN	# canon = unknown
+	return scoring_matrix
+
 import random
 def shuffle_seq(s):
 	return ''.join(random.sample(s,len(s)))
@@ -206,27 +231,7 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
 	#
 	char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
 	#
-	# scoring matrix
-	#
-	letters = AMINO
-	scoring_matrix = {}
-	for i in range(len(letters)):
-		for j in range(len(letters)):
-			if i == j:
-				scoring_matrix[(letters[i],letters[j])] = MATCH_NORMAL
-			else:
-				scoring_matrix[(letters[i],letters[j])] = XMATCH_NORMAL
-				scoring_matrix[(letters[j],letters[i])] = XMATCH_NORMAL
-	for i in range(len(letters)):
-		scoring_matrix[(letters[i],canonical_letter)] = XMATCH_CANON
-		scoring_matrix[(canonical_letter,letters[i])] = XMATCH_CANON
-	for i in range(len(letters)):
-		scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
-		scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
-	scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON			# matching canonical
-	scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN		# matching unknown
-	scoring_matrix[(canonical_letter, UNKNOWN_LETTER)]   = MATCH_CANON_UNKNOWN	# canon = unknown
-	scoring_matrix[(UNKNOWN_LETTER, canonical_letter)]   = MATCH_CANON_UNKNOWN	# canon = unknown
+	scoring_matrix = get_scoring_matrix(canonical_letter)
 	#
 	# create color vector
 	#
@@ -796,27 +801,7 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 				all_indices[k%alignment_processes].append((i,j))
 				k += 1
 		#
-		#	scoring matrix
-		#
-		letters = AMINO
-		scoring_matrix = {}
-		for i in range(len(letters)):
-			for j in range(len(letters)):
-				if i == j:
-					scoring_matrix[(letters[i],letters[j])] = MATCH_NORMAL
-				else:
-					scoring_matrix[(letters[i],letters[j])] = XMATCH_NORMAL
-					scoring_matrix[(letters[j],letters[i])] = XMATCH_NORMAL
-		for i in range(len(letters)):
-			scoring_matrix[(letters[i],canonical_letter)] = XMATCH_CANON
-			scoring_matrix[(canonical_letter,letters[i])] = XMATCH_CANON
-		for i in range(len(letters)):
-			scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
-			scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
-		scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON			# matching canonical
-		scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN		# matching unknown
-		scoring_matrix[(canonical_letter, UNKNOWN_LETTER)]   = MATCH_CANON_UNKNOWN	# canon = unknown
-		scoring_matrix[(UNKNOWN_LETTER, canonical_letter)]   = MATCH_CANON_UNKNOWN	# canon = unknown
+		scoring_matrix = get_scoring_matrix(canonical_letter)
 		#
 		#	even more parallelization! Any problem can be solved by throwing tons of CPU at it.
 		#

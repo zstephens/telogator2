@@ -127,6 +127,8 @@ def main(raw_args=None):
 	makedir(OUT_TVR_DIR)
 	makedir(OUT_TVR_TEMP)
 	#
+	READ_TYPE = args.r
+	#
 	PLOT_READS      = args.plot
 	PLOT_FILT_READS = args.plot_filt
 	PLOT_FILT_CVECS = args.plot_filt_tvr
@@ -162,10 +164,10 @@ def main(raw_args=None):
 		print('using default telomere kmers')
 		sim_path  = pathlib.Path(__file__).resolve().parent
 		KMER_FILE = str(sim_path) + '/resources/kmers.tsv'
-	(KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRING) = read_kmer_tsv(KMER_FILE)
+	(KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRINGS) = read_kmer_tsv(KMER_FILE, READ_TYPE)
 	[KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = KMER_METADATA
 	KMER_LIST_REV = [RC(n) for n in KMER_LIST]
-	CANONICAL_STRING_REV = RC(CANONICAL_STRING)
+	CANONICAL_STRINGS_REV = [RC(n) for n in CANONICAL_STRINGS]
 
 	#
 	# parse custom treecut values, if provided
@@ -190,7 +192,6 @@ def main(raw_args=None):
 	#
 	# various parameters
 	#
-	READ_TYPE         = args.r
 	MINIMUM_READ_LEN  = args.fl
 	MINIMUM_TEL_BASES = args.ft
 	MAXIMUM_TEL_FRAC  = args.ff
@@ -324,7 +325,7 @@ def main(raw_args=None):
 				reads_skipped['no_chr_aln'] += 1
 				continue
 			# minimum tel content
-			tel_bc = get_telomere_base_count(rdat, [CANONICAL_STRING, CANONICAL_STRING_REV], mode=READ_TYPE)
+			tel_bc = get_telomere_base_count(rdat, CANONICAL_STRINGS + CANONICAL_STRINGS_REV, mode=READ_TYPE)
 			if tel_bc < MINIMUM_TEL_BASES:
 				reads_skipped['min_telbases'] += 1
 				if INPUT_TYPE != 'pickle':	# use non-tel reads for downstream filtering of double-anchored tels
@@ -465,7 +466,7 @@ def main(raw_args=None):
 	num_starting_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
 	tt = time.perf_counter()
 	#
-	gtbct_params = [MINIMUM_TEL_BASES, MIN_CANONICAL_FRAC, [CANONICAL_STRING], [CANONICAL_STRING_REV], READ_TYPE]
+	gtbct_params = [MINIMUM_TEL_BASES, MIN_CANONICAL_FRAC, CANONICAL_STRINGS, CANONICAL_STRINGS_REV, READ_TYPE]
 	del_keys     = get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params)
 	#
 	num_ending_reads = num_starting_reads - len(del_keys)
@@ -686,14 +687,12 @@ def main(raw_args=None):
 				if allele_readcount >= MIN_READS_PER_PHASE:
 					read_was_clustered[read_i] = allele_i
 				read_subtel_adj[read_i]    = kmer_hit_dat[read_i][1] - read_clust_dat[3][read_i]
-				print('AGH', kmer_hit_dat[read_i][6][2][0], kmer_hit_dat[read_i][1], read_clust_dat[3][read_i])
 		# save fasta sequences for final clustering of all alleles
 		for khd_i, allele_i in read_was_clustered.items():
 			# refine initial fasta sequences based on sub/tel lens determined during clustering
 			my_tel_sequence_len = read_subtel_adj[khd_i]
 			my_sub_sequence_len = len(kmer_hit_dat[khd_i][6][2][1]) - my_tel_sequence_len
 			my_tel_type         = kmer_hit_dat[khd_i][6][0][0].split('_')[2][-1]
-			print('RAWR', kmer_hit_dat[khd_i][6][2][0])
 			print(my_tel_sequence_len, my_sub_sequence_len, my_tel_type)
 			if my_chr[-1] == 'p':
 				if my_tel_type == 'q':
