@@ -65,7 +65,7 @@ PREFIX_MERGE_DIST = 0.030	# if TVR consensuses are less than this distance apart
 #
 #
 #
-def get_scoring_matrix(letters, canonical_letter):
+def get_scoring_matrix(canonical_letter):
 	letters = AMINO
 	scoring_matrix = {}
 	for i in range(len(letters)):
