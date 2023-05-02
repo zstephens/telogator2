@@ -245,7 +245,7 @@ def get_nonoverlapping_kmer_hits(my_telseq, KMER_LIST, KMER_ISSUBSTRING):
 # anchored_tel_dat = ANCHORED_TEL_BY_CHR[k][i]
 #
 def get_telomere_composition(anchored_tel_dat, gtc_params):
-	[my_chr, clust_num, KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING] = gtc_params
+	[my_chr, clust_num, KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING, READ_TYPE] = gtc_params
 	my_rnm  = anchored_tel_dat[0]
 	my_tlen = anchored_tel_dat[3]
 	my_type = anchored_tel_dat[4]
@@ -292,6 +292,14 @@ def get_telomere_composition(anchored_tel_dat, gtc_params):
 			my_telseq = my_rdat[-atb:]
 			my_subseq = my_rdat[:-atb]
 	#
+	if READ_TYPE in ['ont']:
+		kmers_to_use = KMER_LIST + KMER_LIST_REV
+		kiss_to_use  = []
+		for i in range(len(kmers_to_use)):
+			kiss_to_use.append([j for j in range(len(kmers_to_use)) if (j != i and kmers_to_use[i] in kmers_to_use[j])])
+	else:
+		kiss_to_use = KMER_ISSUBSTRING
+	#
 	# tel section of read, subtel section of read, entire read
 	#
 	out_fasta_dat = [('cluster-' + str(clust_num) + '_ref-' + my_chr + '_tel-' + my_type + '_' + my_rnm, my_telseq),
@@ -302,7 +310,7 @@ def get_telomere_composition(anchored_tel_dat, gtc_params):
 	#
 	# tel_composition_dat[0][kmer_list_i] = hits in current read for kmer kmer_list_i
 	#
-	tel_composition_dat = [get_nonoverlapping_kmer_hits(my_telseq, kmers_to_use, KMER_ISSUBSTRING),
+	tel_composition_dat = [get_nonoverlapping_kmer_hits(my_telseq, kmers_to_use, kiss_to_use),
 	                       atb,
 	                       my_dbta,
 	                       my_type,

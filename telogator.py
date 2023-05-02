@@ -543,7 +543,7 @@ def main(raw_args=None):
 			READLEN_OUT[my_chr].extend(my_rlens)
 			#
 			clust_tcdat = []
-			gtc_params  = [my_chr, clust_num, KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING]
+			gtc_params  = [my_chr, clust_num, KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING, READ_TYPE]
 			for i in ind_list:
 				clust_tcdat.append(get_telomere_composition(ANCHORED_TEL_BY_CHR[k][i], gtc_params))
 			clust_tcout = [my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, clust_tcdat]
