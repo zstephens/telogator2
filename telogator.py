@@ -166,7 +166,7 @@ def main(raw_args=None):
 		KMER_FILE = str(sim_path) + '/resources/kmers.tsv'
 	(KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRINGS) = read_kmer_tsv(KMER_FILE, READ_TYPE)
 	[KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = KMER_METADATA
-	KMER_LIST_REV = [RC(n) for n in KMER_LIST]
+	KMER_LIST_REV         = [RC(n) for n in KMER_LIST]
 	CANONICAL_STRINGS_REV = [RC(n) for n in CANONICAL_STRINGS]
 
 	#
@@ -516,6 +516,8 @@ def main(raw_args=None):
 		for cl in clusters:
 			if len(cl) < MIN_READS_PER_CLUST:
 				continue
+			#if my_chr not in DEBUG_CHR_LIST:
+			#	continue
 			num_clust += 1
 			num_reads += len(cl)
 			pos_list = [n[0] for n in cl]
@@ -693,7 +695,7 @@ def main(raw_args=None):
 			my_tel_sequence_len = read_subtel_adj[khd_i]
 			my_sub_sequence_len = len(kmer_hit_dat[khd_i][6][2][1]) - my_tel_sequence_len
 			my_tel_type         = kmer_hit_dat[khd_i][6][0][0].split('_')[2][-1]
-			print(my_tel_sequence_len, my_sub_sequence_len, my_tel_type)
+			#print(my_tel_sequence_len, my_sub_sequence_len, my_tel_type)
 			if my_chr[-1] == 'p':
 				if my_tel_type == 'q':
 					kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))

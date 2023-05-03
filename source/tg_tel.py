@@ -404,8 +404,6 @@ def get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params):
 					my_telseq = RC(my_rdat[:my_tlen])
 				elif my_type == 'q':
 					my_telseq = my_rdat[-my_tlen:]
-			if READ_TYPE in ['ont']:
-				kmers_to_use = KMER_LIST + KMER_LIST_REV
 			my_canonical_bases = get_telomere_base_count(my_telseq, kmers_to_use, mode=READ_TYPE)
 			my_canonical_frac  = my_canonical_bases / float(len(my_telseq))
 			if my_canonical_bases < MINIMUM_TEL_BASES or my_canonical_frac < MIN_CANONICAL_FRAC:

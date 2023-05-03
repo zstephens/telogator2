@@ -47,6 +47,15 @@ def read_kmer_tsv(fn, READ_TYPE):
 	KMER_COLORS      = [n[2] for n in sorted_kmer_dat]
 	KMER_LETTER      = [n[3] for n in sorted_kmer_dat]
 	KMER_FLAGS       = [n[4].split(',') for n in sorted_kmer_dat]
+	#
+	# for nanopore reads we use both forward and reverse kmers
+	#
+	if READ_TYPE in ['ont']:
+		KMER_LIST   = KMER_LIST + [RC(n) for n in KMER_LIST]
+		KMER_COLORS = KMER_COLORS + KMER_COLORS
+		KMER_LETTER = KMER_LETTER + KMER_LETTER
+		KMER_FLAGS  = KMER_FLAGS + KMER_FLAGS
+		CANONICAL_STRINGS = CANONICAL_STRINGS + [RC(n) for n in CANONICAL_STRINGS]
 	KMER_METADATA    = [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS]
 	KMER_ISSUBSTRING = []
 	for i in range(len(KMER_LIST)):
@@ -60,9 +69,13 @@ def read_kmer_tsv(fn, READ_TYPE):
 def get_telomere_kmer_density(read_dat, kmer_list, tel_window, mode='hifi', smoothing=False):
 	re_hits = [[], []]
 	for i in range(len(kmer_list)):
-		re_hits[0].extend([(n.start(0), n.end(0), i, 0) for n in re.finditer(kmer_list[i], read_dat)])
-		if mode in ['clr', 'ont']:
+		if mode in ['hifi']:
+			re_hits[0].extend([(n.start(0), n.end(0), i, 0) for n in re.finditer(kmer_list[i], read_dat)])
+		elif mode in ['clr', 'ont']:
 			re_hits[1].extend([(n.start(0), n.end(0), i, 1) for n in regex.finditer("("+kmer_list[i]+"){e<=1}", read_dat, overlapped=True)])
+		else:
+			print('Error: read mode must be hifi / clr / ont')
+			exit(1)
 	#
 	tel_hit_p0 = np.zeros(len(read_dat))
 	tel_hit_p1 = np.zeros(len(read_dat))
@@ -121,7 +134,7 @@ def get_telomere_regions(td_p_e0, td_p_e1, td_q_e0, td_q_e1, tel_window, pthresh
 		elif mode in ['clr', 'ont']:
 			p_vs_q_power[i] = (COEF_EDIT_0*(c0) + COEF_EDIT_1*(c1)) / float(COEF_EDIT_0 + COEF_EDIT_1)
 		else:
-			print('Error: read mode must be hifi/clr/ont')
+			print('Error: read mode must be hifi / clr / ont')
 			exit(1)
 	if smoothing:
 		p_vs_q_power = wavelet_smooth(p_vs_q_power)
@@ -181,12 +194,18 @@ def wavelet_smooth(x, wavelet="db4", smoothing_level=5, fail_sigma=1e-3):
 #
 #
 #
-def get_nonoverlapping_kmer_hits(my_telseq, KMER_LIST, KMER_ISSUBSTRING):
+def get_nonoverlapping_kmer_hits(my_telseq, KMER_LIST, KMER_ISSUBSTRING, mode='hifi'):
 	out_dat = []
 	coord_hit_dict = []
 	for kmer_list_i in range(len(KMER_LIST)):
 		# get all hits
-		raw_hits = [(n.start(0), n.end(0)) for n in re.finditer(KMER_LIST[kmer_list_i], my_telseq)]
+		if mode in ['hifi', 'clr', 'ont']:
+			raw_hits = [(n.start(0), n.end(0)) for n in re.finditer(KMER_LIST[kmer_list_i], my_telseq)]
+		#elif mode in ['clr', 'ont']:
+		#	raw_hits = [(n.start(0), n.end(0)) for n in regex.finditer("("+KMER_LIST[kmer_list_i]+"){e<=1}", my_telseq, overlapped=True)]
+		else:
+			print('Error: read mode must be hifi / clr / ont')
+			exit(1)
 		coord_hit_dict.append({})
 		for kmer_span in raw_hits:
 			for j in range(kmer_span[0],kmer_span[1]):
@@ -291,14 +310,7 @@ def get_telomere_composition(anchored_tel_dat, gtc_params):
 		elif my_type == 'q':
 			my_telseq = my_rdat[-atb:]
 			my_subseq = my_rdat[:-atb]
-	#
-	if READ_TYPE in ['ont']:
-		kmers_to_use = KMER_LIST + KMER_LIST_REV
-		kiss_to_use  = []
-		for i in range(len(kmers_to_use)):
-			kiss_to_use.append([j for j in range(len(kmers_to_use)) if (j != i and kmers_to_use[i] in kmers_to_use[j])])
-	else:
-		kiss_to_use = KMER_ISSUBSTRING
+
 	#
 	# tel section of read, subtel section of read, entire read
 	#
@@ -310,7 +322,7 @@ def get_telomere_composition(anchored_tel_dat, gtc_params):
 	#
 	# tel_composition_dat[0][kmer_list_i] = hits in current read for kmer kmer_list_i
 	#
-	tel_composition_dat = [get_nonoverlapping_kmer_hits(my_telseq, kmers_to_use, kiss_to_use),
+	tel_composition_dat = [get_nonoverlapping_kmer_hits(my_telseq, kmers_to_use, KMER_ISSUBSTRING, READ_TYPE),
 	                       atb,
 	                       my_dbta,
 	                       my_type,
