@@ -775,7 +775,7 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
 #
 #
 #
-def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', gap_bool=(True,True), linkage_method='complete', normalize_dist_matrix=True, alignment_processes=8, job=(1,1), dendrogram_title=None, dendrogram_height=12):
+def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', gap_bool=(True,True), adjust_lens=False, linkage_method='complete', normalize_dist_matrix=True, alignment_processes=8, job=(1,1), dendrogram_title=None, dendrogram_height=12):
 	#
 	n_seq = len(sequences)
 	#
@@ -824,10 +824,10 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
 		for i in range(alignment_processes):
 			if aln_mode == 'ms':
 				p = multiprocessing.Process(target=parallel_alignment_job,
-					                        args=(sequences, all_indices[i], 'q', return_dict, None, gap_bool, False))
+					                        args=(sequences, all_indices[i], 'q', return_dict, None, gap_bool, adjust_lens, False))
 			elif aln_mode == 'ds':
 				p = multiprocessing.Process(target=parallel_alignment_job,
-					                        args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, gap_bool, False))
+					                        args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, gap_bool, adjust_lens, False))
 			processes.append(p)
 		for i in range(alignment_processes):
 			processes[i].start()

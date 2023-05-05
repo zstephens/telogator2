@@ -34,7 +34,7 @@ DUMMY_TEL_MAPQ = 60
 #
 ORR_SWAP = {'FWD':'REV', 'REV':'FWD', 'p':'q', 'q':'p'}
 # how much subtel should we use for de-clustering alleles?
-MAX_SUBTEL_SIZE_DECLUSTER = 3000
+MAX_SUBTEL_SIZE_DECLUSTER = 1500
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -695,7 +695,7 @@ def main(raw_args=None):
 			my_tel_sequence_len = read_subtel_adj[khd_i]
 			my_sub_sequence_len = len(kmer_hit_dat[khd_i][6][2][1]) - my_tel_sequence_len
 			my_tel_type         = kmer_hit_dat[khd_i][6][0][0].split('_')[2][-1]
-			#print(my_tel_sequence_len, my_sub_sequence_len, my_tel_type)
+			#print(kmer_hit_dat[khd_i][4], my_tel_sequence_len, my_sub_sequence_len, my_tel_type)
 			if my_chr[-1] == 'p':
 				if my_tel_type == 'q':
 					kmer_hit_dat[khd_i][6][2] = (kmer_hit_dat[khd_i][6][2][0], RC(kmer_hit_dat[khd_i][6][2][1]))
@@ -935,6 +935,7 @@ def main(raw_args=None):
 			                                        alignment_processes=NUM_PROCESSES,
 			                                        aln_mode='ms',
 			                                        gap_bool=(False,False),
+			                                        adjust_lens=False,
 			                                        dist_in=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy',
 			                                        fig_name=OUT_TVR_TEMP+'subtels_dendrogram-'+str(i).zfill(3)+'.png',
 			                                        samp_labels=subtel_labels,

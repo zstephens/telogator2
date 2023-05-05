@@ -95,6 +95,7 @@ def main(raw_args=None):
 					exit(1)
 		except ValueError:
 			print('skipping contig that was not present in input BAM:', bed_str[i][0])
+	samfile.close()
 
 	if OUT_READS[-3:].lower() == '.gz':
 		f_out = gzip.open(OUT_READS, 'wt')
