@@ -33,8 +33,8 @@ MAX_NOISE_FRAC  = 0.60
 DUMMY_TEL_MAPQ = 60
 #
 ORR_SWAP = {'FWD':'REV', 'REV':'FWD', 'p':'q', 'q':'p'}
-# how much subtel should we use for de-clustering alleles?
-MAX_SUBTEL_SIZE_DECLUSTER = 1500
+# how much subtel should we use for de-clustering alleles? [min_size, max_size]
+SUBTEL_CLUSTER_SIZE = [1500, 3000]
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -87,6 +87,7 @@ def main(raw_args=None):
 	parser.add_argument('--debug-chr', type=str, required=False, metavar='chr_list', default='',     help="Only process these chr (comma-delimited: chr1p,chr1q,)")
 	#
 	parser.add_argument('--no-anchorfilt', required=False, action='store_true',   default=False,     help="Skip double-anchored read filtering")
+	parser.add_argument('--no-orphans',    required=False, action='store_true',   default=False,     help="Skip orphan read clustering")
 	#
 	parser.add_argument('-p',   type=int,  required=False, metavar='4',           default=4,         help="Number of processes to use")
 
@@ -216,6 +217,7 @@ def main(raw_args=None):
 	(VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
 	#
 	SKIP_FILT_DOUBLEANCHOR = args.no_anchorfilt
+	SKIP_ORPHAN_CLUSTERING = args.no_orphans
 	#
 	NUM_PROCESSES = args.p
 
@@ -740,7 +742,7 @@ def main(raw_args=None):
 	#	kmer_dat[i]          = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
 	#	orphaned_read_dat[i] = [my_chr, my_pos, my_rlen, my_kmer_dat]
 	#
-	if len(orphaned_read_dat) >= MIN_READS_PER_PHASE:
+	if SKIP_ORPHAN_CLUSTERING == False and len(orphaned_read_dat) >= MIN_READS_PER_PHASE:
 		sys.stdout.write('clustering ' + str(len(orphaned_read_dat)) + ' orphan reads...')
 		sys.stdout.flush()
 		orphans_kmer_hit_dat = []
@@ -755,11 +757,11 @@ def main(raw_args=None):
 				orphaned_read_dat[ori][3][3] = ORR_SWAP[orphaned_read_dat[ori][3][3]]
 				# swap read sequence fasta
 				orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], RC(orphaned_read_dat[ori][3][6][0][1])),
-				                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),
+				                                (orphaned_read_dat[ori][3][6][1][0], RC(orphaned_read_dat[ori][3][6][1][1][:SUBTEL_CLUSTER_SIZE[1]])),
 				                                (orphaned_read_dat[ori][3][6][2][0], RC(orphaned_read_dat[ori][3][6][2][1]))]
 			else:
 				orphaned_read_dat[ori][3][6] = [(orphaned_read_dat[ori][3][6][0][0], orphaned_read_dat[ori][3][6][0][1]),
-				                                (orphaned_read_dat[ori][3][6][1][0], orphaned_read_dat[ori][3][6][1][1][-MAX_SUBTEL_SIZE_DECLUSTER:]),
+				                                (orphaned_read_dat[ori][3][6][1][0], orphaned_read_dat[ori][3][6][1][1][-SUBTEL_CLUSTER_SIZE[1]:]),
 				                                (orphaned_read_dat[ori][3][6][2][0], orphaned_read_dat[ori][3][6][2][1])]
 			orphans_kmer_hit_dat.append(copy.deepcopy(orphaned_read_dat[ori][3]))
 			# embed original chromosome in the read name
@@ -849,11 +851,11 @@ def main(raw_args=None):
 		for k in blank_read_keys:
 			if k[0][-1] == 'p':
 				clustered_read_dat[(blank_chr, blank_pos, 0)] += [[(n[0][0], RC(n[0][1])),
-				                                                   (n[1][0], RC(n[1][1][:MAX_SUBTEL_SIZE_DECLUSTER])),
+				                                                   (n[1][0], RC(n[1][1][:SUBTEL_CLUSTER_SIZE[1]])),
 				                                                   (n[2][0], RC(n[2][1]))] for n in temp_read_dat[k]]
 			else:
 				clustered_read_dat[(blank_chr, blank_pos, 0)] += [[(n[0][0], n[0][1]),
-				                                                   (n[1][0], n[1][1][-MAX_SUBTEL_SIZE_DECLUSTER:]),
+				                                                   (n[1][0], n[1][1][-SUBTEL_CLUSTER_SIZE[1]:]),
 				                                                   (n[2][0], n[2][1])] for n in temp_read_dat[k]]
 		ALLELE_TEL_DAT.append(blank_entry)
 	del allele_tel_dat_temp
@@ -913,18 +915,23 @@ def main(raw_args=None):
 	for i in range(len(sort_alltvr_clustdat)):
 		subtels_for_this_cluster = []
 		subtel_labels            = []
-		chrs_hit = {}
+		chrs_hit     = {}
+		subtel_sizes = []
 		for j in sort_alltvr_clustdat[i]:
 			splt = all_labels[j].split('_')
-			my_c = splt[0]
-			my_p = int(splt[1])
-			my_a = int(splt[2])
+			(my_c, my_p, my_a) = (splt[0], int(splt[1]), int(splt[2]))
 			my_key = (my_c, my_p, my_a)
 			chrs_hit[my_c] = True
+			subtel_sizes.extend([len(n[1][1]) for n in clustered_read_dat[my_key]])
+		subtel_size_for_this_cluster = max(min(min(subtel_sizes), SUBTEL_CLUSTER_SIZE[1]), SUBTEL_CLUSTER_SIZE[0])
+		for j in sort_alltvr_clustdat[i]:
+			splt = all_labels[j].split('_')
+			(my_c, my_p, my_a) = (splt[0], int(splt[1]), int(splt[2]))
+			my_key = (my_c, my_p, my_a)
 			if my_c[-1] == 'p':
-				subtels_for_this_cluster.extend([RC(n[1][1][:MAX_SUBTEL_SIZE_DECLUSTER]) for n in clustered_read_dat[my_key]])
+				subtels_for_this_cluster.extend([RC(n[1][1][:subtel_size_for_this_cluster]) for n in clustered_read_dat[my_key]])
 			elif my_c[-1] == 'q':
-				subtels_for_this_cluster.extend([n[1][1][-MAX_SUBTEL_SIZE_DECLUSTER:] for n in clustered_read_dat[my_key]])
+				subtels_for_this_cluster.extend([n[1][1][-subtel_size_for_this_cluster:] for n in clustered_read_dat[my_key]])
 			subtel_labels.extend([n[1][0].split('_')[-1] for n in clustered_read_dat[my_key]])
 		my_dendro_title = 'all-tvrs-cluster ' + str(i) + ' : ' + '/'.join(chrs_hit.keys())
 		#
