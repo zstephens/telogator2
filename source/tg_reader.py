@@ -10,7 +10,8 @@ import sys
 
 
 class TG_Reader:
-    def __init__(self, input_filename, verbose=True):
+    def __init__(self, input_filename, replace_tabs_with_spaces=True, verbose=True):
+        self.replace_tabs_with_spaces = replace_tabs_with_spaces
         self.verbose = verbose
         fnl = input_filename.lower()
         #
@@ -51,6 +52,8 @@ class TG_Reader:
             my_name = self.f.readline().strip()[1:]
             if not my_name:
                 return ('','','')
+            if self.replace_tabs_with_spaces:
+                my_name = my_name.replace('\t', ' ')
             my_read = self.f.readline().strip()
             skip    = self.f.readline().strip()
             my_qual = self.f.readline().strip()
@@ -61,6 +64,8 @@ class TG_Reader:
                 self.current_readname = self.f.readline().strip()[1:]
             if not self.current_readname:
                 return ('','','')
+            if self.replace_tabs_with_spaces:
+                self.current_readname = self.current_readname.replace('\t', ' ')
             hit_eof = False
             while True:
                 my_dat = self.f.readline().strip()
