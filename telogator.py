@@ -914,8 +914,8 @@ def main(raw_args=None):
     num_allelles_added_because_subtel = 0
     for i in range(len(sort_alltvr_clustdat)):
         subtels_for_this_cluster = []
-        subtel_labels            = []
-        chrs_hit     = {}
+        subtel_labels = []
+        chrs_hit = {}
         subtel_sizes = []
         for j in sort_alltvr_clustdat[i]:
             splt = all_labels[j].split('_')
@@ -932,7 +932,7 @@ def main(raw_args=None):
                 subtels_for_this_cluster.extend([RC(n[1][1][:subtel_size_for_this_cluster]) for n in clustered_read_dat[my_key]])
             elif my_c[-1] == 'q':
                 subtels_for_this_cluster.extend([n[1][1][-subtel_size_for_this_cluster:] for n in clustered_read_dat[my_key]])
-            subtel_labels.extend([n[1][0].split('_')[-1] for n in clustered_read_dat[my_key]])
+            subtel_labels.extend(['_'.join(n[1][0].split('_')[3:]) for n in clustered_read_dat[my_key]])
         my_dendro_title = 'all-tvrs-cluster ' + str(i) + ' : ' + '/'.join(chrs_hit.keys())
         #
         if len(subtels_for_this_cluster) == 1:      # this can happen when debugging individual arms
@@ -953,7 +953,6 @@ def main(raw_args=None):
                                                     dendrogram_height=8)
         usable_clusters = [n for n in subtel_clustdat if len(n) >= MIN_READS_PER_PHASE]
         if len(usable_clusters):
-            allele_tel_dat_by_subtel_clust = [[] for n in usable_clusters]
             subtel_clust_by_readname = {}
             for j in range(len(usable_clusters)):
                 for k in usable_clusters[j]:
@@ -961,6 +960,7 @@ def main(raw_args=None):
             #
             # it's kind of silly how much I need to unpack and repack data in order to do this.
             #
+            allele_tel_dat_by_subtel_clust = [[] for n in usable_clusters]
             for j in sort_alltvr_clustdat[i]:
                 splt_tls   = ALLELE_TEL_DAT[j][5].split(',')
                 splt_rlens = ALLELE_TEL_DAT[j][6].split(',')
