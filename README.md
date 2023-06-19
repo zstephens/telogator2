@@ -70,4 +70,28 @@ Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed 
 
 To quickly test the functionality of Telogator2, we provided a subset of hg002 telomere reads in test_data/
 
-`python3 telogator.py -i test_data/hg002_chr1q.p -o telogator_out/` 
+`python3 telogator.py -i test_data/hg002_chr1q.p -o telogator_out/ --fast` 
+
+The `--fast` input option uses a less accurate method for pairwise alignment of telomere reads, but should be fine for this test data.
+
+The primary output files are:
+
+* `tlens_by_chr.tsv` chromosome-specific telomere lengths
+* `tlens_by_allele.tsv` allele-specific telomere lengths
+* `tvr_clustering/tvr-consensus-*` plots of consensus sequence for each allele at each anchor position
+* `tvr_clustering/tvr-reads-*` pileup of supporting reads at each anchor position
+
+The main results are in `tlens_by_allele.tsv`, which has the following columns:
+
+* `chr` anchor chromosome arm
+* `position` anchor coordinate
+* `allele_num` an ID number used for keeping track of alleles internally
+* `allele_id` ID number for this specific TVR. Multimapped alleles will have the same value
+* `TL_max` allele-specific telomere length
+* `read_TLs` TL of each supporting read in the cluster
+* `read_lengths` length of each read in the cluster
+* `read_mapq` mapping quality of each read in the cluster
+* `tvr_len` length of the cluster's TVR region
+* `tvr_consensus` consensus TVR region sequence
+* `supporting_reads` readnames of each read in the cluster
+* `original_chr` chromosome arm that reads were originally mapped to prior to being grouped together (only applicable to clusters with 'blank' TVR regions)

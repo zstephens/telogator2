@@ -90,6 +90,7 @@ def main(raw_args=None):
     #
     parser.add_argument('--no-anchorfilt', required=False, action='store_true',   default=False,     help="Skip double-anchored read filtering")
     parser.add_argument('--no-orphans',    required=False, action='store_true',   default=False,     help="Skip orphan read clustering")
+    parser.add_argument('--fast',          required=False, action='store_true',   default=False,     help="Use faster but less accurate pairwise alignment")
     #
     parser.add_argument('-p',   type=int,  required=False, metavar='4',           default=4,         help="Number of processes to use")
 
@@ -136,6 +137,11 @@ def main(raw_args=None):
     PLOT_FILT_READS = args.plot_filt
     PLOT_FILT_CVECS = args.plot_filt_tvr
     PRINT_DEBUG     = args.debug
+    FAST_ALIGNMENT  = args.fast
+    #
+    DS_OR_MS = 'ds'
+    if FAST_ALIGNMENT:
+        DS_OR_MS = 'ms'
     #
     MUSCLE_EXE = args.m
     #
@@ -673,7 +679,7 @@ def main(raw_args=None):
         consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
         #
         read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos, my_tc,
-                                      aln_mode='ds',
+                                      aln_mode=DS_OR_MS,
                                       alignment_processes=NUM_PROCESSES,
                                       dist_in=dist_matrix_fn,
                                       dist_in_prefix=dist_prefix_fn,
@@ -779,7 +785,7 @@ def main(raw_args=None):
         orphans_consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-998_orphans.fa'
         #
         orphans_clust_dat = cluster_tvrs(orphans_kmer_hit_dat, KMER_METADATA, orphans_chr, orphans_pos, TREECUT_ORPHANS,
-                                         aln_mode='ds',
+                                         aln_mode=DS_OR_MS,
                                          alignment_processes=NUM_PROCESSES,
                                          dist_in=orphans_dist_matrix_fn,
                                          dist_in_prefix=orphans_dist_prefix_fn,
