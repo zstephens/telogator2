@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import copy
 import multiprocessing
@@ -25,7 +26,6 @@ MAX_NONTEL_MEDIAN_KMER_DENSITY = 0.25
 #
 MIN_DOUBLE_ANCHOR_LEN   = 1000
 MIN_DOUBLE_ANCHOR_READS = 3
-MIN_CANONICAL_FRAC      = 0.15
 #
 MAX_NOISE_BASES = 5000
 MAX_NOISE_FRAC  = 0.60
@@ -58,6 +58,7 @@ def main(raw_args=None):
     parser.add_argument('-ft', type=int,   required=False, metavar='200',         default=200,       help="Initial read filtering: Min tel bases")
     parser.add_argument('-ff', type=float, required=False, metavar='0.9',         default=0.9,       help="Anchored-tel filtering: Max frac of read that can be tel")
     parser.add_argument('-fp', type=float, required=False, metavar='0.25',        default=0.25,      help="Anchored-tel filtering: Max minor p/q fraction in tels")
+    parser.add_argument('-fc', type=float, required=False, metavar='0.15',        default=0.15,      help="Anchored-tel filtering: Minimum canonical frac in tels")
     #
     parser.add_argument('-sa', type=str,   required=False, metavar='largest',     default='largest', help="Subtel/tel anchoring strategy")
     parser.add_argument('-sm', type=str,   required=False, metavar='mapq',        default='mapq',    help="Repeated matches trimming strategy")
@@ -194,11 +195,12 @@ def main(raw_args=None):
     #
     # various parameters
     #
-    MINIMUM_READ_LEN  = args.fl
-    MINIMUM_TEL_BASES = args.ft
-    MAXIMUM_TEL_FRAC  = args.ff
-    MAXIMUM_MINOR_PQ  = args.fp
-    P_VS_Q_AMP_THRESH = args.t
+    MINIMUM_READ_LEN   = args.fl
+    MINIMUM_TEL_BASES  = args.ft
+    MAXIMUM_TEL_FRAC   = args.ff
+    MAXIMUM_MINOR_PQ   = args.fp
+    MIN_CANONICAL_FRAC = args.fc
+    P_VS_Q_AMP_THRESH  = args.t
     #
     ANCHORING_STRATEGY  = args.sa
     MATCH_TRIM_STRATEGY = args.sm

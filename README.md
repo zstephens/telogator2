@@ -1,7 +1,11 @@
-# Telogator v3.0
+# Telogator v2.0
 A method for measuring allele-specific TL and characterizing TVR sequences from long reads.
 
 If this software has been useful for your work, please cite us at:
+
+(Publication currently in revision)
+
+Alternately, see our paper for the previous version of Telogator:
 
 Stephens, Zachary, et al. "Telogator: a method for reporting chromosome-specific telomere lengths from long reads." *Bioinformatics* 38.7 (2022): 1788-1793. https://doi.org/10.1093/bioinformatics/btac005
 
@@ -57,3 +61,11 @@ Though this step could be done using the same aligners as in step 2, if desired.
 `python3 telogator.py -i subtel_aln.bam -o telogator_out/`  
 
 The `-p` input option specifies the number of processes to use (default: 4).
+
+In order to save time during reprocessing, the `-i` input option can also accept `tel-data.p` files so that BAM files don't need to be re-parsed each time.
+
+## Test data
+
+To quickly test the functionality of Telogator2, we provided a subset of hg002 telomere reads in test_data/
+
+`python3 telogator.py -i test_data/hg002_chr1q.p -o telogator_out/` 
