@@ -9,6 +9,7 @@ Alternately, see our paper for the previous version of Telogator:
 
 Stephens, Zachary, et al. "Telogator: a method for reporting chromosome-specific telomere lengths from long reads." *Bioinformatics* 38.7 (2022): 1788-1793. https://doi.org/10.1093/bioinformatics/btac005
 
+
 ## (1) making T2T + alt subtel reference:
 
 Obtain t2t reference sequence from https://github.com/marbl/CHM13 (`chm13v2.0.fa`)
@@ -17,6 +18,7 @@ Append alternate subtelomere assemblies:
 
 `cat chm13v2.0.fa resources/stong_subtels.fa > t2t-and-subtel.fa`  
 `samtools faidx t2t-and-subtel.fa`  
+
 
 ## (2) align reads to whole genome reference:
 
@@ -34,12 +36,14 @@ For Oxford Nanopore long (noisy) reads:
 `samtools sort -o aln.bam aln-unsort.bam`  
 `samtools index aln.bam`  
 
+
 ## (3) extract subset of reads that were mapped to subtelomere regions:
 
 `python3 get_subtel_reads.py \ `  
 `    -b aln.bam \ `  
 `    -i clr-reads.fa.gz \ `  
 `    -o subtel-reads.fa.gz`  
+
 
 ## (4) align read subset to telogator reference:
 
@@ -56,6 +60,7 @@ We recommend using the [winnowmap](https://github.com/marbl/Winnowmap) aligner f
 
 Though this step could be done using the same aligners as in step 2, if desired.
 
+
 ## (5) run telogator on subtel-only alignment:
 
 `python3 telogator.py -i subtel_aln.bam -o telogator_out/`  
@@ -66,13 +71,14 @@ In order to save time during reprocessing, the `-i` input option can also accept
 
 Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm The path to the muscle executable is specified via the `-m` input option.
 
+
 ## Test data
 
 To quickly test the functionality of Telogator2, we provided a subset of hg002 telomere reads in test_data/
 
 `python3 telogator.py -i test_data/hg002_chr1q.p -o telogator_out/ --fast` 
 
-The `--fast` input option uses a less accurate method for pairwise alignment of telomere reads, but should be fine for this test data.
+The `--fast` input option uses a less accurate method for pairwise alignment of telomere reads, but should be fine for this test data. With the default number of processes (4) this command should complete in about ~2 minutes.
 
 The primary output files are:
 
