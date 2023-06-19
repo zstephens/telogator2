@@ -1,4 +1,4 @@
-# Telogator v2.0
+# Telogator2
 A method for measuring allele-specific TL and characterizing TVR sequences from long reads.
 
 If this software has been useful for your work, please cite us at:
@@ -63,6 +63,8 @@ Though this step could be done using the same aligners as in step 2, if desired.
 The `-p` input option specifies the number of processes to use (default: 4).
 
 In order to save time during reprocessing, the `-i` input option can also accept `tel-data.p` files so that BAM files don't need to be re-parsed each time.
+
+Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm The path to the muscle executable is specified via the `-m` input option.
 
 ## Test data
 
