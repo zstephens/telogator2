@@ -96,7 +96,9 @@ class TG_Reader:
                 # np or rq tag is not present
                 except KeyError:
                     pass
-                return (my_name, aln.query, aln.qual)
+                # get read sequence directly from SAM entry instead of using aln.query (which doesn't include softclipped bases)
+                aln_readdat = str(aln).split('\t')[9]
+                return (my_name, aln_readdat, aln.qual)
             # this can happen if file is truncated
             except OSError:
                 return ('','','')

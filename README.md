@@ -1,9 +1,9 @@
 # Telogator2
-A method for measuring allele-specific TL and characterizing TVR sequences from long reads.
+A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads. Telogator2 was designed to work with long reads that are capable of representing telomere regions without high sequencing error rates, and has been tested primarily on PacBio HiFi reads.
 
 If this software has been useful for your work, please cite us at:
 
-(Publication currently in revision)
+(Publication currently in submission)
 
 Alternately, see our paper for the previous version of Telogator:
 
@@ -79,6 +79,9 @@ To quickly test the functionality of Telogator2, we provided a subset of hg002 t
 `python3 telogator.py -i test_data/hg002_chr1q.p -o telogator_out/ --fast` 
 
 The `--fast` input option uses a less accurate method for pairwise alignment of telomere reads, but should be fine for this test data. With the default number of processes (4) this command should complete in about ~2 minutes.
+
+
+## Output files
 
 The primary output files are:
 
