@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as mpl
 import random
 
-from Bio import pairwise2
+from Bio.Align import PairwiseAligner, substitution_matrices
 
 from collections import Counter
 
@@ -66,26 +66,25 @@ PREFIX_MERGE_DIST = 0.030   # if TVR consensuses are less than this distance apa
 #
 #
 def get_scoring_matrix(canonical_letter):
-    letters = AMINO
-    scoring_matrix = {}
-    for i in range(len(letters)):
-        for j in range(len(letters)):
-            if i == j:
-                scoring_matrix[(letters[i],letters[j])] = MATCH_NORMAL
+    all_amino = tuple(AMINO)
+    d = {}
+    for c1 in all_amino:
+        for c2 in all_amino:
+            if c1 == c2:
+                d[c1,c2] = float(MATCH_NORMAL)
             else:
-                scoring_matrix[(letters[i],letters[j])] = XMATCH_NORMAL
-                scoring_matrix[(letters[j],letters[i])] = XMATCH_NORMAL
-    for i in range(len(letters)):
-        scoring_matrix[(letters[i],canonical_letter)] = XMATCH_CANON
-        scoring_matrix[(canonical_letter,letters[i])] = XMATCH_CANON
-    for i in range(len(letters)):
-        scoring_matrix[(letters[i],UNKNOWN_LETTER)] = XMATCH_UNKNOWN
-        scoring_matrix[(UNKNOWN_LETTER,letters[i])] = XMATCH_UNKNOWN
-    scoring_matrix[(canonical_letter, canonical_letter)] = MATCH_CANON          # matching canonical
-    scoring_matrix[(UNKNOWN_LETTER, UNKNOWN_LETTER)]     = MATCH_UNKNOWN        # matching unknown
-    scoring_matrix[(canonical_letter, UNKNOWN_LETTER)]   = MATCH_CANON_UNKNOWN  # canon = unknown
-    scoring_matrix[(UNKNOWN_LETTER, canonical_letter)]   = MATCH_CANON_UNKNOWN  # canon = unknown
-    return scoring_matrix
+                d[c1,c2] = float(XMATCH_NORMAL)
+    for c1 in all_amino:
+        d[c1,canonical_letter] = float(XMATCH_CANON)
+        d[canonical_letter,c1] = float(XMATCH_CANON)
+    for c1 in all_amino:
+        d[c1,UNKNOWN_LETTER] = float(XMATCH_UNKNOWN)
+        d[UNKNOWN_LETTER,c1] = float(XMATCH_UNKNOWN)
+    d[canonical_letter,canonical_letter] = float(MATCH_CANON)          # matching canonical
+    d[UNKNOWN_LETTER,UNKNOWN_LETTER]     = float(MATCH_UNKNOWN)        # matching unknown
+    d[canonical_letter,UNKNOWN_LETTER]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
+    d[UNKNOWN_LETTER,canonical_letter]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
+    return substitution_matrices.Array(alphabet=None, dims=None, data=d)
 
 #
 #
@@ -97,6 +96,33 @@ def shuffle_seq(s):
 #
 #
 def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None, gap_bool=(True,True), adjust_lens=True, min_viable=True, randshuffle=1):
+    #
+    # create aligner object
+    #
+    aligner = PairwiseAligner()
+    aligner.mode = 'global'
+    aligner.match_score = float(MATCH_NORMAL)
+    aligner.mismatch_score = float(XMATCH_NORMAL)
+    aligner.open_gap_score = float(GAP_OPEN)
+    aligner.extend_gap_score = float(GAP_EXT)
+    if scoring_matrix is not None:
+        aligner.alphabet = tuple(AMINO)
+        aligner.substitution_matrix = scoring_matrix
+    if gap_bool[0]:
+        aligner.left_open_gap_score   = float(GAP_OPEN)
+        aligner.left_extend_gap_score = float(GAP_EXT)
+    else:
+        aligner.left_open_gap_score   = 0.0
+        aligner.left_extend_gap_score = 0.0
+    if gap_bool[1]:
+        aligner.right_open_gap_score   = float(GAP_OPEN)
+        aligner.right_extend_gap_score = float(GAP_EXT)
+    else:
+        aligner.right_open_gap_score   = 0.0
+        aligner.right_extend_gap_score = 0.0
+    #
+    # do the alignments
+    #
     for (i,j) in ij:
         #
         if adjust_lens:
@@ -115,34 +141,31 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
         #
         # aln score
         #
-        if scoring_matrix is None:
-            aln_score = pairwise2.align.globalms(seq_i, seq_j, MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True)
-        else:
-            aln_score = pairwise2.align.globalds(seq_i, seq_j, scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True)
-        #####
-        ####aln = pairwise2.align.globalms(seq_i, seq_j, MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool)
-        ####print(pairwise2.format_alignment(*aln[0]))
+        ####alignments = aligner.align(seq_i, seq_j)
+        ####print(alignments[0][0])
+        ####print(alignments[0][1])
+        ####aln_score = alignments[0].score
+        aln_score = aligner.score(seq_i, seq_j)
         #
         # iden score
         #
         c1 = Counter(seq_i)
         c2 = Counter(seq_j)
         if scoring_matrix is None:
-            iden_score = int(MATCH_NORMAL*((len(seq_i)+len(seq_j))/2.))
+            iden_score = MATCH_NORMAL*((len(seq_i)+len(seq_j))/2.)
         else:
-            is1 = sum([c1[n]*scoring_matrix[(n,n)] for n in c1.keys()])
-            is2 = sum([c2[n]*scoring_matrix[(n,n)] for n in c2.keys()])
-            iden_score = int((is1+is2)/2.)
+            is1 = sum([c1[n]*scoring_matrix[n,n] for n in c1.keys()])
+            is2 = sum([c2[n]*scoring_matrix[n,n] for n in c2.keys()])
+            iden_score = (is1+is2)/2.
         #
         # rand score
         #
         rand_scores = []
         for k in range(randshuffle):
-            if scoring_matrix is None:
-                rand_scores.append(pairwise2.align.globalms(shuffle_seq(seq_i), shuffle_seq(seq_j), MATCH_NORMAL, XMATCH_NORMAL, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True))
-            else:
-                rand_scores.append(pairwise2.align.globalds(shuffle_seq(seq_i), shuffle_seq(seq_j), scoring_matrix, GAP_OPEN, GAP_EXT, penalize_end_gaps=gap_bool, score_only=True))
-        rand_score_shuffle = int(np.mean(rand_scores))
+            rand_scores.append(aligner.score(shuffle_seq(seq_i), shuffle_seq(seq_j)))
+        rand_score_shuffle = np.mean(rand_scores)
+        #
+        # convert to distance, bounds checking
         #
         if rand_score_shuffle >= aln_score:
             my_dist_shuffle = MAX_SEQ_DIST
@@ -152,7 +175,7 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
         #
         # output
         #
-        ####print((i,j), '{0:0.3f}'.format(my_dist_shuffle))
+        ####print((i,j), aln_score, iden_score, rand_score_shuffle, '{0:0.3f}'.format(my_dist_shuffle))
         results_dict[(i,j)] = my_dist_shuffle
 
 #
@@ -532,8 +555,12 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
             pref_dist = manager.dict()
             processes = []
             for i in range(alignment_processes):
-                p = multiprocessing.Process(target=parallel_alignment_job,
-                                            args=(out_consensus, pref_indices[i], pq, pref_dist, scoring_matrix, (True,True), True, False))
+                if aln_mode == 'ms':
+                    p = multiprocessing.Process(target=parallel_alignment_job,
+                                                args=(out_consensus, pref_indices[i], pq, pref_dist, None, (True,True), True, False))
+                elif aln_mode == 'ds':
+                    p = multiprocessing.Process(target=parallel_alignment_job,
+                                                args=(out_consensus, pref_indices[i], pq, pref_dist, scoring_matrix, (True,True), True, False))
                 processes.append(p)
             for i in range(alignment_processes):
                 processes[i].start()
