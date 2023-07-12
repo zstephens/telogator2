@@ -16,10 +16,10 @@ Telogator2 dependencies can be easily installed via conda:
 
 ```bash
 # create conda environment
-conda env create -f conda_env_telogator.yaml
+conda env create -f conda_env_telogator2.yaml
 
 # activate environment
-conda activate telogator
+conda activate telogator2
 ```
 
 
@@ -80,7 +80,7 @@ Though this alignment could be done using the same tools as in step 2, if desire
 
 
 
-## (5) run telogator on subtel-only alignment:
+## (5) run telogator2 on subtel-only alignment:
 
 ```bash
 python3 telogator.py -i subtel_aln.bam -o telogator_out/

@@ -118,10 +118,10 @@ def parse_read(splt):
             exit(1)
     #
     elif ref[:3] == 'tel':
-        ref_key = LARGE_NUMBER
+        ref_key = LARGE_NUMBER - 1
     #
     elif is_unmapped is True:
-        ref_key = LARGE_NUMBER + 1
+        ref_key = LARGE_NUMBER
     #
     else:
         print('unknown ref name:', ref)
@@ -141,6 +141,12 @@ def parse_read(splt):
             pos1, pos2 = pos, pos + cig_dat[1]
         elif orientation == 'REV':
             pos1, pos2 = pos + cig_dat[1], pos
+    else:
+        ref = '*'
+        pos = 0
+        pos1, pos2 = 0, len(rdat)
+        read_pos_1, read_pos_2 = 0, len(rdat)
+        mapq = 0
     #
     return [rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat]
 

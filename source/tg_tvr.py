@@ -106,7 +106,7 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
     aligner.open_gap_score = float(GAP_OPEN)
     aligner.extend_gap_score = float(GAP_EXT)
     if scoring_matrix is not None:
-        aligner.alphabet = tuple(AMINO)
+        aligner.alphabet = ''.join(AMINO)
         aligner.substitution_matrix = scoring_matrix
     if gap_bool[0]:
         aligner.left_open_gap_score   = float(GAP_OPEN)
@@ -141,10 +141,6 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
         #
         # aln score
         #
-        ####alignments = aligner.align(seq_i, seq_j)
-        ####print(alignments[0][0])
-        ####print(alignments[0][1])
-        ####aln_score = alignments[0].score
         aln_score = aligner.score(seq_i, seq_j)
         #
         # iden score
