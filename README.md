@@ -16,10 +16,10 @@ Telogator2 dependencies can be easily installed via conda:
 
 ```bash
 # create conda environment
-$ conda env create -f conda_env_telogator.yaml
+conda env create -f conda_env_telogator.yaml
 
 # activate environment
-$ conda activate telogator
+conda activate telogator
 ```
 
 
@@ -62,10 +62,7 @@ samtools index aln.bam
 ## (3) extract subset of reads that were mapped to subtelomere regions:
 
 ```bash
-python3 get_subtel_reads.py \ 
-    -b aln.bam \ 
-    -i clr-reads.fa.gz \ 
-    -o subtel-reads.fa.gz
+python3 get_subtel_reads.py -b aln.bam -i clr-reads.fa.gz -o subtel-reads.fa.gz
 ```
 
 
