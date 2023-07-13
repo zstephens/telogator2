@@ -10,12 +10,12 @@ import time
 
 import numpy as np
 
-from source.tg_kmer   import get_telomere_base_count, get_telomere_composition, read_kmer_tsv
+from source.tg_kmer   import get_telomere_composition, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
 from source.tg_plot   import tel_len_violin_plot
-from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job
+from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job, parallel_filtering_job
 from source.tg_tvr    import cluster_consensus_tvr, cluster_tvrs, make_tvr_plots
-from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC, repeated_matches_trimming
+from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC
 
 # hardcoded parameters
 TEL_WINDOW_SIZE  = 100
@@ -47,7 +47,7 @@ SUBTEL_CLUSTER_SIZE = [1500, 3000]
 
 
 def main(raw_args=None):
-    parser = argparse.ArgumentParser(description='Telogator v2.0', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    parser = argparse.ArgumentParser(description='Telogator2', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i',  type=str,   required=True,  metavar='input.bam',                      help="* Long reads aligned to t2t-telogator-ref.fa")
     parser.add_argument('-o',  type=str,   required=True,  metavar='output/',                        help="* Path to output directory")
     parser.add_argument('-r',  type=str,   required=False, metavar='hifi',        default='hifi',    help="Read type: hifi / clr / ont")
@@ -250,7 +250,7 @@ def main(raw_args=None):
         f = open(INPUT_ALN, 'rb')
         my_pickle = pickle.load(f)
         f.close()
-        ANCHORED_TEL_BY_CHR    = my_pickle['anchored-tels']
+        ANCHORED_TEL_BY_CHR = my_pickle['anchored-tels']
         NONTEL_REFSPANS_BY_CHR = my_pickle['non-tel-ref-spans']
     else:
         if INPUT_TYPE == 'sam':
@@ -266,10 +266,10 @@ def main(raw_args=None):
         tt = time.perf_counter()
         for aln in samfile.fetch(until_eof=True):
             sam_line    = str(aln).split('\t')
-            my_ref_ind  = sam_line[2].replace('#','')   # why would there ever be a # symbol here? I don't know.
-            # pysam is dumb and prints ref indices instead of contig name
-            # - except unmapped, which is '*'
-            # - and I've also seen it spit out '-1' ...
+            #
+            # pysam weirdness:
+            #
+            my_ref_ind  = sam_line[2].replace('#','')
             if my_ref_ind.isdigit():
                 sam_line[2] = refseqs[int(my_ref_ind)]
             elif my_ref_ind == '-1':
@@ -290,64 +290,61 @@ def main(raw_args=None):
             exit(1)
 
         #
+        #
         # INITIAL FILTERING
         #
-        FILTERED_READS = []
+        #
+        par_results = None
+        if NUM_PROCESSES > 1:
+            all_read_keys    = [[] for n in range(NUM_PROCESSES)]
+            reads_to_process = [{} for n in range(NUM_PROCESSES)]
+            k = 0
+            for read_key in ALIGNMENTS_BY_RNAME.keys():
+                all_read_keys[k % NUM_PROCESSES].append(read_key)
+                reads_to_process[k % NUM_PROCESSES][read_key] = copy.deepcopy(ALIGNMENTS_BY_RNAME[read_key])
+                k += 1
+        #
+        # execute parallel jobs
         #
         sys.stdout.write('initial read filtering...')
         sys.stdout.flush()
-        num_starting_reads = len(ALIGNMENTS_BY_RNAME.keys())
         tt = time.perf_counter()
-        for readname in ALIGNMENTS_BY_RNAME.keys():
-            abns_k = repeated_matches_trimming(sorted(ALIGNMENTS_BY_RNAME[readname]), strategy=MATCH_TRIM_STRATEGY, print_debug=PRINT_DEBUG)
-            # did we lose all of our alignments during trimming?
-            if len(abns_k) == 0:
-                reads_skipped['trim_filter'] += 1
-                continue
-            # make sure string used for kmer matching is same orientation as the alignments
-            which_i = 0
-            for i in range(len(abns_k)):
-                if abns_k[i][2][:3] != 'tel':
-                    which_i = i
-                    break
-            # assuming softclipping was used. i.e. all alignments should have same sequence... (don't pick tel though)
-            if abns_k[which_i][5] == 'FWD':
-                rdat = abns_k[which_i][7]
-            elif abns_k[which_i][5] == 'REV':
-                rdat = RC(abns_k[which_i][7])
-            # read len filter
-            if len(rdat) < MINIMUM_READ_LEN:
-                reads_skipped['min_readlen'] += 1
-                continue
-            # check if we're unmapped
-            refs_we_aln_to = [aln[2] for aln in abns_k]
-            refs_we_aln_to = sorted(list(set(refs_we_aln_to)))
-            if refs_we_aln_to == ['*']:
-                reads_skipped['unmapped'] += 1
-                continue
-            # check for alignments to unexpected reference contigs
-            any_chr = any([n[:3] == 'chr' for n in refs_we_aln_to])
-            any_tel = any([n[:3] == 'tel' for n in refs_we_aln_to])
-            if any_chr is False and any_tel is False:
-                reads_skipped['unknown_ref'] += 1
-                continue
-            # we need at least 1 chr alignment to be anchorable anywhere
-            if any_chr is False:
-                reads_skipped['no_chr_aln'] += 1
-                continue
-            # minimum tel content
-            tel_bc = get_telomere_base_count(rdat, CANONICAL_STRINGS + CANONICAL_STRINGS_REV, mode=READ_TYPE)
-            if tel_bc < MINIMUM_TEL_BASES:
-                reads_skipped['min_telbases'] += 1
-                if INPUT_TYPE != 'pickle':  # use non-tel reads for downstream filtering of double-anchored tels
-                    for aln in abns_k:
-                        if aln[2][:3] != 'tel':
-                            if aln[2] not in NONTEL_REFSPANS_BY_CHR:
-                                NONTEL_REFSPANS_BY_CHR[aln[2]] = []
-                            NONTEL_REFSPANS_BY_CHR[aln[2]].append(tuple(sorted(aln[3:5])))
-                continue
-            # we passed all filters?
-            FILTERED_READS.append([readname, rdat, copy.deepcopy(abns_k)])
+        num_starting_reads = len(ALIGNMENTS_BY_RNAME.keys())
+        #
+        par_params      = [CANONICAL_STRINGS, CANONICAL_STRINGS_REV, READ_TYPE, MATCH_TRIM_STRATEGY, INPUT_TYPE, PRINT_DEBUG]
+        par_params_filt = [MINIMUM_READ_LEN, MINIMUM_TEL_BASES]
+        if NUM_PROCESSES > 1:
+            manager     = multiprocessing.Manager()
+            par_results = manager.dict()
+            processes   = []
+            for i in range(NUM_PROCESSES):
+                p = multiprocessing.Process(target=parallel_filtering_job, args=(reads_to_process[i], i, par_params, par_params_filt, par_results))
+                processes.append(p)
+            for i in range(NUM_PROCESSES):
+                processes[i].start()
+            for i in range(NUM_PROCESSES):
+                processes[i].join()
+        else:
+            par_results = {}
+            parallel_filtering_job(ALIGNMENTS_BY_RNAME, 0, par_params, par_params_filt, par_results)
+        #
+        # collect parallel job results
+        #
+        FILTERED_READS = []
+        for i in range(NUM_PROCESSES):
+            job_filtered_reads = par_results[(i,0)]
+            job_filt_strings   = par_results[(i,1)]
+            job_nontel_spans   = par_results[(i,2)]
+            #
+            FILTERED_READS.extend(job_filtered_reads)
+            for filt_string,count in job_filt_strings.items():
+                if filt_string not in reads_skipped:
+                    reads_skipped[filt_string] = 0
+                reads_skipped[filt_string] += count
+            for k in job_nontel_spans.keys():
+                if k not in NONTEL_REFSPANS_BY_CHR:
+                    NONTEL_REFSPANS_BY_CHR[k] = []
+                NONTEL_REFSPANS_BY_CHR[k].extend(job_nontel_spans[k])
         #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         num_ending_reads = len(FILTERED_READS)
@@ -359,10 +356,8 @@ def main(raw_args=None):
         # TELOGATOR 1.0 - IDENTIFY ANCHORED TELOMERES
         #
         #
-        if NUM_PROCESSES <= 1:
-            all_indices      = list(range(len(FILTERED_READS)))
-            reads_to_process = FILTERED_READS
-        else:
+        par_results = None
+        if NUM_PROCESSES > 1:
             all_indices      = [[] for n in range(NUM_PROCESSES)]
             reads_to_process = [[] for n in range(NUM_PROCESSES)]
             k = 0
@@ -381,10 +376,7 @@ def main(raw_args=None):
         #
         par_params      = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, ANCHORING_STRATEGY, PLOT_READS, INPUT_TYPE, OUT_PLOT_DIR, PRINT_DEBUG, PLOT_FILT_READS]
         par_params_filt = [MAXIMUM_TEL_FRAC, MAXIMUM_MINOR_PQ, MAXIMUM_UNEXPLAINED_FRAC, MAX_NONTEL_MEDIAN_KMER_DENSITY]
-        if NUM_PROCESSES <= 1:
-            par_results = {}
-            parallel_anchored_tel_job(reads_to_process, all_indices, par_params, par_params_filt, par_results)
-        else:
+        if NUM_PROCESSES > 1:
             manager     = multiprocessing.Manager()
             par_results = manager.dict()
             processes   = []
@@ -395,10 +387,13 @@ def main(raw_args=None):
                 processes[i].start()
             for i in range(NUM_PROCESSES):
                 processes[i].join()
+        else:
+            par_results = {}
+            parallel_anchored_tel_job(FILTERED_READS, list(range(len(FILTERED_READS))), par_params, par_params_filt, par_results)
         #
         # collect parallel job results
         #
-        for i in range(k):
+        for i in range(num_starting_reads):
             anchored_tel_dat = par_results[(i,0)]
             my_filt_string   = par_results[(i,1)]
             nontel_spans     = par_results[(i,2)]

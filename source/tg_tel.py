@@ -5,11 +5,82 @@ import numpy as np
 
 from source.tg_kmer import get_telomere_base_count, get_telomere_kmer_density, get_telomere_regions
 from source.tg_plot import plot_all_read_data
-from source.tg_util import makedir, posmax, RC
+from source.tg_util import makedir, posmax, RC, repeated_matches_trimming
 
 MIN_TEL_SCORE   = 100
 BTWN_TEL_SCORE  = 0.8
 MAX_EDGE_NONTEL = 1000
+
+#
+#
+#
+def parallel_filtering_job(read_subset, my_job_i, params, params_filt, out_dict):
+    [CANONICAL_STRINGS, CANONICAL_STRINGS_REV, READ_TYPE, MATCH_TRIM_STRATEGY, INPUT_TYPE, PRINT_DEBUG] = params
+    [MINIMUM_READ_LEN, MINIMUM_TEL_BASES] = params_filt
+    filtered_reads_out = []
+    my_nontel_spans    = {}
+    filt_counts_out    = {'trim_filter':0,
+                          'min_readlen':0,
+                          'unmapped':0,
+                          'unknown_ref':0,
+                          'no_chr_aln':0,
+                          'min_telbases':0}
+    for readname in read_subset.keys():
+        abns_k = repeated_matches_trimming(sorted(read_subset[readname]), strategy=MATCH_TRIM_STRATEGY, print_debug=PRINT_DEBUG)
+        # did we lose all of our alignments during trimming?
+        if len(abns_k) == 0:
+            filt_counts_out['trim_filter'] += 1
+            continue
+        # make sure string used for kmer matching is same orientation as the alignments
+        which_i = 0
+        for i in range(len(abns_k)):
+            if abns_k[i][2][:3] != 'tel':
+                which_i = i
+                break
+        # assuming softclipping was used. i.e. all alignments should have same sequence... (don't pick tel though)
+        if abns_k[which_i][5] == 'FWD':
+            rdat = abns_k[which_i][7]
+        elif abns_k[which_i][5] == 'REV':
+            rdat = RC(abns_k[which_i][7])
+        # read len filter
+        if len(rdat) < MINIMUM_READ_LEN:
+            filt_counts_out['min_readlen'] += 1
+            continue
+        # check if we're unmapped
+        refs_we_aln_to = [aln[2] for aln in abns_k]
+        refs_we_aln_to = sorted(list(set(refs_we_aln_to)))
+        if refs_we_aln_to == ['*']:
+            filt_counts_out['unmapped'] += 1
+            continue
+        # check for alignments to unexpected reference contigs
+        any_chr = any([n[:3] == 'chr' for n in refs_we_aln_to])
+        any_tel = any([n[:3] == 'tel' for n in refs_we_aln_to])
+        if any_chr is False and any_tel is False:
+            filt_counts_out['unknown_ref'] += 1
+            continue
+        # we need at least 1 chr alignment to be anchorable anywhere
+        if any_chr is False:
+            filt_counts_out['no_chr_aln'] += 1
+            continue
+        # minimum tel content
+        tel_bc = get_telomere_base_count(rdat, CANONICAL_STRINGS + CANONICAL_STRINGS_REV, mode=READ_TYPE)
+        if tel_bc < MINIMUM_TEL_BASES:
+            filt_counts_out['min_telbases'] += 1
+            if INPUT_TYPE != 'pickle':  # use non-tel reads for downstream filtering of double-anchored tels
+                for aln in abns_k:
+                    if aln[2][:3] != 'tel':
+                        if aln[2] not in my_nontel_spans:
+                            my_nontel_spans[aln[2]] = []
+                        my_nontel_spans[aln[2]].append(tuple(sorted(aln[3:5])))
+            continue
+        #
+        filtered_reads_out.append([readname, rdat, copy.deepcopy(abns_k)])
+    #
+    # output
+    #
+    out_dict[(my_job_i,0)] = filtered_reads_out
+    out_dict[(my_job_i,1)] = copy.deepcopy(filt_counts_out)
+    out_dict[(my_job_i,2)] = copy.deepcopy(my_nontel_spans)
 
 #
 #
