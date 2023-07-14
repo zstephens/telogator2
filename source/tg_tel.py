@@ -87,7 +87,7 @@ def parallel_filtering_job(read_subset, my_job_i, params, params_filt, out_dict)
 #
 def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, FILT_PARAMS, ANCHORING_STRATEGY):
     #
-    [MAXIMUM_TEL_FRAC, MAXIMUM_MINOR_PQ, MAXIMUM_UNEXPLAINED_FRAC, MAX_NONTEL_MEDIAN_KMER_DENSITY] = FILT_PARAMS
+    [MAXIMUM_TEL_FRAC, MAXIMUM_MINOR_PQ, MAXIMUM_UNEXPLAINED_FRAC, MAX_NONTEL_MEDIAN_KMER_DENSITY, READ_TYPE] = FILT_PARAMS
     #
     score_scalars = np.ones(len(tel_regions))
     for i in range(1, len(tel_regions)-1):
@@ -241,7 +241,7 @@ def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, F
     #
     # too much mixture of p and q
     #
-    if len(my_filt_string) == 0:
+    if len(my_filt_string) == 0 and READ_TYPE != 'ont':
         tel_types     = sorted([my_tel_conc['p'], my_tel_conc['q']])
         my_minor_frac = float(tel_types[0])/sum(tel_types)
         if my_minor_frac > MAXIMUM_MINOR_PQ:
@@ -338,7 +338,7 @@ def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, F
 #
 def parallel_anchored_tel_job(read_subset, my_indices, params, params_filt, out_dict):
     [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, ANCHORING_STRATEGY, PLOT_READS, INPUT_TYPE, OUT_PLOT_DIR, PRINT_DEBUG, PLOT_FILT_READS] = params
-    [MAXIMUM_TEL_FRAC, MAXIMUM_MINOR_PQ, MAXIMUM_UNEXPLAINED_FRAC, MAX_NONTEL_MEDIAN_KMER_DENSITY]                                                         = params_filt    # just so I know the expected order
+    [MAXIMUM_TEL_FRAC, MAXIMUM_MINOR_PQ, MAXIMUM_UNEXPLAINED_FRAC, MAX_NONTEL_MEDIAN_KMER_DENSITY, READ_TYPE]                                              = params_filt    # just so I know the expected order
     for ri in range(len(read_subset)):
         [readname, rdat, abns_k] = read_subset[ri]
         my_index = my_indices[ri]
