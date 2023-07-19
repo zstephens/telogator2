@@ -239,7 +239,7 @@ def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, F
         if my_tel_len_p == 0 and my_tel_len_q == 0:
             my_filt_string = 'no_anchored_tel'
     #
-    # too much mixture of p and q
+    # too much mixture of p and q (skip for ont)
     #
     if len(my_filt_string) == 0 and READ_TYPE != 'ont':
         tel_types     = sorted([my_tel_conc['p'], my_tel_conc['q']])
