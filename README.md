@@ -23,77 +23,40 @@ conda activate telogator2
 ```
 
 
+## (1) extract reads with telomere repeats:
 
-## (1) making T2T + alt subtel reference:
-
-Obtain t2t reference sequence from https://github.com/marbl/CHM13 (`chm13v2.0.fa`)
-
-Append alternate subtelomere assemblies:
 
 ```bash
-cat chm13v2.0.fa resources/stong_subtels.fa > t2t-and-subtel.fa
-samtools faidx t2t-and-subtel.fa
+python3 get_reads_with_kmer_hits.py -i input.fq.gz -o telomere-reads.fa.gz
 ```
 
-
-## (2) align reads to whole genome reference:
-
-For PacBio CLR reads:
-
-```bash
-pbmm2 align t2t-and-subtel.fa clr-reads.fa.gz aln.bam --preset SUBREAD --sort
-```
-
-For PacBio HiFi reads:
-
-```bash
-pbmm2 align t2t-and-subtel.fa hifi-reads.fa.gz aln.bam --preset HiFi --sort
-```
-
-For Oxford Nanopore reads:
-
-```bash
-minimap2 -ax map-ont -t 6 -N 5 -Y -L -o aln-unsort.sam t2t-and-subtel.fa ont-reads.fa.gz
-samtools sort -o aln.bam aln-unsort.sam
-samtools index aln.bam
-```
+With default parameters this script extracts reads that contain at least 5 TTAGGTTAGG (or CCTAACCTAA) repeats. `-i` accepts .fa / .fa.gz / .fq / .fq.gz / .bam. Multiple input files can be provided. `-o` can be .fa / .fa.gz / .fq / .fq.gz.
 
 
-## (3) extract subset of reads that were mapped to subtelomere regions:
-
-```bash
-python3 get_subtel_reads.py -b aln.bam -i clr-reads.fa.gz -o subtel-reads.fa.gz
-```
-
-
-## (4) align read subset to telogator reference:
+## (2) align read subset to telogator reference:
 
 We recommend using the [winnowmap](https://github.com/marbl/Winnowmap) aligner for best results. An example for HiFi reads:
 
 ```bash
-winnowmap -ax map-hifi -Y -W resources/repetitive-k15.txt -o subtel_aln-unsort.sam t2t-telogator-ref.fa subtel-reads.fa.gz
-samtools sort -o subtel_aln.bam subtel_aln-unsort.sam
-samtools index subtel_aln.bam
+winnowmap -ax map-pb -Y -W resources/repetitive-k15.txt -o aln-unsort.sam resources/t2t-telogator-ref.fa telomere-reads.fa.gz
+samtools sort -o aln.bam aln-unsort.sam
+samtools index aln.bam
 ```
 
-Though this alignment could be done using the same tools as in step 2, if desired.
+Though you could also use pbmm2, minimap2, or another aligner of your choice.
 
 
-
-## (5) run telogator2 on subtel-only alignment:
+## (3) run telogator2:
 
 ```bash
-python3 telogator2.py -i subtel_aln.bam -o telogator_out/
+python3 telogator2.py -i aln.bam -o telogator_out/
 ```
 
 The `-p` input option specifies the number of processes to use (default: 4).
 
-In order to save time during reprocessing, the `-i` input option can also accept `tel-data.p` files so that BAM files don't need to be re-parsed each time.
-
 Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm
 
 The path to the muscle executable is specified via the `-m` input option. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory.
-
 
 
 ## Test data
@@ -103,9 +66,6 @@ To quickly test the functionality of Telogator2, we provided a subset of hg002 t
 ```bash
 python3 telogator2.py -i test_data/hg002_chr1q.p -o telogator_out/
 ```
-
-With the default number of processes (4) this command should complete in about 1 minute.
-
 
 
 ## Output files
