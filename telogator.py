@@ -18,7 +18,7 @@ from source.tg_tvr    import cluster_consensus_tvr, cluster_tvrs, make_tvr_plots
 from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC
 
 # hardcoded parameters
-TEL_WINDOW_SIZE  = 100
+TEL_WINDOW_SIZE = 100
 # toss reads if too much of the non-telomere sequence couldn't be aligned anywhere
 MAXIMUM_UNEXPLAINED_FRAC = 0.7
 # toss reads if the median |p_vs_q| of the non-telomere sequence is above this value
