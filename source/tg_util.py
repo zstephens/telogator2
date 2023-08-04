@@ -33,15 +33,34 @@ T2T_CHROMSIZE = {'chr1':248387328,
 
 LARGE_NUMBER = int(1e9)
 
+RC_DICT = {'A':'T','C':'G','G':'C','T':'A','N':'N'}
+
+FILE_SUFFIX = {'.fa':       'fasta',
+               '.fasta':    'fasta',
+               '.fa.gz':    'fasta',
+               '.fasta.gz': 'fasta',
+               '.fq':       'fastq',
+               '.fastq':    'fastq',
+               '.fq.gz':    'fastq',
+               '.fastq.gz': 'fastq',
+               '.bam':      'bam'}
+
+REF_CHAR  = 'MX=D'
+READ_CHAR = 'MX=I'
+CLIP_CHAR = 'SH'
+
+
 def exists_and_is_nonzero(fn):
     if os.path.isfile(fn):
         if os.path.getsize(fn) > 0:
             return True
     return False
 
+
 def makedir(d):
     if not os.path.isdir(d):
         os.mkdir(d)
+
 
 def rm(fn):
     if os.path.isdir(fn):
@@ -49,17 +68,26 @@ def rm(fn):
     elif os.path.isfile(fn):
         os.remove(fn)
 
-#
-#
-RC_DICT = {'A':'T','C':'G','G':'C','T':'A','N':'N'}
+
 def RC(s):
     return ''.join([RC_DICT[n] for n in s[::-1]])
 
-#
-#
-REF_CHAR  = 'MX=D'
-READ_CHAR = 'MX=I'
-CLIP_CHAR = 'SH'
+
+def get_file_type(fn):
+    fnl = fn.lower()
+    file_type = None
+    for k in FILE_SUFFIX:
+        if fnl[-len(k):] == k:
+            file_type = FILE_SUFFIX[k]
+            break
+    if file_type is None:
+        print('Error: unknown file suffix, cannot determine input type:')
+        print(fn)
+        exit(1)
+    is_gzipped = (fnl[-3:] == '.gz')
+    return (file_type, is_gzipped)
+
+
 def parse_cigar(cigar):
     letters = re.split(r"\d+",cigar)[1:]
     numbers = [int(n) for n in re.findall(r"\d+",cigar)]
@@ -78,9 +106,7 @@ def parse_cigar(cigar):
             radj += numbers[i]
     return (startPos, adj, radj, endClip)
 
-#
-#
-#
+
 def parse_read(splt):
     #
     cigar = splt[5]
@@ -273,9 +299,7 @@ def cluster_list(l, delta, which_val=None):
             prev_val = n[which_val]
     return out_list
 
-#
-#
-#
+
 def cluster_ranges(l):
     c = [[l[0]]]
     for i in range(1,len(l)):
@@ -292,9 +316,7 @@ def cluster_ranges(l):
             c.append([l[i]])
     return c
 
-#
-#
-#
+
 def posmax(seq):
     m = seq[0]
     index = 0
