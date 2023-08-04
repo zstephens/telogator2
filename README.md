@@ -83,14 +83,16 @@ Though this alignment could be done using the same tools as in step 2, if desire
 ## (5) run telogator2 on subtel-only alignment:
 
 ```bash
-python3 telogator.py -i subtel_aln.bam -o telogator_out/
+python3 telogator2.py -i subtel_aln.bam -o telogator_out/
 ```
 
 The `-p` input option specifies the number of processes to use (default: 4).
 
 In order to save time during reprocessing, the `-i` input option can also accept `tel-data.p` files so that BAM files don't need to be re-parsed each time.
 
-Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm The path to the muscle executable is specified via the `-m` input option.
+Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm
+
+The path to the muscle executable is specified via the `-m` input option. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory.
 
 
 
@@ -99,7 +101,7 @@ Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed 
 To quickly test the functionality of Telogator2, we provided a subset of hg002 telomere reads in test_data/
 
 ```bash
-python3 telogator.py -i test_data/hg002_chr1q.p -o telogator_out/
+python3 telogator2.py -i test_data/hg002_chr1q.p -o telogator_out/
 ```
 
 With the default number of processes (4) this command should complete in about 1 minute.
