@@ -39,6 +39,7 @@ GAP_EXT  = -4
 #
 MATCH_CANON  = 0
 XMATCH_CANON = -4
+MATCH_CANON_PREFIX = 1  # when doing prefix merging we want to consider canonical at least a little
 #
 MATCH_UNKNOWN  = 2
 XMATCH_UNKNOWN = -4
@@ -60,12 +61,11 @@ TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 20      # add this many bp to detected TVR boundary
-PREFIX_MERGE_DIST = 0.030   # if TVR consensuses are less than this distance apart join them in prefix merging
 
 #
 #
 #
-def get_scoring_matrix(canonical_letter):
+def get_scoring_matrix(canonical_letter, canonical_score=MATCH_CANON):
     all_amino = tuple(AMINO)
     d = {}
     for c1 in all_amino:
@@ -80,7 +80,7 @@ def get_scoring_matrix(canonical_letter):
     for c1 in all_amino:
         d[c1,UNKNOWN_LETTER] = float(XMATCH_UNKNOWN)
         d[UNKNOWN_LETTER,c1] = float(XMATCH_UNKNOWN)
-    d[canonical_letter,canonical_letter] = float(MATCH_CANON)          # matching canonical
+    d[canonical_letter,canonical_letter] = float(canonical_score)      # matching canonical
     d[UNKNOWN_LETTER,UNKNOWN_LETTER]     = float(MATCH_UNKNOWN)        # matching unknown
     d[canonical_letter,UNKNOWN_LETTER]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
     d[UNKNOWN_LETTER,canonical_letter]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
@@ -95,7 +95,15 @@ def shuffle_seq(s):
 #
 #
 #
-def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None, gap_bool=(True,True), adjust_lens=True, min_viable=True, randshuffle=1):
+def parallel_alignment_job(sequences,
+                           ij,
+                           pq,
+                           results_dict,
+                           scoring_matrix=None,
+                           gap_bool=(True,True),
+                           adjust_lens=True,
+                           min_viable=True,
+                           randshuffle=3):
     #
     # create aligner object
     #
@@ -171,7 +179,7 @@ def parallel_alignment_job(sequences, ij, pq, results_dict, scoring_matrix=None,
         #
         # output
         #
-        ####print((i,j), aln_score, iden_score, rand_score_shuffle, '{0:0.3f}'.format(my_dist_shuffle))
+        #print((i,j), aln_score, iden_score, rand_scores, '{0:0.3f}'.format(my_dist_shuffle))
         results_dict[(i,j)] = my_dist_shuffle
 
 #
@@ -220,7 +228,24 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
 #
 #   repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
 #
-def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode='ds', dist_in=None, dist_in_prefix=None, fig_name=None, fig_prefix_name=None, muscle_dir='', save_msa=None, tvr_truncate=3000, alignment_processes=4, muscle_exe='muscle', PRINT_DEBUG=False):
+def cluster_tvrs(kmer_dat,
+                 repeats_metadata,
+                 my_chr,
+                 my_pos,
+                 tree_cut,
+                 tree_cut_prefix,
+                 aln_mode='ds',
+                 rand_shuffle_count=3,
+                 dist_in=None,
+                 dist_in_prefix=None,
+                 fig_name=None,
+                 fig_prefix_name=None,
+                 muscle_dir='',
+                 save_msa=None,
+                 tvr_truncate=3000,
+                 alignment_processes=4,
+                 muscle_exe='muscle',
+                 PRINT_DEBUG=False):
     #
     [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
     #
@@ -251,8 +276,6 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
     # when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
     #
     char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
-    #
-    scoring_matrix = get_scoring_matrix(canonical_letter)
     #
     # create color vector
     #
@@ -336,10 +359,11 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
         for i in range(alignment_processes):
             if aln_mode == 'ms':
                 p = multiprocessing.Process(target=parallel_alignment_job,
-                                            args=(tvrtel_regions, all_indices[i], pq, tvrtel_dist))
+                                            args=(tvrtel_regions, all_indices[i], pq, tvrtel_dist, None, (True,True), True, True, rand_shuffle_count))
             elif aln_mode == 'ds':
+                scoring_matrix = get_scoring_matrix(canonical_letter)
                 p = multiprocessing.Process(target=parallel_alignment_job,
-                                            args=(tvrtel_regions, all_indices[i], pq, tvrtel_dist, scoring_matrix))
+                                            args=(tvrtel_regions, all_indices[i], pq, tvrtel_dist, scoring_matrix, (True,True), True, True, rand_shuffle_count))
             processes.append(p)
         for i in range(alignment_processes):
             processes[i].start()
@@ -553,10 +577,11 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
             for i in range(alignment_processes):
                 if aln_mode == 'ms':
                     p = multiprocessing.Process(target=parallel_alignment_job,
-                                                args=(out_consensus, pref_indices[i], pq, pref_dist, None, (True,True), True, False))
+                                                args=(out_consensus, pref_indices[i], pq, pref_dist, None, (True,True), True, False, rand_shuffle_count))
                 elif aln_mode == 'ds':
+                    scoring_matrix = get_scoring_matrix(canonical_letter, MATCH_CANON_PREFIX)
                     p = multiprocessing.Process(target=parallel_alignment_job,
-                                                args=(out_consensus, pref_indices[i], pq, pref_dist, scoring_matrix, (True,True), True, False))
+                                                args=(out_consensus, pref_indices[i], pq, pref_dist, scoring_matrix, (True,True), True, False, rand_shuffle_count))
                 processes.append(p)
             for i in range(alignment_processes):
                 processes[i].start()
@@ -578,17 +603,18 @@ def cluster_tvrs(kmer_dat, repeats_metadata, my_chr, my_pos, tree_cut, aln_mode=
         #
         dist_array_prefix  = squareform(dist_matrix_prefix)
         Z_prefix           = linkage(dist_array_prefix, method='complete')
-        assignments_prefix = fcluster(Z_prefix, PREFIX_MERGE_DIST, 'distance').tolist()
+        assignments_prefix = fcluster(Z_prefix, tree_cut_prefix, 'distance').tolist()
         merge_clust = [[] for n in range(max(assignments_prefix))]
         for i in range(len(assignments_prefix)):
             merge_clust[assignments_prefix[i]-1].append(i)
         #
         if fig_prefix_name is not None:
-            pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
+            #pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
+            pref_clust_labels = [str(len(n)) + ' reads' for n in out_clust]
             fig = mpl.figure(3, figsize=(8,6))
             mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
-            dendrogram(Z_prefix, color_threshold=PREFIX_MERGE_DIST, labels=pref_clust_labels)
-            mpl.axhline(y=[PREFIX_MERGE_DIST], linestyle='dashed', color='black', alpha=0.7)
+            dendrogram(Z_prefix, color_threshold=tree_cut_prefix, labels=pref_clust_labels)
+            mpl.axhline(y=[tree_cut_prefix], linestyle='dashed', color='black', alpha=0.7)
             mpl.xlabel('cluster #')
             mpl.ylabel('distance')
             mpl.title(my_chr + ' : ' + str(my_pos))
@@ -799,7 +825,22 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
 #
 #
 #
-def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, fig_name=None, samp_labels=None, aln_mode='ms', gap_bool=(True,True), adjust_lens=False, linkage_method='complete', normalize_dist_matrix=True, alignment_processes=8, job=(1,1), dendrogram_title=None, dendrogram_height=12):
+def cluster_consensus_tvrs(sequences,
+                           repeats_metadata,
+                           tree_cut,
+                           dist_in=None,
+                           fig_name=None,
+                           samp_labels=None,
+                           aln_mode='ms',
+                           gap_bool=(True,True),
+                           adjust_lens=False,
+                           rand_shuffle_count=3,
+                           linkage_method='complete',
+                           normalize_dist_matrix=True,
+                           alignment_processes=8,
+                           job=(1,1),
+                           dendrogram_title=None,
+                           dendrogram_height=12):
     #
     n_seq = len(sequences)
     #
@@ -848,10 +889,10 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
         for i in range(alignment_processes):
             if aln_mode == 'ms':
                 p = multiprocessing.Process(target=parallel_alignment_job,
-                                            args=(sequences, all_indices[i], 'q', return_dict, None, gap_bool, adjust_lens, False))
+                                            args=(sequences, all_indices[i], 'q', return_dict, None, gap_bool, adjust_lens, False, rand_shuffle_count))
             elif aln_mode == 'ds':
                 p = multiprocessing.Process(target=parallel_alignment_job,
-                                            args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, gap_bool, adjust_lens, False))
+                                            args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, gap_bool, adjust_lens, False, rand_shuffle_count))
             processes.append(p)
         for i in range(alignment_processes):
             processes[i].start()
@@ -869,7 +910,7 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
             if normalize_dist_matrix:
                 dist_norm    = max(np.max(dist_matrix), MIN_MSD)
                 dist_matrix /= dist_norm
-            if dist_in != None:
+            if dist_in is not None:
                 np.save(dist_in, dist_matrix)
     else:
         dist_matrix = np.load(dist_in, allow_pickle=True)
@@ -878,14 +919,14 @@ def cluster_consensus_tvr(sequences, repeats_metadata, tree_cut, dist_in=None, f
         d_arr = squareform(dist_matrix)
         Zread = linkage(d_arr, method=linkage_method)
         #
-        if fig_name != None:
+        if fig_name is not None:
             mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
             #
             fig = mpl.figure(3, figsize=(8,dendrogram_height))
             dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
             mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
             mpl.xlabel('distance')
-            if dendrogram_title != None:
+            if dendrogram_title is not None:
                 mpl.title(dendrogram_title)
             #
             mpl.tight_layout()

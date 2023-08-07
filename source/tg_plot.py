@@ -356,9 +356,9 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
     #
     # plotting constants
     #
-    mpl.rcParams.update({'font.size': 18, 'font.weight':'bold'})
-    plot_params = {'p_color':'blue',
-                   'q_color':'red',
+    mpl.rcParams.update({'font.size': 18})
+    plot_params = {'p_color':'steelblue',
+                   'q_color':'mediumorchid',
                    'xlabel_rot':0,
                    'y_label':'<-- q   telomere length   p -->',
                    'p_ymax':20000,
@@ -460,15 +460,18 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
         mpl.plot([xval - 0.35, xval + 0.35], [yval, yval], '-k', linewidth=3, alpha=1.0)
     #
     mpl.plot([0,len(xlab)+1], [0,0], '-k', linewidth=3)
+    if 'chrYp' in plot_params['skip_plot'] and 'chrYq' in plot_params['skip_plot']:
+        xtck = xtck[:-1]
+        xlab = xlab[:-1]
     if plot_params['include_unanchored']:
-        mpl.xticks(xtck, xlab, rotation=plot_params['xlabel_rot'])
+        mpl.xticks(xtck, xlab, rotation=plot_params['xlabel_rot'], fontweight='bold')
         mpl.xlim([0,len(xlab)+1])
     else:
-        mpl.xticks(xtck[1:], xlab[1:], rotation=plot_params['xlabel_rot'])
+        mpl.xticks(xtck[1:], xlab[1:], rotation=plot_params['xlabel_rot'], fontweight='bold')
         mpl.xlim([1,len(xlab)+1])
     mpl.yticks(ytck, ylab)
     mpl.ylim([-q_ymax, p_ymax])
-    mpl.ylabel(plot_params['y_label'])
+    mpl.ylabel(plot_params['y_label'], fontweight='bold')
     mpl.grid(linestyle='--', alpha=0.5)
     mpl.tight_layout()
     mpl.savefig(out_fn)

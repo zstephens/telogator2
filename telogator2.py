@@ -14,7 +14,7 @@ from source.tg_kmer   import get_telomere_composition, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
 from source.tg_plot   import tel_len_violin_plot
 from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job, parallel_filtering_job
-from source.tg_tvr    import cluster_consensus_tvr, cluster_tvrs, make_tvr_plots
+from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, make_tvr_plots
 from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC
 
 # hardcoded parameters
@@ -75,11 +75,12 @@ def main(raw_args=None):
     parser.add_argument('-m',   type=str,  required=False, metavar='muscle',      default='muscle',  help="/path/to/muscle executable")
     parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
     parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
-    parser.add_argument('-at',  type=float,required=False, metavar='0.150',       default=0.150,     help="Default treecut value to cluster TVRs")
-    parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom treecut vals for allele clustering")
-    parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut value: clustering multimapped alleles")
+    parser.add_argument('-att', type=float,required=False, metavar='0.180',       default=0.180,     help="Treecut value: main TVR clustering")
+    parser.add_argument('-atp', type=float,required=False, metavar='0.180',       default=0.180,     help="Treecut value: merging TVRs with similar prefixes")
+    parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut value: grouping multimapped alleles")
     parser.add_argument('-ato', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: clustering orphaned alleles")
     parser.add_argument('-ats', type=float,required=False, metavar='0.250',       default=0.250,     help="Treecut value: declustering alleles using subtels")
+    parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom TVR treecut vals for specific anchors")
     #
     parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
     parser.add_argument('--plot-filt',     required=False, action='store_true',   default=False,     help="Create read plots (filtered reads)")
@@ -140,8 +141,10 @@ def main(raw_args=None):
     FAST_ALIGNMENT  = args.fast
     #
     DS_OR_MS = 'ds'
+    RAND_SHUFFLE = 3
     if FAST_ALIGNMENT:
         DS_OR_MS = 'ms'
+        RAND_SHUFFLE = 1
     #
     MUSCLE_EXE = args.m
     #
@@ -149,7 +152,7 @@ def main(raw_args=None):
         makedir(OUT_PLOT_DIR)
     #
     # for debugging purposes (don't replot figures if they already exist)
-    DO_NOT_OVERWRITE = True
+    DO_NOT_OVERWRITE = False
     # for debugging purposes (only cluster TVRs at specific arms)
     DEBUG_CHR_LIST = []
     if len(args.debug_chr):
@@ -217,7 +220,8 @@ def main(raw_args=None):
     #
     MIN_READS_PER_PHASE = args.ar
     ALLELE_TL_METHOD    = args.am
-    TREECUT_DEFAULT     = args.at
+    TREECUT_DEFAULT     = args.att
+    TREECUT_PREFIXMERGE = args.atp
     TREECUT_MULTIMAPPED = args.atm
     TREECUT_ORPHANS     = args.ato
     TREECUT_SUBTELS     = args.ats
@@ -673,9 +677,10 @@ def main(raw_args=None):
         dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-'     + zfcn + '_' + plotname_chr + '.npy'
         consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
         #
-        read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos, my_tc,
+        read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos, my_tc, TREECUT_PREFIXMERGE,
                                       aln_mode=DS_OR_MS,
                                       alignment_processes=NUM_PROCESSES,
+                                      rand_shuffle_count=RAND_SHUFFLE,
                                       dist_in=dist_matrix_fn,
                                       dist_in_prefix=dist_prefix_fn,
                                       fig_name=dendrogram_fn,
@@ -779,9 +784,10 @@ def main(raw_args=None):
         orphans_dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-998_orphans.npy'
         orphans_consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-998_orphans.fa'
         #
-        orphans_clust_dat = cluster_tvrs(orphans_kmer_hit_dat, KMER_METADATA, orphans_chr, orphans_pos, TREECUT_ORPHANS,
+        orphans_clust_dat = cluster_tvrs(orphans_kmer_hit_dat, KMER_METADATA, orphans_chr, orphans_pos, TREECUT_ORPHANS, TREECUT_PREFIXMERGE,
                                          aln_mode=DS_OR_MS,
                                          alignment_processes=NUM_PROCESSES,
+                                         rand_shuffle_count=RAND_SHUFFLE,
                                          dist_in=orphans_dist_matrix_fn,
                                          dist_in_prefix=orphans_dist_prefix_fn,
                                          fig_name=orphans_dendrogram_fn,
@@ -892,10 +898,11 @@ def main(raw_args=None):
     if len(all_tvrs) == 1:      # this can happen when debugging individual arms
         alltvr_clustdat = [[0]]
     else:
-        alltvr_clustdat = cluster_consensus_tvr(all_tvrs, KMER_METADATA, TREECUT_MULTIMAPPED,
+        alltvr_clustdat = cluster_consensus_tvrs(all_tvrs, KMER_METADATA, TREECUT_MULTIMAPPED,
                                                 alignment_processes=NUM_PROCESSES,
                                                 aln_mode='ms',
                                                 gap_bool=(True,True),
+                                                rand_shuffle_count=RAND_SHUFFLE,
                                                 dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
                                                 fig_name=OUT_TVR_DIR+'all-tvrs.png',
                                                 samp_labels=tvr_labels,
@@ -941,10 +948,11 @@ def main(raw_args=None):
         if len(subtels_for_this_cluster) == 1:      # this can happen when debugging individual arms
             subtel_clustdat = [[0]]
         else:
-            subtel_clustdat = cluster_consensus_tvr(subtels_for_this_cluster, KMER_METADATA, TREECUT_SUBTELS,
+            subtel_clustdat = cluster_consensus_tvrs(subtels_for_this_cluster, KMER_METADATA, TREECUT_SUBTELS,
                                                     alignment_processes=NUM_PROCESSES,
                                                     aln_mode='ms',
                                                     gap_bool=(False,False),
+                                                    rand_shuffle_count=RAND_SHUFFLE,
                                                     adjust_lens=False,
                                                     dist_in=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy',
                                                     fig_name=OUT_TVR_TEMP+'subtels_dendrogram-'+str(i).zfill(3)+'.png',
