@@ -823,6 +823,22 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
     return out_kmerhits
 
 #
+# helper function for quickly plotting a set of tvrs (assumes Q orientation)
+#
+def plot_some_tvrs(tvrs, labels, repeats_metadata, plot_fn, custom_plot_params={}):
+    [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = repeats_metadata
+    redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs, repeats_metadata)
+    clust_khd = []
+    for i in range(len(redrawn_tvrs)):
+        clust_khd.append([redrawn_tvrs[i], len(tvrs[i]), 0, 'FWD', labels[i], 60, None])
+    clust_dat = []
+    clust_dat.append([list(range(len(clust_khd)))])
+    clust_dat.append([[60]*len(clust_dat[0][0])])
+    clust_dat.append([[0]*len(clust_dat[0][0])])
+    clust_dat.append([0])
+    plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, plot_fn, clust_dat=clust_dat, plot_params=custom_plot_params)
+
+#
 #
 #
 def cluster_consensus_tvrs(sequences,
@@ -830,6 +846,7 @@ def cluster_consensus_tvrs(sequences,
                            tree_cut,
                            dist_in=None,
                            fig_name=None,
+                           dendro_name=None,
                            samp_labels=None,
                            aln_mode='ms',
                            gap_bool=(True,True),
@@ -863,15 +880,13 @@ def cluster_consensus_tvrs(sequences,
         k = 0
         for i in range(n_seq):
             for j in range(i+1,n_seq):
-                all_indices[k%alignment_processes].append((i,j))
+                all_indices[k % alignment_processes].append((i,j))
                 k += 1
-        #
-        scoring_matrix = get_scoring_matrix(canonical_letter)
         #
         #   even more parallelization! Any problem can be solved by throwing tons of CPU at it.
         #
         if job[1] > 1:
-            my_job = job[0]-1
+            my_job = job[0] - 1
             chunks = job[1]
             for i in range(alignment_processes):
                 chunksize = int(len(all_indices[i])/chunks)
@@ -891,6 +906,7 @@ def cluster_consensus_tvrs(sequences,
                 p = multiprocessing.Process(target=parallel_alignment_job,
                                             args=(sequences, all_indices[i], 'q', return_dict, None, gap_bool, adjust_lens, False, rand_shuffle_count))
             elif aln_mode == 'ds':
+                scoring_matrix = get_scoring_matrix(canonical_letter)
                 p = multiprocessing.Process(target=parallel_alignment_job,
                                             args=(sequences, all_indices[i], 'q', return_dict, scoring_matrix, gap_bool, adjust_lens, False, rand_shuffle_count))
             processes.append(p)
@@ -919,21 +935,29 @@ def cluster_consensus_tvrs(sequences,
         d_arr = squareform(dist_matrix)
         Zread = linkage(d_arr, method=linkage_method)
         #
-        if fig_name is not None:
-            mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
-            #
-            fig = mpl.figure(3, figsize=(8,dendrogram_height))
-            dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
-            mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
-            mpl.xlabel('distance')
-            if dendrogram_title is not None:
-                mpl.title(dendrogram_title)
-            #
-            mpl.tight_layout()
-            mpl.savefig(fig_name, dpi=200)  # default figure dpi = 100
-            mpl.close(fig)
-        #
+        mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
+        fig = mpl.figure(figsize=(8,dendrogram_height))
+        dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
         labels_fromtop = dendro_dat['ivl'][::-1]
+        # ugliness to keep dendrogram ordering consistent with other figures
+        reorder_map = {n:samp_labels.index(m) for n,m in enumerate(labels_fromtop)}
+        replot_labels = [f'({labels_fromtop.index(n)}) {n}' for n in samp_labels]
+        mpl.close(fig)
+        fig = mpl.figure(figsize=(8,dendrogram_height))
+        dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
+        #
+        mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
+        mpl.xlabel('distance')
+        if dendrogram_title is not None:
+            mpl.title(dendrogram_title)
+        mpl.tight_layout()
+        if dendro_name is not None:
+            mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
+        mpl.close(fig)
+        #
+        if fig_name is not None:
+            reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
+            plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params={'custom_title':''})
         #
         assignments = fcluster(Zread, tree_cut, 'distance').tolist()
         by_class = {}

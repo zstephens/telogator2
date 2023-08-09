@@ -32,12 +32,12 @@ def parallel_filtering_job(read_subset, my_job_i, params, params_filt, out_dict)
             filt_counts_out['trim_filter'] += 1
             continue
         # make sure string used for kmer matching is same orientation as the alignments
+        # assuming softclipping was used. i.e. all alignments should have same sequence... (don't pick tel though)
         which_i = 0
         for i in range(len(abns_k)):
             if abns_k[i][2][:3] != 'tel':
                 which_i = i
                 break
-        # assuming softclipping was used. i.e. all alignments should have same sequence... (don't pick tel though)
         if abns_k[which_i][5] == 'FWD':
             rdat = abns_k[which_i][7]
         elif abns_k[which_i][5] == 'REV':
@@ -233,11 +233,11 @@ def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, F
     if my_tel_frac > MAXIMUM_TEL_FRAC:
         my_filt_string = 'tel_frac'
     #
-    # no tel at all
+    # no tel at all (read did not terminate in telomere)
     #
     if len(my_filt_string) == 0:
         if my_tel_len_p == 0 and my_tel_len_q == 0:
-            my_filt_string = 'no_anchored_tel'
+            my_filt_string = 'no_tel_end'
     #
     # too much mixture of p and q (skip for ont)
     #

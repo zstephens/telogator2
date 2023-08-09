@@ -2,13 +2,12 @@
 import argparse
 import copy
 import multiprocessing
+import numpy as np
 import pathlib
 import pickle
 import pysam
 import sys
 import time
-
-import numpy as np
 
 from source.tg_kmer   import get_telomere_composition, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
@@ -76,8 +75,8 @@ def main(raw_args=None):
     parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
     parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
     parser.add_argument('-att', type=float,required=False, metavar='0.180',       default=0.180,     help="Treecut value: main TVR clustering")
-    parser.add_argument('-atp', type=float,required=False, metavar='0.180',       default=0.180,     help="Treecut value: merging TVRs with similar prefixes")
-    parser.add_argument('-atm', type=float,required=False, metavar='0.045',       default=0.045,     help="Treecut value: grouping multimapped alleles")
+    parser.add_argument('-atp', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: merging TVRs with similar prefixes")
+    parser.add_argument('-atm', type=float,required=False, metavar='0.070',       default=0.070,     help="Treecut value: grouping multimapped alleles")
     parser.add_argument('-ato', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: clustering orphaned alleles")
     parser.add_argument('-ats', type=float,required=False, metavar='0.250',       default=0.250,     help="Treecut value: declustering alleles using subtels")
     parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom TVR treecut vals for specific anchors")
@@ -85,9 +84,9 @@ def main(raw_args=None):
     parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
     parser.add_argument('--plot-filt',     required=False, action='store_true',   default=False,     help="Create read plots (filtered reads)")
     parser.add_argument('--plot-filt-tvr', required=False, action='store_true',   default=False,     help="Plot denoised TVR instead of raw signal")
-    parser.add_argument('--debug',         required=False, action='store_true',   default=False,     help="Print results for each read as its processed")
     #
-    parser.add_argument('--debug-chr', type=str, required=False, metavar='chr_list', default='',     help="Only process these chr (comma-delimited: chr1p,chr1q,)")
+    parser.add_argument('--debug',               required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
+    parser.add_argument('--debug-chr', type=str, required=False, metavar='chr_list',  default='',    help="[DEBUG] Only process: chr1p,chr1q,... (comma-delimited)")
     #
     parser.add_argument('--no-anchorfilt', required=False, action='store_true',   default=False,     help="Skip double-anchored read filtering")
     parser.add_argument('--no-orphans',    required=False, action='store_true',   default=False,     help="Skip orphan read clustering")
@@ -126,6 +125,7 @@ def main(raw_args=None):
     OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
     OUT_VIOLIN_TL = OUT_DIR + 'violin_tlens.png'
     OUT_VIOLIN_RL = OUT_DIR + 'violin_rlens.png'
+    OUT_FILTSTATS = OUT_DIR + 'filtered_read_stats.tsv'
     #
     OUT_TVR_DIR  = OUT_DIR + 'tvr_clustering/'
     OUT_TVR_TEMP = OUT_TVR_DIR + 'temp/'
@@ -151,13 +151,13 @@ def main(raw_args=None):
     if PLOT_READS:
         makedir(OUT_PLOT_DIR)
     #
-    # for debugging purposes (don't replot figures if they already exist)
+    # for debugging purposes (True = don't replot figures if they already exist)
     DO_NOT_OVERWRITE = False
     # for debugging purposes (only cluster TVRs at specific arms)
     DEBUG_CHR_LIST = []
     if len(args.debug_chr):
         DEBUG_CHR_LIST = [n for n in args.debug_chr.split(',')]
-    # merge all blank TVRs into "chrBq"
+    # merge all blank TVRs into "chrBq" and let them be clustered via subtel sequences instead
     MERGE_BLANK = True
     #
     orphans_chr = 'chrUq'
@@ -256,6 +256,7 @@ def main(raw_args=None):
         f.close()
         ANCHORED_TEL_BY_CHR = my_pickle['anchored-tels']
         NONTEL_REFSPANS_BY_CHR = my_pickle['non-tel-ref-spans']
+        num_input_reads_for_filter_tsv = None
     else:
         if INPUT_TYPE == 'sam':
             samfile = pysam.AlignmentFile(INPUT_ALN, "r")
@@ -314,6 +315,7 @@ def main(raw_args=None):
         sys.stdout.flush()
         tt = time.perf_counter()
         num_starting_reads = len(ALIGNMENTS_BY_RNAME.keys())
+        num_input_reads_for_filter_tsv = num_starting_reads
         #
         par_params      = [CANONICAL_STRINGS, CANONICAL_STRINGS_REV, READ_TYPE, MATCH_TRIM_STRATEGY, INPUT_TYPE, PRINT_DEBUG]
         par_params_filt = [MINIMUM_READ_LEN, MINIMUM_TEL_BASES]
@@ -428,16 +430,6 @@ def main(raw_args=None):
         for k in NONTEL_REFSPANS_BY_CHR.keys():
             NONTEL_REFSPANS_BY_CHR[k] = sorted(NONTEL_REFSPANS_BY_CHR[k])
         #
-        # print stats on reads that were filtered
-        #
-        if sum(reads_skipped.values()) > 0:
-            print()
-            print('reads filtered:')
-            for k in sorted(reads_skipped.keys()):
-                if reads_skipped[k] > 0:
-                    print(' -', k, reads_skipped[k])
-            print()
-        #
         # save output pickle
         #
         f = open(OUT_PICKLE, 'wb')
@@ -457,6 +449,7 @@ def main(raw_args=None):
         del_keys    = get_double_anchored_tels(ANCHORED_TEL_BY_CHR, NONTEL_REFSPANS_BY_CHR, gdat_params)
         #
         num_ending_reads = num_starting_reads - len(del_keys)
+        reads_skipped['double_anchored'] = len(del_keys)
         del_keys2 = []
         for (k,di) in del_keys:
             del ANCHORED_TEL_BY_CHR[k][di]
@@ -480,6 +473,7 @@ def main(raw_args=None):
     del_keys     = get_tels_below_canonical_thresh(ANCHORED_TEL_BY_CHR, gtbct_params)
     #
     num_ending_reads = num_starting_reads - len(del_keys)
+    reads_skipped['min_canonical'] = len(del_keys)
     del_keys2 = []
     for (k,di) in del_keys:
         del ANCHORED_TEL_BY_CHR[k][di]
@@ -490,6 +484,26 @@ def main(raw_args=None):
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
     sys.stdout.flush()
+
+    #
+    # print stats on reads that were filtered
+    #
+    with open(OUT_FILTSTATS, 'w') as f:
+        if num_input_reads_for_filter_tsv is not None:
+            f.write(str(num_input_reads_for_filter_tsv) + '\t' + 'total_input_reads' + '\n')
+        f.write(str(num_ending_reads) + '\t' + 'total_after_filtering' + '\n')
+        if sum(reads_skipped.values()) > 0:
+            print()
+            print('reads filtered:')
+            sk = sorted(reads_skipped.keys())
+            max_str_len = 0
+            for k in sk:
+                max_str_len = max(len(str(reads_skipped[k])), max_str_len)
+            for k in sk:
+                if reads_skipped[k] > 0:
+                    print(' - ' + ' '*(max_str_len - len(str(reads_skipped[k]))) + str(reads_skipped[k]) + ' ' + k)
+                    f.write(str(reads_skipped[k]) + '\t' + k + '\n')
+            print()
 
     #
     # cluster subtel/tel boundaries by position and compute TL statistics
@@ -899,16 +913,17 @@ def main(raw_args=None):
         alltvr_clustdat = [[0]]
     else:
         alltvr_clustdat = cluster_consensus_tvrs(all_tvrs, KMER_METADATA, TREECUT_MULTIMAPPED,
-                                                alignment_processes=NUM_PROCESSES,
-                                                aln_mode='ms',
-                                                gap_bool=(True,True),
-                                                rand_shuffle_count=RAND_SHUFFLE,
-                                                dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
-                                                fig_name=OUT_TVR_DIR+'all-tvrs.png',
-                                                samp_labels=tvr_labels,
-                                                linkage_method='complete',
-                                                job=(1,1),
-                                                dendrogram_height=12)
+                                                 alignment_processes=NUM_PROCESSES,
+                                                 aln_mode='ds',
+                                                 gap_bool=(True,False),                 # allow grouping prefixes (risky?)
+                                                 rand_shuffle_count=RAND_SHUFFLE,
+                                                 dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
+                                                 fig_name=OUT_TVR_DIR+'all-tvrs.png',
+                                                 dendro_name=OUT_TVR_DIR+'all-tvrs_dendrogram.png',
+                                                 samp_labels=tvr_labels,
+                                                 linkage_method='complete',
+                                                 job=(1,1),
+                                                 dendrogram_height=12)
     if MERGE_BLANK and len(blank_cluster):
         sort_alltvr_clustdat = sorted(alltvr_clustdat) + [blank_cluster]
     else:
@@ -949,19 +964,19 @@ def main(raw_args=None):
             subtel_clustdat = [[0]]
         else:
             subtel_clustdat = cluster_consensus_tvrs(subtels_for_this_cluster, KMER_METADATA, TREECUT_SUBTELS,
-                                                    alignment_processes=NUM_PROCESSES,
-                                                    aln_mode='ms',
-                                                    gap_bool=(False,False),
-                                                    rand_shuffle_count=RAND_SHUFFLE,
-                                                    adjust_lens=False,
-                                                    dist_in=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy',
-                                                    fig_name=OUT_TVR_TEMP+'subtels_dendrogram-'+str(i).zfill(3)+'.png',
-                                                    samp_labels=subtel_labels,
-                                                    linkage_method='ward',
-                                                    normalize_dist_matrix=False,
-                                                    job=(1,1),
-                                                    dendrogram_title=my_dendro_title,
-                                                    dendrogram_height=8)
+                                                     alignment_processes=NUM_PROCESSES,
+                                                     aln_mode='ms',
+                                                     gap_bool=(False,False),
+                                                     rand_shuffle_count=RAND_SHUFFLE,
+                                                     adjust_lens=False,
+                                                     dist_in=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy',
+                                                     dendro_name=OUT_TVR_TEMP+'subtels_dendrogram-'+str(i).zfill(3)+'.png',
+                                                     samp_labels=subtel_labels,
+                                                     linkage_method='ward',
+                                                     normalize_dist_matrix=False,
+                                                     job=(1,1),
+                                                     dendrogram_title=my_dendro_title,
+                                                     dendrogram_height=8)
         usable_clusters = [n for n in subtel_clustdat if len(n) >= MIN_READS_PER_PHASE]
         if len(usable_clusters):
             subtel_clust_by_readname = {}
