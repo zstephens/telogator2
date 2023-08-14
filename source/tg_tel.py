@@ -4,7 +4,7 @@ import copy
 import numpy as np
 
 from source.tg_kmer import get_telomere_base_count, get_telomere_kmer_density, get_telomere_regions
-from source.tg_plot import plot_all_read_data
+from source.tg_plot import plot_tel_signal
 from source.tg_util import makedir, posmax, RC, repeated_matches_trimming
 
 MIN_TEL_SCORE   = 100
@@ -369,14 +369,14 @@ def parallel_anchored_tel_job(read_subset, my_indices, params, params_filt, out_
                 plot_title = readname + ' ' + my_tel_type + '-arm tel= ' + str(my_tel_len)
                 fig_name   = my_plot_dir + 'read_' + str(my_index) + '.png'
                 dens_data  = [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power]
-                plot_all_read_data(dens_data, tlen_vals, abns_k, TEL_WINDOW_SIZE, plot_title, fig_name)
+                plot_tel_signal(dens_data, tlen_vals, abns_k, TEL_WINDOW_SIZE, plot_title, fig_name)
             elif PLOT_FILT_READS:
                 my_plot_dir = OUT_PLOT_DIR + 'filt_' + my_filt_string + '/'
                 makedir(my_plot_dir)
                 plot_title = readname
                 fig_name   = my_plot_dir + 'read_' + str(my_index) + '.png'
                 dens_data  = [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power]
-                plot_all_read_data(dens_data, [0,0], abns_k, TEL_WINDOW_SIZE, plot_title, fig_name)
+                plot_tel_signal(dens_data, [0,0], abns_k, TEL_WINDOW_SIZE, plot_title, fig_name)
 
         if PRINT_DEBUG:
             print(my_indices[ri], readname)

@@ -58,7 +58,7 @@ def get_read_alignment_polygons(alignments, readlen):
 #
 #
 #
-def plot_all_read_data(density_data, tl_vals, aln_dat, tel_window, f_title, fig_name, plot_for_paper=False):
+def plot_tel_signal(density_data, tl_vals, aln_dat, tel_window, f_title, fig_name, plot_for_paper=False):
     [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power] = density_data
     [tl_p, tl_q] = tl_vals
     rlen = len(aln_dat[0][7])

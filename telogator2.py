@@ -86,10 +86,13 @@ def main(raw_args=None):
     parser.add_argument('--plot-filt-tvr', required=False, action='store_true',   default=False,     help="Plot denoised TVR instead of raw signal")
     #
     parser.add_argument('--debug',               required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
+    parser.add_argument('--debug-npy',           required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
+    parser.add_argument('--debug-overwriteplot', required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-chr', type=str, required=False, metavar='chr_list',  default='',    help="[DEBUG] Only process: chr1p,chr1q,... (comma-delimited)")
     #
     parser.add_argument('--no-anchorfilt', required=False, action='store_true',   default=False,     help="Skip double-anchored read filtering")
     parser.add_argument('--no-orphans',    required=False, action='store_true',   default=False,     help="Skip orphan read clustering")
+    parser.add_argument('--no-subtelclust',required=False, action='store_true',   default=False,     help="Skip subtelomere-based cluster splitting")
     parser.add_argument('--fast',          required=False, action='store_true',   default=False,     help="Use faster but less accurate pairwise alignment")
     #
     parser.add_argument('-p',   type=int,  required=False, metavar='4',           default=4,         help="Number of processes to use")
@@ -151,8 +154,9 @@ def main(raw_args=None):
     if PLOT_READS:
         makedir(OUT_PLOT_DIR)
     #
-    # for debugging purposes (True = don't replot figures if they already exist)
-    DO_NOT_OVERWRITE = False
+    # for debugging purposes
+    DONT_OVERWRITE_PLOTS = args.debug_overwriteplot   # (True = don't replot figures if they already exist)
+    ALWAYS_REPROCESS = not(args.debug_npy)            # (True = don't write out .npy matrices, always recompute)
     # for debugging purposes (only cluster TVRs at specific arms)
     DEBUG_CHR_LIST = []
     if len(args.debug_chr):
@@ -164,6 +168,8 @@ def main(raw_args=None):
     orphans_pos = 0
     blank_chr   = 'chrBq'
     blank_pos   = 0
+    fake_chr    = 'chrUq'
+    fake_pos    = 0
 
     #
     # parse telomere kmer data
@@ -231,6 +237,7 @@ def main(raw_args=None):
     #
     SKIP_FILT_DOUBLEANCHOR = args.no_anchorfilt
     SKIP_ORPHAN_CLUSTERING = args.no_orphans
+    SKIP_SUBTEL_CLUSTERING = args.no_subtelclust
     #
     NUM_PROCESSES = args.p
 
@@ -661,7 +668,7 @@ def main(raw_args=None):
     temp_read_dat       = {}    # contains read fastas for downstream purposes. indexed by (chr, pos, allele_i)
     #
     gatd_params = [ALLELE_TL_METHOD, MIN_READS_PER_PHASE]
-    mtp_params  = [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DO_NOT_OVERWRITE]
+    mtp_params  = [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DONT_OVERWRITE_PLOTS]
     #
     for tc_dat in tel_composition_data:
         [my_chr, my_pos, clust_num, ind_list, my_rlens, my_rnames, kmer_hit_dat] = tc_dat
@@ -690,6 +697,11 @@ def main(raw_args=None):
         dist_matrix_fn = OUT_TVR_TEMP + 'cluster-'       + zfcn + '_' + plotname_chr + '.npy'
         dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-'     + zfcn + '_' + plotname_chr + '.npy'
         consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_' + plotname_chr + '.fa'
+        #
+        if ALWAYS_REPROCESS:
+            dist_matrix_fn = None
+            dist_prefix_fn = None
+            consensus_fn = None
         #
         read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, my_chr, my_pos, my_tc, TREECUT_PREFIXMERGE,
                                       aln_mode=DS_OR_MS,
@@ -790,13 +802,18 @@ def main(raw_args=None):
             # embed original chromosome in the read name
             orphans_kmer_hit_dat[-1][4] = orphans_kmer_hit_dat[-1][4] + ' ' + orphaned_read_dat[ori][0] + ':' + str(orphaned_read_dat[ori][1])
         #
-        orphans_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_orphans.png'
-        orphans_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_orphans.png'
-        orphans_dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-998_orphans.png'
-        orphans_dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-998_orphans.png'
-        orphans_dist_matrix_fn = OUT_TVR_TEMP + 'cluster-998_orphans.npy'
-        orphans_dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-998_orphans.npy'
-        orphans_consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-998_orphans.fa'
+        orphans_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-999_orphans.png'
+        orphans_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-999_orphans.png'
+        orphans_dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-999_orphans.png'
+        orphans_dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-999_orphans.png'
+        orphans_dist_matrix_fn = OUT_TVR_TEMP + 'cluster-999_orphans.npy'
+        orphans_dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-999_orphans.npy'
+        orphans_consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-999_orphans.fa'
+        #
+        if ALWAYS_REPROCESS:
+            orphans_dist_matrix_fn = None
+            orphans_dist_prefix_fn = None
+            orphans_consensus_fn = None
         #
         orphans_clust_dat = cluster_tvrs(orphans_kmer_hit_dat, KMER_METADATA, orphans_chr, orphans_pos, TREECUT_ORPHANS, TREECUT_PREFIXMERGE,
                                          aln_mode=DS_OR_MS,
@@ -912,18 +929,26 @@ def main(raw_args=None):
     if len(all_tvrs) == 1:      # this can happen when debugging individual arms
         alltvr_clustdat = [[0]]
     else:
+        alltvr_dist_fn   = OUT_TVR_TEMP+'all-tvrs.npy'
+        alltvr_plot_fn   = OUT_TVR_DIR+'all-tvrs.png'
+        alltvr_dendro_fn = OUT_TVR_DIR+'all-tvrs_dendrogram.png'
+        #
+        if ALWAYS_REPROCESS:
+            alltvr_dist_fn = None
+        #
         alltvr_clustdat = cluster_consensus_tvrs(all_tvrs, KMER_METADATA, TREECUT_MULTIMAPPED,
                                                  alignment_processes=NUM_PROCESSES,
                                                  aln_mode='ds',
                                                  gap_bool=(True,False),                 # allow grouping prefixes (risky?)
                                                  rand_shuffle_count=RAND_SHUFFLE,
-                                                 dist_in=OUT_TVR_TEMP+'all-tvrs.npy',
-                                                 fig_name=OUT_TVR_DIR+'all-tvrs.png',
-                                                 dendro_name=OUT_TVR_DIR+'all-tvrs_dendrogram.png',
+                                                 dist_in=alltvr_dist_fn,
+                                                 fig_name=alltvr_plot_fn,
+                                                 dendro_name=alltvr_dendro_fn,
                                                  samp_labels=tvr_labels,
                                                  linkage_method='complete',
                                                  job=(1,1),
-                                                 dendrogram_height=12)
+                                                 dendrogram_height=12,
+                                                 overwrite_figures=not(DONT_OVERWRITE_PLOTS))
     if MERGE_BLANK and len(blank_cluster):
         sort_alltvr_clustdat = sorted(alltvr_clustdat) + [blank_cluster]
     else:
@@ -934,7 +959,8 @@ def main(raw_args=None):
     #
     # decluster alleles that have the same TVR if their subtelomeres are different enough
     #
-    print('comparing subtelomeres...')
+    if SKIP_SUBTEL_CLUSTERING is False:
+        print('comparing subtelomeres...')
     new_allele_tel_dat_entries = []
     num_allelles_added_because_subtel = 0
     for i in range(len(sort_alltvr_clustdat)):
@@ -962,15 +988,23 @@ def main(raw_args=None):
         #
         if len(subtels_for_this_cluster) == 1:      # this can happen when debugging individual arms
             subtel_clustdat = [[0]]
+        elif SKIP_SUBTEL_CLUSTERING:
+            subtel_clustdat = [list(range(len(subtels_for_this_cluster)))]
         else:
+            subtel_dist_fn   = OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy'
+            subtel_dendro_fn = OUT_TVR_TEMP+'subtels_dendrogram-'+str(i).zfill(3)+'.png'
+            #
+            if ALWAYS_REPROCESS:
+                subtel_dist_fn = None
+            #
             subtel_clustdat = cluster_consensus_tvrs(subtels_for_this_cluster, KMER_METADATA, TREECUT_SUBTELS,
                                                      alignment_processes=NUM_PROCESSES,
                                                      aln_mode='ms',
                                                      gap_bool=(False,False),
                                                      rand_shuffle_count=RAND_SHUFFLE,
                                                      adjust_lens=False,
-                                                     dist_in=OUT_TVR_TEMP+'subtels-'+str(i).zfill(3)+'.npy',
-                                                     dendro_name=OUT_TVR_TEMP+'subtels_dendrogram-'+str(i).zfill(3)+'.png',
+                                                     dist_in=subtel_dist_fn,
+                                                     dendro_name=subtel_dendro_fn,
                                                      samp_labels=subtel_labels,
                                                      linkage_method='ward',
                                                      normalize_dist_matrix=False,
@@ -1044,6 +1078,9 @@ def main(raw_args=None):
                 del_inds.append(i)
         for di in sorted(del_inds, reverse=True):
             del ALLELE_TEL_DAT[di]
+
+    #
+    # print some TVR stats to console
     #
     tvr_nums = {}
     for n in ALLELE_TEL_DAT:

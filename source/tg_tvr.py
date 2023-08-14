@@ -857,7 +857,8 @@ def cluster_consensus_tvrs(sequences,
                            alignment_processes=8,
                            job=(1,1),
                            dendrogram_title=None,
-                           dendrogram_height=12):
+                           dendrogram_height=12,
+                           overwrite_figures=True):
     #
     n_seq = len(sequences)
     #
@@ -956,8 +957,9 @@ def cluster_consensus_tvrs(sequences,
         mpl.close(fig)
         #
         if fig_name is not None:
-            reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
-            plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params={'custom_title':''})
+            if exists_and_is_nonzero(fig_name) is False or overwrite_figures is True:
+                reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
+                plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params={'custom_title':''})
         #
         assignments = fcluster(Zread, tree_cut, 'distance').tolist()
         by_class = {}
