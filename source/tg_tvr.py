@@ -11,7 +11,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance  import squareform
 
 from source.tg_muscle import get_muscle_msa
-from source.tg_plot   import plot_kmer_hits
+from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_kmer_hits
 from source.tg_reader import TG_Reader
 from source.tg_util   import exists_and_is_nonzero
 
@@ -394,8 +394,9 @@ def cluster_tvrs(kmer_dat,
     Zread      = linkage(dist_array, method='ward')
     #
     if fig_name is not None:
-        dendrogram_width = max(8, 0.15 * n_reads)
-        fig = mpl.figure(3, figsize=(dendrogram_width,6))
+        dendrogram_width = max(8, 0.12 * n_reads)
+        dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
+        fig = mpl.figure(3, figsize=(dendrogram_width,12), dpi=DEFAULT_DPI)
         mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
         dendrogram(Zread, color_threshold=tree_cut)
         mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
@@ -612,8 +613,9 @@ def cluster_tvrs(kmer_dat,
         if fig_prefix_name is not None:
             #pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
             pref_clust_labels = [str(len(n)) + ' reads' for n in out_clust]
-            dendrogram_width = max(8, 0.15 * len(out_clust))
-            fig = mpl.figure(3, figsize=(dendrogram_width,6))
+            dendrogram_width = max(8, 0.12 * len(out_clust))
+            dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
+            fig = mpl.figure(3, figsize=(dendrogram_width,12), dpi=DEFAULT_DPI)
             mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
             dendrogram(Z_prefix, color_threshold=tree_cut_prefix, labels=pref_clust_labels)
             mpl.axhline(y=[tree_cut_prefix], linestyle='dashed', color='black', alpha=0.7)

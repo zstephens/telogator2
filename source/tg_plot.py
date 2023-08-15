@@ -6,6 +6,10 @@ import matplotlib.lines as lines
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
+MAX_PLOT_SIZE = 65535
+DEFAULT_DPI   = 100
+KMER_HITS_DPI = 200
+
 #
 #
 #
@@ -191,7 +195,8 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
     #
     # plotting
     #
-    vert_fig_size = max(3, total_rows_to_plot * 0.33)
+    vert_fig_size = max(3, total_rows_to_plot * 0.30)
+    vert_fig_size = min(vert_fig_size, MAX_PLOT_SIZE / KMER_HITS_DPI)
     #
     if which_tel == 'p':
         if xlim is not None:
@@ -214,7 +219,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             xtt = [n for n in range(0,max_tlen,X_STEP)]
             xtl = [n for n in range(0,max_tlen,X_STEP)]
     #
-    fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size), dpi=200)
+    fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size), dpi=KMER_HITS_DPI)
     reads_plotted_thus_far = 0
     for clust_i in range(len(read_clusters)):
         for i in range(len(read_clusters[clust_i])):

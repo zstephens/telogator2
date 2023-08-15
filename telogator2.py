@@ -1072,11 +1072,11 @@ def main(raw_args=None):
         sys.stdout.write(f'getting all reads (>{MINIMUM_READ_LEN}bp) from input...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        all_read_dat = quick_grab_all_reads_nodup(INPUT_ALN, min_len=MINIMUM_READ_LEN)
+        (all_read_dat, readcount_len_filtered) = quick_grab_all_reads_nodup(INPUT_ALN, min_len=MINIMUM_READ_LEN)
         #all_read_dat = all_read_dat[:100]
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
-        print(f' - {len(all_read_dat)} reads')
+        print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
         #
         sys.stdout.write('getting telomere repeat composition...')
         sys.stdout.flush()

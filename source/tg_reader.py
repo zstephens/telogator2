@@ -138,13 +138,16 @@ def quick_grab_all_reads_nodup(fn, min_len=None):
     all_read_dat = my_reader.get_all_reads()
     my_reader.close()
     by_readname = {}
+    reads_filtered = 0
     for n in all_read_dat:
         if min_len is None or len(n[1]) >= min_len:
             by_readname[n[0]] = (n[1], n[2])
+        else:
+            reads_filtered += 1
     out_readdat = []
     for k in by_readname:
         out_readdat.append((k, by_readname[k][0], by_readname[k][1]))
-    return out_readdat
+    return (out_readdat, reads_filtered)
 
 
 if __name__ == '__main__':
