@@ -133,13 +133,14 @@ def quick_grab_all_reads(fn):
 #
 # for ensuring no duplicates (e.g. reading in a bam with multimapped reads)
 #
-def quick_grab_all_reads_nodup(fn):
+def quick_grab_all_reads_nodup(fn, min_len=None):
     my_reader = TG_Reader(fn, verbose=False)
     all_read_dat = my_reader.get_all_reads()
     my_reader.close()
     by_readname = {}
     for n in all_read_dat:
-        by_readname[n[0]] = (n[1], n[2])
+        if min_len is None or len(n[1]) >= min_len:
+            by_readname[n[0]] = (n[1], n[2])
     out_readdat = []
     for k in by_readname:
         out_readdat.append((k, by_readname[k][0], by_readname[k][1]))

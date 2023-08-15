@@ -1066,13 +1066,14 @@ def main(raw_args=None):
         SKIP_SUBTEL_CLUSTERING = True
         num_allelles_added_because_subtel = 0
         #
-        sys.stdout.write('getting all read data from input...')
+        sys.stdout.write(f'getting all reads (>{MINIMUM_READ_LEN}bp) from input...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        all_read_dat = quick_grab_all_reads_nodup(INPUT_ALN)
-        all_read_dat = all_read_dat[:100]
+        all_read_dat = quick_grab_all_reads_nodup(INPUT_ALN, min_len=MINIMUM_READ_LEN)
+        #all_read_dat = all_read_dat[:100]
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
+        print(f' - {len(all_read_dat)} reads')
         #
         sys.stdout.write('getting telomere repeat composition...')
         sys.stdout.flush()
@@ -1095,7 +1096,7 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         #
-        sys.stdout.write('clustering ' + str(len(kmer_hit_dat)) + ' reads...')
+        sys.stdout.write('clustering all reads...')
         sys.stdout.flush()
         tt = time.perf_counter()
         allele_outdat = []
