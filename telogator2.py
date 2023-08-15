@@ -1060,6 +1060,9 @@ def main(raw_args=None):
     # begin unanchored mode
     #
     else:
+        #
+        check_muscle_version(MUSCLE_EXE)
+        #
         print('Running Telogator2 in unanchored mode [EXPERIMENTAL]...')
         SKIP_ORPHAN_CLUSTERING = True
         SKIP_ALLPAIRWISE       = True
