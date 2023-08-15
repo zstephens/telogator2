@@ -394,7 +394,8 @@ def cluster_tvrs(kmer_dat,
     Zread      = linkage(dist_array, method='ward')
     #
     if fig_name is not None:
-        fig = mpl.figure(3, figsize=(8,6))
+        dendrogram_width = max(8, 0.15 * n_reads)
+        fig = mpl.figure(3, figsize=(dendrogram_width,6))
         mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
         dendrogram(Zread, color_threshold=tree_cut)
         mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
@@ -611,7 +612,8 @@ def cluster_tvrs(kmer_dat,
         if fig_prefix_name is not None:
             #pref_clust_labels = [','.join([str(n) for n in m]) for m in out_clust]
             pref_clust_labels = [str(len(n)) + ' reads' for n in out_clust]
-            fig = mpl.figure(3, figsize=(8,6))
+            dendrogram_width = max(8, 0.15 * len(out_clust))
+            fig = mpl.figure(3, figsize=(dendrogram_width,6))
             mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
             dendrogram(Z_prefix, color_threshold=tree_cut_prefix, labels=pref_clust_labels)
             mpl.axhline(y=[tree_cut_prefix], linestyle='dashed', color='black', alpha=0.7)

@@ -22,8 +22,8 @@ class TG_Reader:
         elif fnl[-3:] == 'bam':
             self.filetype = 'BAM'
         else:
-            print('Error: unknown file suffix given to TG_Reader:')
-            print(input_filename)
+            print('Error: unknown file type given to TG_Reader():')
+            print(' - acceptable input types: fq / fq.gz / fa / fa.gz / bam')
             exit(1)
         #
         if self.filetype == 'BAM':
@@ -131,8 +131,19 @@ def quick_grab_all_reads(fn):
     return all_read_dat
 
 #
-# a quick test
+# for ensuring no duplicates (e.g. reading in a bam with multimapped reads)
 #
+def quick_grab_all_reads_nodup(fn):
+    my_reader = TG_Reader(fn, verbose=False)
+    all_read_dat = my_reader.get_all_reads()
+    my_reader.close()
+    by_readname = {}
+    for n in all_read_dat:
+        by_readname[n[0]] = (n[1], n[2])
+    out_readdat = []
+    for k in by_readname:
+        out_readdat.append((k, by_readname[k][0], by_readname[k][1]))
+    return out_readdat
 
 
 if __name__ == '__main__':
