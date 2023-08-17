@@ -91,3 +91,9 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 * `tvr_consensus` consensus TVR region sequence
 * `supporting_reads` readnames of each read in the cluster
 * `original_chr` chromosome arm that reads were originally mapped to prior to being grouped together (only applicable to clusters with 'blank' TVR regions)
+
+
+
+## Temporary files
+
+During TVR clustering, many intermediary files are produced in the `tvr_clustering/temp/` directory which may be useful for debugging purposes. E.g. if reads at a particular chromosome arm are not being clustered together in the expected manner, consider investigating the `dendrogram-*` files to see if the default value for cutting clusters should be adjusted. This parameter can be adjusted via the `-att` input option.

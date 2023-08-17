@@ -1127,7 +1127,7 @@ def main(raw_args=None):
                                       save_msa=unanchored_consensus_fn,
                                       muscle_dir=OUT_TVR_TEMP,
                                       muscle_exe=MUSCLE_EXE,
-                                      PRINT_DEBUG=False)
+                                      PRINT_DEBUG=PRINT_DEBUG)
         my_rlens = [n[1] for n in kmer_hit_dat]
         allele_outdat.extend(get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, my_rlens, gatd_params))
         make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
