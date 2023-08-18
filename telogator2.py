@@ -15,7 +15,7 @@ from source.tg_plot   import tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup
 from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job, parallel_filtering_job
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, make_tvr_plots
-from source.tg_util   import cluster_list, exists_and_is_nonzero, LEXICO_2_IND, makedir, parse_read, RC
+from source.tg_util   import cluster_list, exists_and_is_nonzero, get_downsample_inds, LEXICO_2_IND, makedir, parse_read, RC
 
 # hardcoded parameters
 TEL_WINDOW_SIZE = 100
@@ -90,6 +90,7 @@ def main(raw_args=None):
     parser.add_argument('--debug-npy',           required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-overwriteplot', required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-chr', type=str, required=False, metavar='chr_list',  default='',    help="[DEBUG] Only process: chr1p,chr1q,... (comma-delimited)")
+    parser.add_argument('--downsample',type=int, required=False, metavar='n_reads',   default=-1,    help="[DEBUG] Downsample to this many telomere reads")
     #
     parser.add_argument('--no-anchorfilt', required=False, action='store_true',   default=False,     help="Skip double-anchored read filtering")
     parser.add_argument('--no-orphans',    required=False, action='store_true',   default=False,     help="Skip orphan read clustering")
@@ -230,6 +231,8 @@ def main(raw_args=None):
     SKIP_ALLPAIRWISE       = args.no_allpairwise
     SKIP_SUBTEL_CLUSTERING = args.no_subtelclust
     UNANCHORED_MODE        = args.no_anchoring
+    #
+    DOWNSAMPLE_READS = args.downsample
     #
     NUM_PROCESSES = args.p
 
@@ -530,6 +533,31 @@ def main(raw_args=None):
                         print(' - ' + ' '*(max_str_len - len(str(reads_skipped[k]))) + str(reads_skipped[k]) + ' ' + k)
                         f.write(str(reads_skipped[k]) + '\t' + k + '\n')
                 print()
+
+        #
+        # downsample reads, if desired
+        #
+        if DOWNSAMPLE_READS > 0 and num_ending_reads > DOWNSAMPLE_READS:
+            sys.stdout.write('downsampling reads...')
+            sys.stdout.flush()
+            num_starting_reads = num_ending_reads
+            tt = time.perf_counter()
+            all_keys = []
+            for k in ANCHORED_TEL_BY_CHR.keys():
+                for i in range(len(ANCHORED_TEL_BY_CHR[k])):
+                    all_keys.append((k,i))
+            del_keys = [all_keys[n] for n in get_downsample_inds(len(all_keys), len(all_keys) - DOWNSAMPLE_READS)]
+            del_keys2 = []
+            for (k,di) in del_keys:
+                del ANCHORED_TEL_BY_CHR[k][di]
+                if len(ANCHORED_TEL_BY_CHR[k]) == 0:
+                    del_keys2.append(k)
+            for k in del_keys2:
+                del ANCHORED_TEL_BY_CHR[k]
+            num_ending_reads = sum([len(ANCHORED_TEL_BY_CHR[k]) for k in ANCHORED_TEL_BY_CHR.keys()])
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
+            sys.stdout.flush()
 
         #
         # cluster subtel/tel boundaries by position and compute TL statistics
@@ -1078,6 +1106,19 @@ def main(raw_args=None):
         sys.stdout.flush()
         print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
         #
+        if DOWNSAMPLE_READS > 0 and len(all_read_dat) > DOWNSAMPLE_READS:
+            sys.stdout.write('downsampling reads...')
+            sys.stdout.flush()
+            tt = time.perf_counter()
+            num_starting_reads = len(all_read_dat)
+            del_keys = get_downsample_inds(len(all_read_dat), len(all_read_dat) - DOWNSAMPLE_READS)
+            for di in del_keys:
+                del all_read_dat[di]
+            num_ending_reads = len(all_read_dat)
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
+            sys.stdout.flush()
+        #
         sys.stdout.write('getting telomere repeat composition...')
         sys.stdout.flush()
         tt = time.perf_counter()
@@ -1130,6 +1171,12 @@ def main(raw_args=None):
                                       PRINT_DEBUG=PRINT_DEBUG)
         my_rlens = [n[1] for n in kmer_hit_dat]
         allele_outdat.extend(get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, my_rlens, gatd_params))
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        #
+        sys.stdout.write('plotting reads...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
         make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()

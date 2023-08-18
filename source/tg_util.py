@@ -1,3 +1,4 @@
+import random
 import re
 import os
 import copy
@@ -86,6 +87,16 @@ def get_file_type(fn):
         exit(1)
     is_gzipped = (fnl[-3:] == '.gz')
     return (file_type, is_gzipped)
+
+
+def shuffle_seq(s):
+    return ''.join(random.sample(s,len(s)))
+
+
+def get_downsample_inds(total_items, downsample_amount):
+    inds = list(range(total_items))
+    random.shuffle(inds)
+    return sorted(inds[:downsample_amount], reverse=True)
 
 
 def parse_cigar(cigar):

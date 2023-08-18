@@ -1,7 +1,6 @@
 import multiprocessing
 import numpy as np
 import matplotlib.pyplot as mpl
-import random
 
 from Bio.Align import PairwiseAligner, substitution_matrices
 
@@ -13,7 +12,7 @@ from scipy.spatial.distance  import squareform
 from source.tg_muscle import get_muscle_msa
 from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_kmer_hits
 from source.tg_reader import TG_Reader
-from source.tg_util   import exists_and_is_nonzero
+from source.tg_util   import exists_and_is_nonzero, shuffle_seq
 
 # we're going to pretend each kmer color is an amino acid, so alignment tools behave themselves
 AMINO = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y']
@@ -85,12 +84,6 @@ def get_scoring_matrix(canonical_letter, canonical_score=MATCH_CANON):
     d[canonical_letter,UNKNOWN_LETTER]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
     d[UNKNOWN_LETTER,canonical_letter]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
     return substitution_matrices.Array(alphabet=None, dims=None, data=d)
-
-#
-#
-#
-def shuffle_seq(s):
-    return ''.join(random.sample(s,len(s)))
 
 #
 #
@@ -396,8 +389,8 @@ def cluster_tvrs(kmer_dat,
     if fig_name is not None:
         dendrogram_width = max(8, 0.12 * n_reads)
         dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
-        fig = mpl.figure(3, figsize=(dendrogram_width,12), dpi=DEFAULT_DPI)
-        mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
+        fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
+        mpl.rcParams.update({'font.size': 20, 'lines.linewidth':2.0})
         dendrogram(Zread, color_threshold=tree_cut)
         mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
         mpl.xlabel('read #')
@@ -615,7 +608,7 @@ def cluster_tvrs(kmer_dat,
             pref_clust_labels = [str(len(n)) + ' reads' for n in out_clust]
             dendrogram_width = max(8, 0.12 * len(out_clust))
             dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
-            fig = mpl.figure(3, figsize=(dendrogram_width,12), dpi=DEFAULT_DPI)
+            fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
             mpl.rcParams.update({'font.size': 16, 'font.weight':'bold', 'lines.linewidth':2.0})
             dendrogram(Z_prefix, color_threshold=tree_cut_prefix, labels=pref_clust_labels)
             mpl.axhline(y=[tree_cut_prefix], linestyle='dashed', color='black', alpha=0.7)

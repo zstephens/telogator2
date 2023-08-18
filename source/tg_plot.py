@@ -443,7 +443,7 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
     #
     if plot_params['boxplot']:
         box_params   = {'linewidth':2, 'facecolor':(0.9, 0.9, 0.9)}
-        mean_params  = {'linewidth':2, 'linestyle':'solid', 'color':(0.5, 0.5, 0.5)}
+        mean_params  = {'linewidth':1, 'linestyle':'dotted', 'color':(0.1, 0.1, 0.1)}
         line_params  = {'linewidth':2}
         flier_params = {'marker':'.', 'markerfacecolor':(0.0, 0.0, 0.0), 'markersize':8, 'linestyle':'none', 'alpha':0.2}
         mpl.boxplot(dat_l_p, vert=True, positions=dat_p_p, widths=dat_w_p, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
