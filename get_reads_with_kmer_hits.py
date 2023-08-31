@@ -20,6 +20,11 @@ def main(raw_args=None):
     KMER_RC   = RC(KMER)
     MIN_HITS  = args.m
     #
+    total_reads = 0
+    total_bases = 0
+    output_reads = 0
+    output_bases = 0
+    #
     output_type = get_file_type(OUT_READS)
     if output_type[1]:
         f_out = gzip.open(OUT_READS, 'wt')
@@ -46,6 +51,8 @@ def main(raw_args=None):
             (my_name, my_rdat, my_qdat) = my_reader.get_next_read()
             if not my_name:
                 break
+            total_reads += 1
+            total_bases += len(my_rdat)
             count_fwd = my_rdat.count(KMER)
             count_rev = my_rdat.count(KMER_RC)
             if count_fwd not in hit_count_dict:
@@ -59,12 +66,17 @@ def main(raw_args=None):
                     f_out.write(f'@{my_name}\n{my_rdat}\n+\n{my_qdat}\n')
                 elif output_type[0] == 'fasta':
                     f_out.write(f'>{my_name}\n{my_rdat}\n')
+                output_reads += 1
+                output_bases += len(my_rdat)
         my_reader.close()
     #
     f_out.close()
     #
     ####for k in sorted(hit_count_dict.keys()):
     ####    print(k, hit_count_dict[k])
+    print('get_reads_with_kmer_hits.py summary:')
+    print(f' - input reads:  {total_reads} ({total_bases} bp)')
+    print(f' - output reads: {output_reads} ({output_bases} bp)')
 
 
 if __name__ == '__main__':

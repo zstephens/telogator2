@@ -88,7 +88,7 @@ def main(raw_args=None):
     #
     parser.add_argument('--debug',               required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',           required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
-    parser.add_argument('--debug-overwriteplot', required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
+    parser.add_argument('--debug-noreplot',      required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-chr', type=str, required=False, metavar='chr_list',  default='',    help="[DEBUG] Only process: chr1p,chr1q,... (comma-delimited)")
     parser.add_argument('--downsample',type=int, required=False, metavar='n_reads',   default=-1,    help="[DEBUG] Downsample to this many telomere reads")
     #
@@ -146,8 +146,8 @@ def main(raw_args=None):
         makedir(OUT_PLOT_DIR)
     #
     # for debugging purposes
-    DONT_OVERWRITE_PLOTS = args.debug_overwriteplot   # (True = don't replot figures if they already exist)
-    ALWAYS_REPROCESS = not(args.debug_npy)            # (True = don't write out .npy matrices, always recompute)
+    DONT_OVERWRITE_PLOTS = args.debug_noreplot   # (True = don't replot figures if they already exist)
+    ALWAYS_REPROCESS = not(args.debug_npy)       # (True = don't write out .npy matrices, always recompute)
     # for debugging purposes (only cluster TVRs at specific arms)
     DEBUG_CHR_LIST = []
     if len(args.debug_chr):
