@@ -59,7 +59,7 @@ TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
 #
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
-TVR_BOUNDARY_BUFF = 20      # add this many bp to detected TVR boundary
+TVR_BOUNDARY_BUFF = 30      # add this many bp to detected TVR boundary
 
 #
 #
@@ -542,12 +542,25 @@ def cluster_tvrs(kmer_dat,
             tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters,
                                                     cum_thresh=TVR_CANON_FILT_PARAMS_LENIENT[1],
                                                     min_hits=TVR_CANON_FILT_PARAMS_LENIENT[2])
-            #print('LENIENT TVR BOUNDARY (cluster '+str(i)+'):', len(out_consensus[i]) - tel_boundary + 1)
-        # if we did find one, buffer slightly to include variant repeats at the edge
+        #
+        # if we did find a boundary, buffer slightly to include variant repeats at the edge
+        # - then adjust to nearest canonical / variant repeat
+        #
         if tel_boundary != len(out_consensus[i])+1:
-            out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + TVR_BOUNDARY_BUFF + 1)
+            tel_boundary = max(0, tel_boundary - TVR_BOUNDARY_BUFF)
+            if denoised_consensus[tel_boundary] == canonical_letter:
+                while denoised_consensus[tel_boundary] == canonical_letter:
+                    tel_boundary += 1
+            else:
+                while denoised_consensus[tel_boundary] not in [canonical_letter, UNKNOWN_LETTER]:
+                    tel_boundary -= 1
+                tel_boundary += 1
+            #print(denoised_consensus[tel_boundary-100:tel_boundary])
+            #print(denoised_consensus[tel_boundary:tel_boundary+100])
+            my_telbound = len(out_consensus[i]) - tel_boundary
         else:
-            out_tvr_tel_boundaries.append(len(out_consensus[i]) - tel_boundary + 1)
+            my_telbound = len(out_consensus[i]) - tel_boundary + 1
+        out_tvr_tel_boundaries.append(my_telbound)
 
     #
     # merge clusters of TVRs if they are a prefix of a larger TVR
