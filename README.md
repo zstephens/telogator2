@@ -38,7 +38,7 @@ With default parameters this script extracts reads that contain at least 5 TTAGG
 We recommend using the [winnowmap](https://github.com/marbl/Winnowmap) aligner for best results. An example for HiFi reads:
 
 ```bash
-winnowmap -ax map-pb -Y -W resources/repetitive-k15.txt -o aln-unsort.sam resources/t2t-telogator-ref.fa telomere-reads.fa.gz
+winnowmap -ax map-pb -Y -W resources/t2t-telogator-ref-k15.txt -o aln-unsort.sam resources/t2t-telogator-ref.fa telomere-reads.fa.gz
 samtools sort -o aln.bam aln-unsort.sam
 samtools index aln.bam
 ```

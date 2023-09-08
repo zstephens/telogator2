@@ -62,12 +62,11 @@ def get_read_alignment_polygons(alignments, readlen):
 #
 #
 #
-def plot_tel_signal(density_data, tl_vals, aln_dat, tel_window, f_title, fig_name, plot_for_paper=False):
-    [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power] = density_data
-    [tl_p, tl_q] = tl_vals
-    rlen = len(aln_dat[0][7])
+def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, plot_for_paper=False):
     #
-    x_off   = tel_window/2
+    [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power, rlen, tel_window] = density_data
+    #
+    x_off   = tel_window / 2
     dens_yt = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     dens_yl = ['0%', '20%', '40%', '60%', '80%', '100%']
     pred_yt = [-1.0, -0.5, 0.0, 0.5, 1.0]
@@ -118,37 +117,29 @@ def plot_tel_signal(density_data, tl_vals, aln_dat, tel_window, f_title, fig_nam
     mpl.ylabel('tel score')
     mpl.yticks(pred_yt, pred_yl)
     mpl.ylim([-1.0, 1.0])
-    polygons = []
-    p_color  = []
-    p_alpha  = []
-    if tl_p > 0:
-        xp = [0, tl_p]
-        yp = [-1, 1]
-        polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
-        p_color.append('red')
-        p_alpha.append(0.5)
-    if tl_q > 0:
-        xp = [rlen - tl_q, rlen]
-        yp = [-1, 1]
-        polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
-        p_color.append('red')
-        p_alpha.append(0.5)
-    if len(polygons):
-        ax = mpl.gca()
-        for i in range(len(polygons)):
-            ax.add_collection(PatchCollection([polygons[i]], color=p_color[i], alpha=p_alpha[i]))
     #
-    if plot_for_paper is False:
-        mpl.subplot(414, sharex=ax1)
-        (polygons, p_color, p_alpha, p_text, axis_val) = get_read_alignment_polygons(aln_dat, rlen)
-        ax = mpl.gca()
-        for i in range(len(polygons)):
-            ax.add_collection(PatchCollection([polygons[i]], color=p_color[i], alpha=p_alpha[i]))
-        for i in range(len(p_text)):
-            mpl.text(p_text[i][0], p_text[i][1], p_text[i][2], ha='left', fontsize=9)
-        mpl.axis(axis_val)
-        mpl.yticks([],[])
-        mpl.grid(linestyle='--', alpha=0.5)
+    if tl_vals is not None:
+        [tl_p, tl_q] = tl_vals
+        polygons = []
+        p_color  = []
+        p_alpha  = []
+        if tl_p > 0:
+            xp = [0, tl_p]
+            yp = [-1, 1]
+            polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
+            p_color.append('red')
+            p_alpha.append(0.5)
+        if tl_q > 0:
+            xp = [rlen - tl_q, rlen]
+            yp = [-1, 1]
+            polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
+            p_color.append('red')
+            p_alpha.append(0.5)
+        if len(polygons):
+            ax = mpl.gca()
+            for i in range(len(polygons)):
+                ax.add_collection(PatchCollection([polygons[i]], color=p_color[i], alpha=p_alpha[i]))
+    #
     mpl.xlabel('read position')
     #
     mpl.tight_layout()

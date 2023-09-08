@@ -19,18 +19,28 @@ AMINO = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V'
 AMINO_2_IND = {AMINO[i]:i for i in range(len(AMINO))}
 UNKNOWN_LETTER = AMINO[0]
 
-# how many blocks of gaps to consider for plotting adj
-MAX_GAP_BLOCK = 3
+MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
+MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
+TVR_BOUNDARY_BUFF = 30      # add this many bp to detected TVR boundary
 
-# when comparing sequences of different lengths, choose min(len(seq1), len(seq2)), but only go this low
-MIN_VIABLE_SEQ_LEN = 1000
-# the log-based distance function can go to infinity so lets set an upper bound on it
-MAX_SEQ_DIST = 10.0
-# similarly, lets choose a small number as the minimum to prevent numerical weirdness from giving us negative values
-MIN_SEQ_DIST = 0.0001
-# to prevent pesky div-by-zeros in edge cases
-MIN_MSD      = 3.0
+# if tvr + tel region has at least this many unknown characters, use minimum-dens pos instead of first-below-dens ps
+TOO_MUCH_UNKNOWN_IN_TVRTEL = 1000
+# density parameters for identifing subtel / tvr boundaries (individual reads)
+UNKNOWN_WIN_SIZE = 100
+UNKNOWN_END_DENS = 0.120
+# density parameters for recovering variant repeats from subtel consensus
+UNKNOWN_WIN_SIZE_CONS = 50
+UNKNOWN_END_DENS_CONS = 0.800
+# density parameters for discerning canonical regions from sequencing artifacts
+CANON_WIN_SIZE = 100
+CANON_END_DENS = 0.700
+# parameters for determining tvr / canonical boundaries: (denoise_region_size, cum_thresh, min_hits)
+TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.05, 100)
+TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
 
+#
+# scoring matrix parameters
+#
 MATCH_NORMAL  = 5
 XMATCH_NORMAL = -4
 GAP_OPEN = -4
@@ -44,22 +54,14 @@ MATCH_UNKNOWN  = 2
 XMATCH_UNKNOWN = -4
 MATCH_CANON_UNKNOWN = -2
 
-# density parameters for identifing subtel / tvr boundaries (individual reads)
-UNKNOWN_WIN_SIZE = 100
-UNKNOWN_END_DENS = 0.120
-# density parameters for recovering variant repeats from subtel consensus
-UNKNOWN_WIN_SIZE_CONS = 50
-UNKNOWN_END_DENS_CONS = 0.800
-# density parameters for discerning canonical regions from sequencing artifacts
-CANON_WIN_SIZE = 100
-CANON_END_DENS = 0.700
-# parameters for determining tvr / canonical boundaries: (denoise_region_size, cum_thresh, min_hits)
-TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.05, 100)
-TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
-#
-MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
-MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
-TVR_BOUNDARY_BUFF = 30      # add this many bp to detected TVR boundary
+# when comparing sequences of different lengths, choose min(len(seq1), len(seq2)), but only go this low
+MIN_VIABLE_SEQ_LEN = 1000
+# the log-based distance function can go to infinity so lets set an upper bound on it
+MAX_SEQ_DIST = 10.0
+# similarly, lets choose a small number as the minimum to prevent numerical weirdness from giving us negative values
+MIN_SEQ_DIST = 0.0001
+# to prevent pesky div-by-zeros in edge cases
+MIN_MSD      = 3.0
 
 #
 #
@@ -296,6 +298,8 @@ def cluster_tvrs(kmer_dat,
         if pq == 'p':
             # identify subtel/tvr boundary based on density of unknown characters
             (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+            ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
+            ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
             seq_right_denoise = denoise_colorvec(seq_right, chars_to_delete=denoise_chars, char_to_merge=canonical_letter)
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
@@ -316,6 +320,8 @@ def cluster_tvrs(kmer_dat,
         elif pq == 'q':
             # identify subtel/tvr boundary based on density of unknown characters
             (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+            ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
+            ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
             seq_right_denoise = denoise_colorvec(seq_right, chars_to_delete=denoise_chars, char_to_merge=canonical_letter)
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
@@ -700,9 +706,9 @@ def cluster_tvrs(kmer_dat,
 #
 #
 #
-def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', debug_plot=False):
+def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', starting_coord=0, use_lowest_dens=False, debug_plot=False):
     my_unknown = np.zeros(len(sequence))
-    for j in range(len(sequence)):
+    for j in range(starting_coord, len(sequence)):
         if sequence[j] == which_letter:
             my_unknown[j] = 1
     my_unknown_cum  = np.cumsum(my_unknown)
@@ -716,7 +722,7 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
     else:
         print('Error: find_density_boundary thresh_dir must be above or below')
         exit(1)
-    for j in range(len(sequence) - win_size):
+    for j in range(starting_coord, len(sequence) - win_size):
         my_unknown_dens.append(float(my_unknown_cum[j+win_size] - my_unknown_cum[j]) / win_size)
         if thresh_dir == 'below':
             if first_pos_below_thresh is None and my_unknown_dens[-1] <= dens_thresh:
@@ -743,7 +749,10 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
     if first_pos_below_thresh is None:
         first_pos_below_thresh = pos_with_lowest_dens
     #
-    return (sequence[:first_pos_below_thresh], sequence[first_pos_below_thresh:])
+    if use_lowest_dens:
+        return (sequence[:pos_with_lowest_dens], sequence[pos_with_lowest_dens:])
+    else:
+        return (sequence[:first_pos_below_thresh], sequence[first_pos_below_thresh:])
 
 #
 #

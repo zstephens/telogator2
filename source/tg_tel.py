@@ -118,7 +118,7 @@ def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, F
         cum_score = np.cumsum(my_score)
         max_i     = posmax(cum_score)
         if cum_score[max_i] >= MIN_TEL_SCORE:
-            my_tel_len_p   = int(tel_regions[max_i][1] + TEL_WINDOW_SIZE/2)
+            my_tel_len_p = int(tel_regions[max_i][1] + TEL_WINDOW_SIZE/2)
             #print('P-ARM TEL:', my_tel_len_p, [int(n) for n in cum_score.tolist()], max_i, '\n')
             for i in range(0, max_i+1):
                 #print('tel_regions['+str(i)+'] =', tel_regions[i])
@@ -141,7 +141,7 @@ def get_anchored_tel(p_vs_q_power, tel_regions, abns_k, rdat, TEL_WINDOW_SIZE, F
         cum_score = np.cumsum(my_score[::-1])[::-1]
         max_i     = posmax(cum_score)
         if cum_score[max_i] >= MIN_TEL_SCORE:
-            my_tel_len_q   = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
+            my_tel_len_q = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
             #print('Q-ARM TEL:', my_tel_len_q, [int(n) for n in cum_score.tolist()], max_i, '\n')
             for i in range(max_i, len(tel_regions)):
                 #print('tel_regions['+str(i)+'] =', tel_regions[i])
