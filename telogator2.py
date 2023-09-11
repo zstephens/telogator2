@@ -1129,7 +1129,8 @@ def main(raw_args=None):
             # put everything into q orientation
             if tel_bc_fwd > tel_bc_rev:
                 my_rdat = RC(my_rdat)
-                my_qdat = my_qdat[::-1]
+                if my_qdat is not None:
+                    my_qdat = my_qdat[::-1]
             kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST_REV, KMER_ISSUBSTRING),
                                  len(my_rdat),      # atb, lets pretend entire read is tel
                                  0,                 # my_dbta
