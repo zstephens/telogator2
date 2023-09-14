@@ -553,3 +553,46 @@ def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD):
         my_fromtop = min(len(allele_tlens), int(ALLELE_TL_METHOD[:-7]))
         consensus_tl_allele = allele_tlens[-my_fromtop]
     return consensus_tl_allele
+
+#
+#
+#
+def get_terminating_tl(rdat, pq, gtt_params):
+    [SIGNAL_KMERS, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH] = gtt_params
+    #
+    (td_p_e0, td_p_e1) = get_telomere_kmer_density(rdat, SIGNAL_KMERS,     TEL_WINDOW_SIZE)
+    (td_q_e0, td_q_e1) = get_telomere_kmer_density(rdat, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE)
+    (p_vs_q_power, tel_regions) = get_telomere_regions(td_p_e0, td_p_e1, td_q_e0, td_q_e1, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH)
+    #
+    my_score = []
+    my_tel_len = None
+    if pq == 'p':
+        for i in range(len(tel_regions)):
+            my_s = (tel_regions[i][1] - tel_regions[i][0])
+            if tel_regions[i][2] == 'p':
+                my_score.append(my_s)
+            elif tel_regions[i][2] == 'q':  # not too sure how to handle this
+                my_score.append(my_s)       # should this be -my_s ??
+            elif tel_regions[i][2] is None:
+                my_score.append(-my_s)
+        cum_score = np.cumsum(my_score)
+        max_i     = posmax(cum_score)
+        if cum_score[max_i] >= MIN_TEL_SCORE:
+            my_tel_len = int(tel_regions[max_i][1] + TEL_WINDOW_SIZE/2)
+    elif pq == 'q':
+        for i in range(len(tel_regions)):
+            my_s = (tel_regions[i][1] - tel_regions[i][0])
+            if tel_regions[i][2] == 'q':
+                my_score.append(my_s)
+            elif tel_regions[i][2] == 'p':  # not too sure how to handle this
+                my_score.append(my_s)       # should this be -my_s ??
+            elif tel_regions[i][2] is None:
+                my_score.append(-my_s)
+        cum_score = np.cumsum(my_score[::-1])[::-1]
+        max_i     = posmax(cum_score)
+        if cum_score[max_i] >= MIN_TEL_SCORE:
+            my_tel_len = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
+    #
+    if my_tel_len is None or my_tel_len <= 0:
+        return 0
+    return my_tel_len

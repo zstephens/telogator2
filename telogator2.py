@@ -13,7 +13,7 @@ from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_cou
 from source.tg_muscle import check_muscle_version
 from source.tg_plot   import tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup
-from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, parallel_anchored_tel_job, parallel_filtering_job
+from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_double_anchored_tels, get_tels_below_canonical_thresh, get_terminating_tl, parallel_anchored_tel_job, parallel_filtering_job
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, make_tvr_plots
 from source.tg_util   import cluster_list, exists_and_is_nonzero, get_downsample_inds, LEXICO_2_IND, makedir, parse_read, RC
 
@@ -24,17 +24,20 @@ MAXIMUM_UNEXPLAINED_FRAC = 0.7
 # toss reads if the median |p_vs_q| of the non-telomere sequence is above this value
 MAX_NONTEL_MEDIAN_KMER_DENSITY = 0.25
 #
-MIN_DOUBLE_ANCHOR_LEN   = 1000
+MIN_DOUBLE_ANCHOR_LEN = 1000
 MIN_DOUBLE_ANCHOR_READS = 3
 #
 MAX_NOISE_BASES = 5000
-MAX_NOISE_FRAC  = 0.60
+MAX_NOISE_FRAC = 0.60
 #
 DUMMY_TEL_MAPQ = 60
 #
 ORR_SWAP = {'FWD':'REV', 'REV':'FWD', 'p':'q', 'q':'p'}
 # how much subtel should we use for de-clustering alleles? [min_size, max_size]
 SUBTEL_CLUSTER_SIZE = [1500, 3000]
+#
+MIN_TEL_UNANCHORED = 500
+SUBTEL_BUFF_UNANCHORED = 1000
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -1119,10 +1122,13 @@ def main(raw_args=None):
             sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
             sys.stdout.flush()
         #
-        sys.stdout.write('getting telomere repeat composition...')
+        sys.stdout.write('getting telomere repeat composition & checking tel end...')
         sys.stdout.flush()
         tt = time.perf_counter()
         kmer_hit_dat = []
+        all_subtel_seq = []
+        gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
+        num_starting_reads = len(all_read_dat)
         for (my_rnm, my_rdat, my_qdat) in all_read_dat:
             tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
             tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
@@ -1131,14 +1137,25 @@ def main(raw_args=None):
                 my_rdat = RC(my_rdat)
                 if my_qdat is not None:
                     my_qdat = my_qdat[::-1]
-            kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST_REV, KMER_ISSUBSTRING),
-                                 len(my_rdat),      # atb, lets pretend entire read is tel
-                                 0,                 # my_dbta
-                                 'q',               # my_type
-                                 my_rnm,            # my_rnm
-                                 DUMMY_TEL_MAPQ,    # my_mapq
-                                 None])             # out_fasta_dat
+            # make sure read actually ends in telomere (remove interstitial telomere regions)
+            my_terminating_tel = get_terminating_tl(my_rdat, 'q', gtt_params)
+            if my_terminating_tel < MIN_TEL_UNANCHORED:
+                continue
+            # too little subtel sequence?
+            if len(my_rdat) < my_terminating_tel + SUBTEL_BUFF_UNANCHORED:
+                continue
+            my_teltvr_seq = my_rdat[len(my_rdat)-my_terminating_tel-SUBTEL_BUFF_UNANCHORED:]
+            kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
+                                 len(my_teltvr_seq),  # atb, lets pretend entire read is tel
+                                 0,                   # my_dbta
+                                 'q',                 # my_type
+                                 my_rnm,              # my_rnm
+                                 DUMMY_TEL_MAPQ,      # my_mapq
+                                 None])               # out_fasta_dat
+            all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
+        num_ending_reads = len(kmer_hit_dat)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
         sys.stdout.flush()
         #
         sys.stdout.write('clustering all reads...')
