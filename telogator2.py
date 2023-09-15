@@ -83,6 +83,7 @@ def main(raw_args=None):
     parser.add_argument('-atm', type=float,required=False, metavar='0.070',       default=0.070,     help="Treecut value: grouping multimapped alleles")
     parser.add_argument('-ato', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: clustering orphaned alleles")
     parser.add_argument('-ats', type=float,required=False, metavar='0.250',       default=0.250,     help="Treecut value: declustering alleles using subtels")
+    parser.add_argument('-atu', type=float,required=False, metavar='0.150',       default=0.150,     help="Treecut value: TVR cluster refinement (unanchored mode)")
     parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom TVR treecut vals for specific anchors")
     #
     parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
@@ -225,6 +226,7 @@ def main(raw_args=None):
     TREECUT_MULTIMAPPED = args.atm
     TREECUT_ORPHANS     = args.ato
     TREECUT_SUBTELS     = args.ats
+    TREECUT_UNANCHORED  = args.atu
     #
     (VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
     (VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
@@ -1104,7 +1106,6 @@ def main(raw_args=None):
         sys.stdout.flush()
         tt = time.perf_counter()
         (all_read_dat, readcount_len_filtered) = quick_grab_all_reads_nodup(INPUT_ALN, min_len=MINIMUM_READ_LEN)
-        #all_read_dat = all_read_dat[:100]
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
@@ -1146,12 +1147,12 @@ def main(raw_args=None):
                 continue
             my_teltvr_seq = my_rdat[len(my_rdat)-my_terminating_tel-SUBTEL_BUFF_UNANCHORED:]
             kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
-                                 len(my_teltvr_seq),  # atb, lets pretend entire read is tel
-                                 0,                   # my_dbta
-                                 'q',                 # my_type
-                                 my_rnm,              # my_rnm
-                                 DUMMY_TEL_MAPQ,      # my_mapq
-                                 None])               # out_fasta_dat
+                                 len(my_teltvr_seq),   # atb, lets pretend entire read is tel
+                                 0,                    # my_dbta
+                                 'q',                  # my_type
+                                 my_rnm.split(' ')[0], # my_rnm
+                                 DUMMY_TEL_MAPQ,       # my_mapq
+                                 None])                # out_fasta_dat
             all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
         num_ending_reads = len(kmer_hit_dat)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
@@ -1187,17 +1188,63 @@ def main(raw_args=None):
                                       muscle_dir=OUT_TVR_TEMP,
                                       muscle_exe=MUSCLE_EXE,
                                       PRINT_DEBUG=PRINT_DEBUG)
-        my_rlens = [n[1] for n in kmer_hit_dat]
-        allele_outdat.extend(get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, my_rlens, gatd_params))
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         #
-        sys.stdout.write('plotting reads...')
+        sys.stdout.write('plotting all reads...')
         sys.stdout.flush()
         tt = time.perf_counter()
         make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
+        #
+        sys.stdout.write('refining clusters [TVR]...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        clust_num = 0
+        for clust_i in range(len(read_clust_dat[0])):
+            current_clust_inds = read_clust_dat[0][clust_i]
+            if len(current_clust_inds) < MIN_READS_PER_PHASE:
+                continue
+            print(current_clust_inds)
+            khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
+            for n in khd_subset:
+                print(n[4])
+            zfcn = str(clust_num).zfill(3)
+            telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_unanchored.png'
+            telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_unanchored.png'
+            dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-'    + zfcn + '_unanchored.png'
+            dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-'  + zfcn + '_unanchored.png'
+            dist_matrix_fn = OUT_TVR_TEMP + 'cluster-'       + zfcn + '_unanchored.npy'
+            dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-'     + zfcn + '_unanchored.npy'
+            consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_unanchored.fa'
+            #
+            if ALWAYS_REPROCESS:
+                dist_matrix_fn = None
+                dist_prefix_fn = None
+                consensus_fn = None
+            #
+            subset_clust_dat = cluster_tvrs(khd_subset, KMER_METADATA, fake_chr, fake_pos, TREECUT_UNANCHORED, TREECUT_PREFIXMERGE,
+                                            aln_mode='ds',
+                                            alignment_processes=NUM_PROCESSES,
+                                            rand_shuffle_count=RAND_SHUFFLE,
+                                            dist_in=dist_matrix_fn,
+                                            dist_in_prefix=dist_prefix_fn,
+                                            fig_name=dendrogram_fn,
+                                            fig_prefix_name=dend_prefix_fn,
+                                            save_msa=consensus_fn,
+                                            muscle_dir=OUT_TVR_TEMP,
+                                            muscle_exe=MUSCLE_EXE,
+                                            PRINT_DEBUG=PRINT_DEBUG)
+            #
+            make_tvr_plots(khd_subset, subset_clust_dat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+            clust_num += 1
+            exit(1)
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        #
+        my_rlens = [n[1] for n in kmer_hit_dat]
+        allele_outdat.extend(get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, my_rlens, gatd_params))
         #
         for i,atdat in enumerate(allele_outdat):
             ALLELE_TEL_DAT.append([n for n in atdat])
