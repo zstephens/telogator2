@@ -228,6 +228,8 @@ def main(raw_args=None):
     TREECUT_SUBTELS     = args.ats
     TREECUT_UNANCHORED  = args.atu
     #
+    OUT_PICKLE_UNANCHORED = OUT_DIR + 'unanchored-dat.p'
+    #
     (VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
     (VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
     #
@@ -1102,62 +1104,77 @@ def main(raw_args=None):
         SKIP_SUBTEL_CLUSTERING = True
         num_allelles_added_because_subtel = 0
         #
-        sys.stdout.write(f'getting all reads (>{MINIMUM_READ_LEN}bp) from input...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        (all_read_dat, readcount_len_filtered) = quick_grab_all_reads_nodup(INPUT_ALN, min_len=MINIMUM_READ_LEN)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
-        print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
+        if INPUT_ALN[-2:] == '.p':
+            print('getting unanchored read dat from pickle file...')
+            f = open(INPUT_ALN, 'rb')
+            my_pickle = pickle.load(f)
+            f.close()
+            kmer_hit_dat = my_pickle['kmer-hit-dat']
+            all_subtel_seq = my_pickle['all-subtel-seq']
+            print(' -', len(kmer_hit_dat), 'reads')
         #
-        if DOWNSAMPLE_READS > 0 and len(all_read_dat) > DOWNSAMPLE_READS:
-            sys.stdout.write('downsampling reads...')
+        else:
+            sys.stdout.write(f'getting all reads (>{MINIMUM_READ_LEN}bp) from input...')
             sys.stdout.flush()
             tt = time.perf_counter()
+            (all_read_dat, readcount_len_filtered) = quick_grab_all_reads_nodup(INPUT_ALN, min_len=MINIMUM_READ_LEN)
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.flush()
+            print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
+            #
+            if DOWNSAMPLE_READS > 0 and len(all_read_dat) > DOWNSAMPLE_READS:
+                sys.stdout.write('downsampling reads...')
+                sys.stdout.flush()
+                tt = time.perf_counter()
+                num_starting_reads = len(all_read_dat)
+                del_keys = get_downsample_inds(len(all_read_dat), len(all_read_dat) - DOWNSAMPLE_READS)
+                for di in del_keys:
+                    del all_read_dat[di]
+                num_ending_reads = len(all_read_dat)
+                sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+                sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
+                sys.stdout.flush()
+            #
+            sys.stdout.write('getting telomere repeat composition & checking tel end...')
+            sys.stdout.flush()
+            tt = time.perf_counter()
+            kmer_hit_dat = []
+            all_subtel_seq = []
+            gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
             num_starting_reads = len(all_read_dat)
-            del_keys = get_downsample_inds(len(all_read_dat), len(all_read_dat) - DOWNSAMPLE_READS)
-            for di in del_keys:
-                del all_read_dat[di]
-            num_ending_reads = len(all_read_dat)
+            for (my_rnm, my_rdat, my_qdat) in all_read_dat:
+                tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
+                tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
+                # put everything into q orientation
+                if tel_bc_fwd > tel_bc_rev:
+                    my_rdat = RC(my_rdat)
+                    if my_qdat is not None:
+                        my_qdat = my_qdat[::-1]
+                # make sure read actually ends in telomere (remove interstitial telomere regions)
+                my_terminating_tel = get_terminating_tl(my_rdat, 'q', gtt_params)
+                if my_terminating_tel < MIN_TEL_UNANCHORED:
+                    continue
+                # too little subtel sequence?
+                if len(my_rdat) < my_terminating_tel + SUBTEL_BUFF_UNANCHORED:
+                    continue
+                my_teltvr_seq = my_rdat[len(my_rdat)-my_terminating_tel-SUBTEL_BUFF_UNANCHORED:]
+                kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
+                                     len(my_teltvr_seq),   # atb, lets pretend entire read is tel
+                                     0,                    # my_dbta
+                                     'q',                  # my_type
+                                     my_rnm.split(' ')[0], # my_rnm
+                                     DUMMY_TEL_MAPQ,       # my_mapq
+                                     None])                # out_fasta_dat
+                all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
+            #
+            f = open(OUT_PICKLE_UNANCHORED, 'wb')
+            pickle.dump({'kmer-hit-dat':kmer_hit_dat, 'all-subtel-seq':all_subtel_seq}, f)
+            f.close()
+            #
+            num_ending_reads = len(kmer_hit_dat)
             sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
             sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
             sys.stdout.flush()
-        #
-        sys.stdout.write('getting telomere repeat composition & checking tel end...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        kmer_hit_dat = []
-        all_subtel_seq = []
-        gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
-        num_starting_reads = len(all_read_dat)
-        for (my_rnm, my_rdat, my_qdat) in all_read_dat:
-            tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
-            tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
-            # put everything into q orientation
-            if tel_bc_fwd > tel_bc_rev:
-                my_rdat = RC(my_rdat)
-                if my_qdat is not None:
-                    my_qdat = my_qdat[::-1]
-            # make sure read actually ends in telomere (remove interstitial telomere regions)
-            my_terminating_tel = get_terminating_tl(my_rdat, 'q', gtt_params)
-            if my_terminating_tel < MIN_TEL_UNANCHORED:
-                continue
-            # too little subtel sequence?
-            if len(my_rdat) < my_terminating_tel + SUBTEL_BUFF_UNANCHORED:
-                continue
-            my_teltvr_seq = my_rdat[len(my_rdat)-my_terminating_tel-SUBTEL_BUFF_UNANCHORED:]
-            kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
-                                 len(my_teltvr_seq),   # atb, lets pretend entire read is tel
-                                 0,                    # my_dbta
-                                 'q',                  # my_type
-                                 my_rnm.split(' ')[0], # my_rnm
-                                 DUMMY_TEL_MAPQ,       # my_mapq
-                                 None])                # out_fasta_dat
-            all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
-        num_ending_reads = len(kmer_hit_dat)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
-        sys.stdout.flush()
         #
         sys.stdout.write('clustering all reads...')
         sys.stdout.flush()
@@ -1208,8 +1225,8 @@ def main(raw_args=None):
                 continue
             print(current_clust_inds)
             khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
-            for n in khd_subset:
-                print(n[4])
+            for i,v in enumerate(khd_subset):
+                print(current_clust_inds[i], v[4])
             zfcn = str(clust_num).zfill(3)
             telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_unanchored.png'
             telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_unanchored.png'
