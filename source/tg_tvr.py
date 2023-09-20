@@ -271,7 +271,7 @@ def cluster_tvrs(kmer_dat,
     # when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
     #
     char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
-    noncanon_cheat = (canonical_letter, 2)
+    noncanon_cheat = (canonical_letter, 3)
     #
     # create color vector
     #

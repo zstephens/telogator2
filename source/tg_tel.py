@@ -599,5 +599,5 @@ def get_terminating_tl(rdat, pq, gtt_params):
             my_tel_len = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
     #
     if my_tel_len is None or my_tel_len <= 0:
-        return 0
+        return (0, 0)
     return (my_tel_len, edge_nontel)
