@@ -33,7 +33,7 @@ def check_muscle_version(MUSCLE_EXE):
 #
 #
 #
-def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={}, max_gap_frac=0.60, mode='amino'):
+def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={}, max_gap_frac=0.60, noncanon_cheat=None, mode='amino'):
     # write sequences to a temp fasta
     temp_fasta = working_dir + 'clust_sequences.fa'
     f = open(temp_fasta, 'w')
@@ -94,6 +94,16 @@ def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={
                 if out_seq[j][i] not in char_count:
                     char_count[out_seq[j][i]] = 0
                 char_count[out_seq[j][i]] += 1
+        # if first or second most frequent character is non-canonical (and has enough support), lets just go with that
+        if noncanon_cheat is not None:
+            (canon_char, min_noncanon_reads) = noncanon_cheat
+            sorted_chars = sorted([(char_count[k],k) for k in char_count.keys()], reverse=True)
+            if sorted_chars[0][0] >= min_noncanon_reads and sorted_chars[0][1] != canon_char:
+                consensus_seq.append(sorted_chars[0][1])
+                continue
+            if len(sorted_chars) >= 2 and sorted_chars[1][0] >= min_noncanon_reads and sorted_chars[1][1] != canon_char:
+                consensus_seq.append(sorted_chars[1][1])
+                continue
         #
         if float(gap_count)/len(out_seq) > max_gap_frac:
             continue

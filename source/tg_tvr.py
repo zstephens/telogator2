@@ -271,6 +271,7 @@ def cluster_tvrs(kmer_dat,
     # when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
     #
     char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
+    noncanon_cheat = (canonical_letter, 2)
     #
     # create color vector
     #
@@ -463,7 +464,7 @@ def cluster_tvrs(kmer_dat,
                 subtel_consensus.append(buffered_subs[out_clust[i][0]])
             else:
                 clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
-                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir, char_score_adj=char_score_adj)
+                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
                 out_consensus.append(consensus_seq)
                 clust_seq = [buffered_subs[n] for n in out_clust[i]]
                 if clust_seq[0] == '':

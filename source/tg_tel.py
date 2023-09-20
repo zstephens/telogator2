@@ -566,7 +566,10 @@ def get_terminating_tl(rdat, pq, gtt_params):
     #
     my_score = []
     my_tel_len = None
+    edge_nontel = 0
     if pq == 'p':
+        if tel_regions[0][2] is None:
+            edge_nontel = tel_regions[0][1] - tel_regions[0][0]
         for i in range(len(tel_regions)):
             my_s = (tel_regions[i][1] - tel_regions[i][0])
             if tel_regions[i][2] == 'p':
@@ -580,6 +583,8 @@ def get_terminating_tl(rdat, pq, gtt_params):
         if cum_score[max_i] >= MIN_TEL_SCORE:
             my_tel_len = int(tel_regions[max_i][1] + TEL_WINDOW_SIZE/2)
     elif pq == 'q':
+        if tel_regions[-1][2] is None:
+            edge_nontel = tel_regions[-1][1] - tel_regions[-1][0]
         for i in range(len(tel_regions)):
             my_s = (tel_regions[i][1] - tel_regions[i][0])
             if tel_regions[i][2] == 'q':
@@ -595,4 +600,4 @@ def get_terminating_tl(rdat, pq, gtt_params):
     #
     if my_tel_len is None or my_tel_len <= 0:
         return 0
-    return my_tel_len
+    return (my_tel_len, edge_nontel)

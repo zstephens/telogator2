@@ -37,6 +37,7 @@ ORR_SWAP = {'FWD':'REV', 'REV':'FWD', 'p':'q', 'q':'p'}
 SUBTEL_CLUSTER_SIZE = [1500, 3000]
 #
 MIN_TEL_UNANCHORED = 500
+NONTEL_EDGE_UNANCHORED = 200
 SUBTEL_BUFF_UNANCHORED = 1000
 
 #
@@ -78,12 +79,12 @@ def main(raw_args=None):
     parser.add_argument('-m',   type=str,  required=False, metavar='muscle',      default='muscle',  help="/path/to/muscle executable")
     parser.add_argument('-ar',  type=int,  required=False, metavar='3',           default=3,         help="Minimum number of reads per phased tel allele")
     parser.add_argument('-am',  type=str,  required=False, metavar='max',         default='max',     help="Method for computing chr TL: mean / median / max / p90")
-    parser.add_argument('-att', type=float,required=False, metavar='0.180',       default=0.180,     help="Treecut value: main TVR clustering")
-    parser.add_argument('-atp', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: merging TVRs with similar prefixes")
+    parser.add_argument('-att', type=float,required=False, metavar='0.180',       default=0.180,     help="Treecut value: TVR clustering")
+    parser.add_argument('-atp', type=float,required=False, metavar='0.120',       default=0.120,     help="Treecut value: merging TVRs with similar prefixes")
     parser.add_argument('-atm', type=float,required=False, metavar='0.070',       default=0.070,     help="Treecut value: grouping multimapped alleles")
     parser.add_argument('-ato', type=float,required=False, metavar='0.080',       default=0.080,     help="Treecut value: clustering orphaned alleles")
     parser.add_argument('-ats', type=float,required=False, metavar='0.250',       default=0.250,     help="Treecut value: declustering alleles using subtels")
-    parser.add_argument('-atu', type=float,required=False, metavar='0.150',       default=0.150,     help="Treecut value: TVR cluster refinement (unanchored mode)")
+    parser.add_argument('-atu', type=float,required=False, metavar='0.250',       default=0.250,     help="Treecut value: TVR cluster refinement [unanchored mode]")
     parser.add_argument('-atc', type=str,  required=False, metavar='treecuts.tsv',default='',        help="Custom TVR treecut vals for specific anchors")
     #
     parser.add_argument('--plot',          required=False, action='store_true',   default=False,     help="Create read plots")
@@ -1110,7 +1111,10 @@ def main(raw_args=None):
             my_pickle = pickle.load(f)
             f.close()
             kmer_hit_dat = my_pickle['kmer-hit-dat']
+            all_tvrtel_seq = my_pickle['all-tvrtel-seq']
             all_subtel_seq = my_pickle['all-subtel-seq']
+            all_terminating_tl = my_pickle['all-terminating-tl']
+            all_nontel_end = my_pickle['all-nontel-end']
             print(' -', len(kmer_hit_dat), 'reads')
         #
         else:
@@ -1139,7 +1143,10 @@ def main(raw_args=None):
             sys.stdout.flush()
             tt = time.perf_counter()
             kmer_hit_dat = []
+            all_tvrtel_seq = []
             all_subtel_seq = []
+            all_terminating_tl = []
+            all_nontel_end = []
             gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
             num_starting_reads = len(all_read_dat)
             for (my_rnm, my_rdat, my_qdat) in all_read_dat:
@@ -1151,9 +1158,11 @@ def main(raw_args=None):
                     if my_qdat is not None:
                         my_qdat = my_qdat[::-1]
                 # make sure read actually ends in telomere (remove interstitial telomere regions)
-                my_terminating_tel = get_terminating_tl(my_rdat, 'q', gtt_params)
-                if my_terminating_tel < MIN_TEL_UNANCHORED:
-                    continue
+                (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params)
+                ####if my_terminating_tel < MIN_TEL_UNANCHORED:
+                ####    continue
+                ####if my_nontel_end > NONTEL_EDGE_UNANCHORED:
+                ####    continue
                 # too little subtel sequence?
                 if len(my_rdat) < my_terminating_tel + SUBTEL_BUFF_UNANCHORED:
                     continue
@@ -1165,10 +1174,17 @@ def main(raw_args=None):
                                      my_rnm.split(' ')[0], # my_rnm
                                      DUMMY_TEL_MAPQ,       # my_mapq
                                      None])                # out_fasta_dat
+                all_tvrtel_seq.append(my_rdat[len(my_rdat)-my_terminating_tel:])
                 all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
+                all_terminating_tl.append(my_terminating_tel)
+                all_nontel_end.append(my_nontel_end)
             #
             f = open(OUT_PICKLE_UNANCHORED, 'wb')
-            pickle.dump({'kmer-hit-dat':kmer_hit_dat, 'all-subtel-seq':all_subtel_seq}, f)
+            pickle.dump({'kmer-hit-dat':kmer_hit_dat,
+                         'all-tvrtel-seq':all_tvrtel_seq,
+                         'all-subtel-seq':all_subtel_seq,
+                         'all-terminating-tl':all_terminating_tl,
+                         'all-nontel-end':all_nontel_end}, f)
             f.close()
             #
             num_ending_reads = len(kmer_hit_dat)
@@ -1219,14 +1235,17 @@ def main(raw_args=None):
         sys.stdout.flush()
         tt = time.perf_counter()
         clust_num = 0
+        blank_inds = []
         for clust_i in range(len(read_clust_dat[0])):
             current_clust_inds = read_clust_dat[0][clust_i]
+            # cluster filter: not enough reads
             if len(current_clust_inds) < MIN_READS_PER_PHASE:
                 continue
-            print(current_clust_inds)
+            # cluster filter: blank tvr, immediately add to blank_inds and move on
+            if read_clust_dat[7][clust_i] <= 0:
+                blank_inds.extend(current_clust_inds)
+                continue
             khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
-            for i,v in enumerate(khd_subset):
-                print(current_clust_inds[i], v[4])
             zfcn = str(clust_num).zfill(3)
             telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_unanchored.png'
             telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_unanchored.png'
@@ -1255,8 +1274,11 @@ def main(raw_args=None):
                                             PRINT_DEBUG=PRINT_DEBUG)
             #
             make_tvr_plots(khd_subset, subset_clust_dat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+            # are any of the subclusters blank? --> add to blank inds
+            pass
+            # add subclusters with sufficient readcounts to list for subsequent subtel clustering
+            pass
             clust_num += 1
-            exit(1)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         #
