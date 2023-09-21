@@ -1139,7 +1139,7 @@ def main(raw_args=None):
                 sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
                 sys.stdout.flush()
             #
-            sys.stdout.write('getting telomere repeat composition & checking tel end...')
+            sys.stdout.write('getting telomere repeat composition...')
             sys.stdout.flush()
             tt = time.perf_counter()
             kmer_hit_dat = []
@@ -1224,12 +1224,12 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         #
-        sys.stdout.write('plotting all reads...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
+        ####sys.stdout.write('plotting all reads...')
+        ####sys.stdout.flush()
+        ####tt = time.perf_counter()
+        ####make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
+        ####sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        ####sys.stdout.flush()
         #
         sys.stdout.write('refining clusters [TVR]...')
         sys.stdout.flush()
