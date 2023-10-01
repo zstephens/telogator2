@@ -28,7 +28,7 @@ def get_read_alignment_polygons(alignments, readlen):
     p_alpha  = []
     p_color  = []
     p_text   = []
-    yp       = [-0.05 * readlen, 0.05 * readlen]
+    yp       = [-1.0, 1.0]
     text_y   = 0.7 * yp[1]
     for i in range(len(alignments)):
         n = alignments[i]
@@ -46,8 +46,8 @@ def get_read_alignment_polygons(alignments, readlen):
         p_alpha.append(float(n[6]+15.)/(60.+15.))
         #
         xp               = [n[0], n[1]]
-        delta_pointy     = 0.8*(n[1]-n[0])
-        delta_pointy_rev = 0.2*(n[1]-n[0])
+        delta_pointy     = 0.75*(n[1]-n[0])
+        delta_pointy_rev = 0.25*(n[1]-n[0])
         if n[5] == 'FWD':
             polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[0]+delta_pointy,yp[1]], [xp[1],0.], [xp[0]+delta_pointy,yp[0]]]), closed=True))
         else:

@@ -952,6 +952,9 @@ def cluster_consensus_tvrs(sequences,
     else:
         dist_matrix = np.load(dist_in, allow_pickle=True)
     #
+    if samp_labels is None:
+        samp_labels = [str(n) for n in range(len(sequences))]
+    #
     if job[1] == 1 or job[0] == 0:
         d_arr = squareform(dist_matrix)
         Zread = linkage(d_arr, method=linkage_method)

@@ -20,6 +20,8 @@ def check_muscle_version(MUSCLE_EXE):
             found_muscle = True
     except FileNotFoundError:
         pass
+    except PermissionError:
+        pass
     if found_muscle:
         sys.stdout.write(' ok\n')
         sys.stdout.flush()

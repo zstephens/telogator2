@@ -39,6 +39,10 @@ SUBTEL_CLUSTER_SIZE = [1500, 3000]
 MIN_TEL_UNANCHORED = 500
 NONTEL_EDGE_UNANCHORED = 200
 SUBTEL_BUFF_UNANCHORED = 1000
+# if >30% this fraction of reads have no terminating tel, skip the cluster
+TERM_TEL_ZERO_FRAC = 0.30
+# if the nontel content of reads exceeds 190 for >49% of reads, skip this cluster
+NONTEL_END_FILT_PARAMS = (190, 0.49)
 
 #
 # ANCHORING_STRATEGY = 'largest'     - anchor tels onto largest non-tel alignment
@@ -230,6 +234,7 @@ def main(raw_args=None):
     TREECUT_UNANCHORED  = args.atu
     #
     OUT_PICKLE_UNANCHORED = OUT_DIR + 'unanchored-dat.p'
+    OUT_UNANCHORED_SUBTELS = OUT_DIR + 'unanchored_subtels.fa'
     #
     (VIOLIN_TLEN_MAX, VIOLIN_TLEN_TICK) = (args.vtm, args.vtt)
     (VIOLIN_RLEN_MAX, VIOLIN_RLEN_TICK) = (args.vrm, args.vrt)
@@ -1191,6 +1196,8 @@ def main(raw_args=None):
             sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
             sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
             sys.stdout.flush()
+        my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
+        my_rnames = [n[4] for n in kmer_hit_dat]
         #
         sys.stdout.write('clustering all reads...')
         sys.stdout.flush()
@@ -1224,25 +1231,35 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         #
-        ####sys.stdout.write('plotting all reads...')
-        ####sys.stdout.flush()
-        ####tt = time.perf_counter()
-        ####make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
-        ####sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        ####sys.stdout.flush()
+        if False:
+            sys.stdout.write('plotting all reads...')
+            sys.stdout.flush()
+            tt = time.perf_counter()
+            make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.flush()
         #
         sys.stdout.write('refining clusters [TVR]...')
         sys.stdout.flush()
         tt = time.perf_counter()
         clust_num = 0
         blank_inds = []
+        clusters_with_tvrs = []
         for clust_i in range(len(read_clust_dat[0])):
             current_clust_inds = read_clust_dat[0][clust_i]
             # cluster filter: not enough reads
             if len(current_clust_inds) < MIN_READS_PER_PHASE:
                 continue
-            # cluster filter: blank tvr, immediately add to blank_inds and move on
+            # cluster filter: blank tvr, add to blank_inds and move on
             if read_clust_dat[7][clust_i] <= 0:
+                term_tel = [all_terminating_tl[n] for n in current_clust_inds]
+                term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
+                if term_zero_frac > TERM_TEL_ZERO_FRAC:
+                    continue
+                nt_end = [all_nontel_end[n] for n in current_clust_inds]
+                nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
+                if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
+                    continue
                 blank_inds.extend(current_clust_inds)
                 continue
             khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
@@ -1260,34 +1277,166 @@ def main(raw_args=None):
                 dist_prefix_fn = None
                 consensus_fn = None
             #
-            subset_clust_dat = cluster_tvrs(khd_subset, KMER_METADATA, fake_chr, fake_pos, TREECUT_UNANCHORED, TREECUT_PREFIXMERGE,
-                                            aln_mode='ds',
-                                            alignment_processes=NUM_PROCESSES,
-                                            rand_shuffle_count=RAND_SHUFFLE,
-                                            dist_in=dist_matrix_fn,
-                                            dist_in_prefix=dist_prefix_fn,
-                                            fig_name=dendrogram_fn,
-                                            fig_prefix_name=dend_prefix_fn,
-                                            save_msa=consensus_fn,
-                                            muscle_dir=OUT_TVR_TEMP,
-                                            muscle_exe=MUSCLE_EXE,
-                                            PRINT_DEBUG=PRINT_DEBUG)
+            subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, fake_chr, fake_pos, TREECUT_UNANCHORED, TREECUT_PREFIXMERGE,
+                                           aln_mode='ds',
+                                           alignment_processes=NUM_PROCESSES,
+                                           rand_shuffle_count=RAND_SHUFFLE,
+                                           dist_in=dist_matrix_fn,
+                                           dist_in_prefix=dist_prefix_fn,
+                                           fig_name=dendrogram_fn,
+                                           fig_prefix_name=dend_prefix_fn,
+                                           save_msa=consensus_fn,
+                                           muscle_dir=OUT_TVR_TEMP,
+                                           muscle_exe=MUSCLE_EXE,
+                                           PRINT_DEBUG=PRINT_DEBUG)
             #
-            make_tvr_plots(khd_subset, subset_clust_dat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
-            # are any of the subclusters blank? --> add to blank inds
-            pass
-            # add subclusters with sufficient readcounts to list for subsequent subtel clustering
-            pass
+            make_tvr_plots(khd_subset, subset_clustdat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+            #
+            for sci,subclust_inds in enumerate(subset_clustdat[0]):
+                subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
+                if len(subclust_read_inds) < MIN_READS_PER_PHASE:
+                    continue
+                #
+                # filters to try and remove interstitial telomere repeats
+                #
+                term_tel = [all_terminating_tl[n] for n in subclust_read_inds]
+                term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
+                if term_zero_frac > TERM_TEL_ZERO_FRAC:
+                    continue
+                nt_end = [all_nontel_end[n] for n in subclust_read_inds]
+                nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
+                if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
+                    continue
+                #
+                # are any of the subclusters blank? --> add to blank inds
+                #
+                subclust_tvr_len = len(subset_clustdat[4][sci])
+                if subclust_tvr_len <= 0:
+                    blank_inds.extend(subclust_read_inds)
+                    continue
+                #
+                # pass all checks? --> add to list for subsequent subtel clustering
+                #
+                clusters_with_tvrs.append([n for n in subclust_read_inds])
+            #
+            clust_num += 1
+        have_blank = False
+        if len(blank_inds) >= MIN_READS_PER_PHASE:
+            have_blank = True
+            clusters_with_tvrs.append([n for n in blank_inds])
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        #
+        sys.stdout.write('refining clusters [SUBTEL]...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        final_clustered_read_inds = []
+        for sci,subclust_read_inds in enumerate(clusters_with_tvrs):
+            if sci == len(clusters_with_tvrs) - 1 and have_blank:
+                my_chr = 'chrBq'
+            else:
+                my_chr = 'chrUq'
+            subtel_sizes = [len(all_subtel_seq[n]) for n in subclust_read_inds]
+            subtel_size = max(min(min(subtel_sizes), SUBTEL_CLUSTER_SIZE[1]), SUBTEL_CLUSTER_SIZE[0])
+            my_subtels = [all_subtel_seq[n][-subtel_size:] for n in subclust_read_inds]
+            #
+            subtel_dist_fn   = OUT_TVR_TEMP+'subtels-'+str(sci).zfill(3)+'.npy'
+            subtel_dendro_fn = OUT_TVR_TEMP+'subtels_dendrogram-'+str(sci).zfill(3)+'.png'
+            my_dendro_title  = str(sci).zfill(3)
+            subtel_labels    = None
+            #
+            if ALWAYS_REPROCESS:
+                subtel_dist_fn = None
+            #
+            subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_SUBTELS,
+                                                     alignment_processes=NUM_PROCESSES,
+                                                     aln_mode='ms',
+                                                     gap_bool=(False,False),
+                                                     rand_shuffle_count=RAND_SHUFFLE,
+                                                     adjust_lens=False,
+                                                     dist_in=subtel_dist_fn,
+                                                     dendro_name=subtel_dendro_fn,
+                                                     samp_labels=subtel_labels,
+                                                     linkage_method='ward',
+                                                     normalize_dist_matrix=False,
+                                                     job=(1,1),
+                                                     dendrogram_title=my_dendro_title,
+                                                     dendrogram_height=8)
+            #
+            for sci,subclust_inds in enumerate(subtel_clustdat):
+                subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
+                if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
+                    continue
+                final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        #
+        sys.stdout.write('final clustering to generate allele dat...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        clust_num = 0
+        subtels_out = []
+        for final_clustdat in final_clustered_read_inds:
+            (my_chr, current_clust_inds) = final_clustdat
+            khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
+            rlens_subset = [my_rlens[n] for n in current_clust_inds]
+            zfcn = str(clust_num).zfill(3)
+            telcompplot_fn = OUT_TVR_DIR  + 'final_tvr-reads-'     + zfcn + '_unanchored.png'
+            telcompcons_fn = OUT_TVR_DIR  + 'final_tvr-consensus-' + zfcn + '_unanchored.png'
+            dendrogram_fn  = OUT_TVR_TEMP + 'final_dendrogram-'    + zfcn + '_unanchored.png'
+            dend_prefix_fn = OUT_TVR_TEMP + 'final_p_dendrogram-'  + zfcn + '_unanchored.png'
+            dist_matrix_fn = OUT_TVR_TEMP + 'final_cluster-'       + zfcn + '_unanchored.npy'
+            dist_prefix_fn = OUT_TVR_TEMP + 'final_p_cluster-'     + zfcn + '_unanchored.npy'
+            consensus_fn   = OUT_TVR_TEMP + 'final_consensus-seq-' + zfcn + '_unanchored.fa'
+            #
+            if ALWAYS_REPROCESS:
+                dist_matrix_fn = None
+                dist_prefix_fn = None
+                consensus_fn = None
+            #
+            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, 100., TREECUT_PREFIXMERGE,
+                                         aln_mode='ds',
+                                         alignment_processes=NUM_PROCESSES,
+                                         rand_shuffle_count=1,
+                                         dist_in=dist_matrix_fn,
+                                         dist_in_prefix=dist_prefix_fn,
+                                         fig_name=dendrogram_fn,
+                                         fig_prefix_name=dend_prefix_fn,
+                                         save_msa=consensus_fn,
+                                         muscle_dir=OUT_TVR_TEMP,
+                                         muscle_exe=MUSCLE_EXE,
+                                         PRINT_DEBUG=PRINT_DEBUG)
+            #
+            my_subtels = []
+            for i,sri in enumerate(solo_clustdat[0][0]):
+                read_i = current_clust_inds[sri]
+                subtel_used_in_tvr = SUBTEL_BUFF_UNANCHORED - solo_clustdat[2][0][i]
+                if subtel_used_in_tvr >= 0:
+                    my_subtels.append(all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr])
+                else:
+                    my_subtels.append(all_subtel_seq[read_i])
+            for i,subtel_seq in enumerate(my_subtels):
+                subtels_out.append((f'cluster-{clust_num}_read-{i}_{my_rnames[read_i]}', subtel_seq))
+            #
+            make_tvr_plots(khd_subset, solo_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+            #
+            allele_outdat.extend(get_allele_tsv_dat(khd_subset, solo_clustdat, my_chr, fake_pos, rlens_subset, gatd_params))
+            #
             clust_num += 1
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         #
-        my_rlens = [n[1] for n in kmer_hit_dat]
-        allele_outdat.extend(get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, my_rlens, gatd_params))
+        # fill out allele id fields (there are no multimapped alleles at this point)
         #
         for i,atdat in enumerate(allele_outdat):
             ALLELE_TEL_DAT.append([n for n in atdat])
             ALLELE_TEL_DAT[-1][3] = str(i)
+        #
+        # write out subtels
+        #
+        with open(OUT_UNANCHORED_SUBTELS, 'w') as f:
+            for n in subtels_out:
+                f.write(f'>{n[0]}\n{n[1]}\n')
 
     #
     # print some TVR stats to console
