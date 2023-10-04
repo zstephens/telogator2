@@ -515,15 +515,12 @@ def get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, g
         rname_str        = ','.join([str(n[2]) for n in allele_tlen_mapq])
         mapq_str         = ','.join([str(n[3]) for n in allele_tlen_mapq])
         #
-        if my_chr in ['chrUq', 'chrBq']:
-            rname_str = ','.join([' '.join(n[2].split(' ')[:-1]) for n in allele_tlen_mapq])
-        #
         consensus_tl_allele = choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD)
         #
         if allele_readcount >= MIN_READS_PER_PHASE:
             out_dat.append([my_chr,
                             str(my_pos),
-                            str(allele_i),
+                            '-',                            # ref builds (will be filled out later)
                             '0',                            # allele id (will be filled out later)
                             str(int(consensus_tl_allele)),
                             allele_tlen_str,
@@ -531,8 +528,7 @@ def get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, g
                             mapq_str,
                             str(len(allele_cons_out)),
                             allele_cons_out,
-                            rname_str,
-                            ''])                            # original chr mapping of blank tvrs (will be filled out later)
+                            rname_str])
     return out_dat
 
 #

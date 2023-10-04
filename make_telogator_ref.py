@@ -25,11 +25,19 @@ def main(raw_args=None):
     parser.add_argument('-i', type=str, required=True,                  metavar='* input.fa',  help="* Input T2T reference")
     parser.add_argument('-o', type=str, required=True,                  metavar='* output.fa', help="* Output Telogator reference")
     parser.add_argument('-k', type=str, required=False, default='',     metavar='kmers.tsv',   help="Telomere kmers")
+    parser.add_argument('-s', type=str, required=False, default='',     metavar='sampname',    help="Sample name (prepends contig names)")
+    parser.add_argument('--no-tel',     required=False, default=False,  action='store_true',   help="Do not include masked tels as separate contigs")
     args = parser.parse_args()
 
-    IN_REF    = args.i
-    OUT_REF   = args.o
-    KMER_FILE = args.k
+    IN_REF     = args.i
+    OUT_REF    = args.o
+    KMER_FILE  = args.k
+    SAMP_NAME  = args.s
+    APPEND_TEL = not(args.no_tel)
+
+    if SAMP_NAME != '':
+        if SAMP_NAME[-1] != '_':
+            SAMP_NAME += '_'
 
     OUT_DIR = '/'.join(OUT_REF.split('/')[:-1]) + '/'
 
@@ -103,27 +111,28 @@ def main(raw_args=None):
                 #
                 density_data = [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power, len(subtel_seq), TEL_WINDOW_SIZE]
                 plot_title = f'{chr_name}{pq} {my_tel_len} bp'
-                plot_fn    = f'{OUT_DIR}telsignal_{chr_name}{pq}.png'
+                plot_fn    = f'{OUT_DIR}{SAMP_NAME}telsignal_{chr_name}{pq}.png'
                 plot_tel_signal(density_data, plot_title, plot_fn, tl_vals=tl_vals)
             #
             for pqt in pq_tlens:
                 if pqt[0] == 'p':
-                    out_sequences.append((f'{chr_name}_p', 'N'*pqt[1] + p_arm[pqt[1]:]))
-                    tel_sequences.append((f'telomere_{chr_name}_p', p_arm[:pqt[1]]))
+                    out_sequences.append((f'{SAMP_NAME}{chr_name}p', 'N'*pqt[1] + p_arm[pqt[1]:]))
+                    tel_sequences.append((f'{SAMP_NAME}tel-{chr_name}p', p_arm[:pqt[1]]))
                 elif pqt[0] == 'q':
-                    out_sequences.append((f'{chr_name}_q', q_arm[:len(q_arm)-pqt[1]] + 'N'*pqt[1]))
-                    tel_sequences.append((f'telomere_{chr_name}_q', q_arm[len(q_arm)-pqt[1]:]))
-    tel_sequences.append(('telomere_TAACCC', 'TAACCC'*10000))
+                    out_sequences.append((f'{SAMP_NAME}{chr_name}q', q_arm[:len(q_arm)-pqt[1]] + 'N'*pqt[1]))
+                    tel_sequences.append((f'{SAMP_NAME}tel-{chr_name}q', q_arm[len(q_arm)-pqt[1]:]))
+    tel_sequences.append(('tel_TAACCC', 'TAACCC'*10000))
 
     with open(OUT_REF, 'w') as f:
         for n in out_sequences:
             f.write(f'>{n[0]}\n')
             for j in range(0, len(n[1]), FASTA_WIDTH):
                 f.write(f'{n[1][j:j+FASTA_WIDTH]}\n')
-        for n in tel_sequences:
-            f.write(f'>{n[0]}\n')
-            for j in range(0, len(n[1]), FASTA_WIDTH):
-                f.write(f'{n[1][j:j+FASTA_WIDTH]}\n')
+        if APPEND_TEL:
+            for n in tel_sequences:
+                f.write(f'>{n[0]}\n')
+                for j in range(0, len(n[1]), FASTA_WIDTH):
+                    f.write(f'{n[1][j:j+FASTA_WIDTH]}\n')
 
 
 if __name__ == '__main__':

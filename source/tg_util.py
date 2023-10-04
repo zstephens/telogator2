@@ -5,7 +5,8 @@ import copy
 
 LEXICO_2_IND = {'chr1':1, 'chr2':2, 'chr3':3, 'chr10':10, 'chr11':11, 'chr12':12, 'chr19':19, 'chr20':20,
                 'chr4':4, 'chr5':5, 'chr6':6, 'chr13':13, 'chr14':14, 'chr15':15, 'chr21':21, 'chr22':22,
-                'chr7':7, 'chr8':8, 'chr9':9, 'chr16':16, 'chr17':17, 'chr18':18,  'chrX':23,  'chrY':24, 'chrM':25}
+                'chr7':7, 'chr8':8, 'chr9':9, 'chr16':16, 'chr17':17, 'chr18':18,
+                'chrX':23,'chrY':24, 'chrM':25, 'chrU':26, 'chrB':27}
 
 SORTED_CHR_LIST = [n[1] for n in sorted([(LEXICO_2_IND[k],k) for k in LEXICO_2_IND])]
 
@@ -139,33 +140,34 @@ def parse_read(splt):
     if flag & 16:
         orientation = 'REV'
     #
-    if ref[:3] == 'chr':    # assume format: "chr1_p"
-        ref_key = ref.split('_')[0]
-        if ref_key in LEXICO_2_IND:
-            ref_key = LEXICO_2_IND[ref_key]
-        else:
-            print('unknown ref name:', ref, '-->', ref_key)
-            exit(1)
-    #
-    elif ref[:3] == 'alt':  # assume format: "alt1_p_0" OR "alt_1p_0" because I'm sloppy
-        ref_key = ''.join(ref.split('_')[:-1])
-        ref_key = ref_key.replace('alt', 'chr')[:-1]
-        alt_mul = int(ref.split('_')[-1]) + 1
-        if ref_key in LEXICO_2_IND:
-            ref_key = LEXICO_2_IND[ref_key] + alt_mul*len(LEXICO_2_IND)
-        else:
-            print('unknown ref name:', ref, '-->', ref_key)
-            exit(1)
-    #
-    elif ref[:3] == 'tel':
-        ref_key = LARGE_NUMBER - 1
-    #
-    elif is_unmapped is True:
-        ref_key = LARGE_NUMBER
-    #
-    else:
-        print('unknown ref name:', ref)
-        exit(1)
+    ####if ref[:3] == 'chr':    # assume format: "chr1_p"
+    ####    ref_key = ref.split('_')[0]
+    ####    if ref_key in LEXICO_2_IND:
+    ####        ref_key = LEXICO_2_IND[ref_key]
+    ####    else:
+    ####        print('unknown ref name:', ref, '-->', ref_key)
+    ####        exit(1)
+    #####
+    ####elif ref[:3] == 'alt':  # assume format: "alt1_p_0" OR "alt_1p_0" because I'm sloppy
+    ####    ref_key = ''.join(ref.split('_')[:-1])
+    ####    ref_key = ref_key.replace('alt', 'chr')[:-1]
+    ####    alt_mul = int(ref.split('_')[-1]) + 1
+    ####    if ref_key in LEXICO_2_IND:
+    ####        ref_key = LEXICO_2_IND[ref_key] + alt_mul*len(LEXICO_2_IND)
+    ####    else:
+    ####        print('unknown ref name:', ref, '-->', ref_key)
+    ####        exit(1)
+    #####
+    ####elif ref[:3] == 'tel':
+    ####    ref_key = LARGE_NUMBER - 1
+    #####
+    ####elif is_unmapped is True:
+    ####    ref_key = LARGE_NUMBER
+    #####
+    ####else:
+    ####    print('unknown ref name:', ref)
+    ####    exit(1)
+    ref_key = 0 # pretty sure this is no longer used
     #
     (read_pos_1, read_pos_2) = (None, None)
     (pos1, pos2) = (None, None)

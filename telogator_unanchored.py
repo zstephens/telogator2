@@ -12,10 +12,11 @@ import time
 
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
+from source.tg_plot   import tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, make_tvr_plots
-from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, makedir, parse_read, RC, rm
+from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, parse_read, RC, rm
 
 TEL_WINDOW_SIZE = 100
 #
@@ -106,6 +107,10 @@ def main(raw_args=None):
     #
     any_pickle = False
     for ifn in INPUT_ALN:
+        if exists_and_is_nonzero(ifn) is False:
+            print('Error: input not found:')
+            print(ifn)
+            exit(1)
         input_type = get_file_type(ifn)[0]
         if input_type not in ['fasta', 'fastq', 'bam', 'pickle']:
             print('Error: input must be fasta, fastq, bam, or pickle')
@@ -131,6 +136,7 @@ def main(raw_args=None):
     OUT_PICKLE_UNANCHORED = OUT_DIR + 'unanchored-dat.p'
     OUT_UNANCHORED_SUBTELS = OUT_DIR + 'unanchored_subtels.fa.gz'
     ALIGNED_SUBTELS = OUT_DIR + 'subtel_aln'
+    VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
 
     RAND_SHUFFLE = 3
     if FAST_ALIGNMENT:
@@ -173,8 +179,8 @@ def main(raw_args=None):
     else:
         print('using default telogator subtel reference')
         sim_path  = pathlib.Path(__file__).resolve().parent
-        TELOGATOR_REF = str(sim_path) + '/resources/t2t-telogator-ref.fa'
-        WINNOWMAP_K15 = str(sim_path) + '/resources/t2t-telogator-ref-k15.txt'
+        TELOGATOR_REF = str(sim_path) + '/resources/telogator-ref.fa.gz'
+        WINNOWMAP_K15 = str(sim_path) + '/resources/telogator-ref-k15.txt'
 
     #
     # parse telomere kmer data
@@ -492,7 +498,7 @@ def main(raw_args=None):
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     #
-    sys.stdout.write('final clustering to generate allele dat...')
+    sys.stdout.write('final reclustering to get TVRs and TLs for each allele...')
     sys.stdout.flush()
     tt = time.perf_counter()
     clust_num = 0
@@ -546,12 +552,7 @@ def main(raw_args=None):
         clust_num += 1
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
-    #
-    # fill out allele id fields (there are no multimapped alleles at this point)
-    #
-    for i,atdat in enumerate(allele_outdat):
-        ALLELE_TEL_DAT.append([n for n in atdat])
-        ALLELE_TEL_DAT[-1][3] = str(i)
+
     #
     # write out subtels
     #
@@ -560,12 +561,16 @@ def main(raw_args=None):
             f.write(f'>{n[0]}\n{n[1]}\n')
 
     #
-    # print some TVR stats to console
+    # fill out allele id fields (there are no multimapped alleles at this point)
+    # -- print out some TVR stats to console
     #
+    for i,atdat in enumerate(allele_outdat):
+        ALLELE_TEL_DAT.append([n for n in atdat])
+        ALLELE_TEL_DAT[-1][3] = str(i)
     num_unique_alleles = len(set([n[3] for n in ALLELE_TEL_DAT]))
     num_blank_alleles  = len([n[0] for n in ALLELE_TEL_DAT if n[0] == blank_chr])
-    print(' -', num_unique_alleles, 'unique alleles')
-    print(' -', num_blank_alleles, 'blank TVRs')
+    print(f' - {num_unique_alleles} unique alleles')
+    print(f' - {num_blank_alleles} / {num_unique_alleles} have blank TVRs')
 
     #
     # subtel alignment
@@ -592,12 +597,11 @@ def main(raw_args=None):
                 print('Error: alignment command returned an error:', exc.returncode)
                 print(exc.output)
                 exit(1)
-    if exists_and_is_nonzero(aln_bam) is False:
-        if exists_and_is_nonzero(aln_sam):
-            print()
-            print('Error: subtel alignment failed. Check the log:')
-            print(f' - {aln_log}')
-            exit(1)
+    if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
+        print()
+        print('Error: subtel alignment failed. Check the log:')
+        print(f'{aln_log}')
+        exit(1)
     #
     pysam.sort("-o", aln_bam, aln_sam)
     pysam.index(aln_bam)
@@ -611,7 +615,7 @@ def main(raw_args=None):
     #
     # get anchors from subtel alignment
     #
-    sys.stdout.write('getting anchor coordinates from alignment...')
+    sys.stdout.write('getting anchors from alignment...')
     sys.stdout.flush()
     tt = time.perf_counter()
     ALIGNMENTS_BY_RNAME = {}
@@ -649,17 +653,17 @@ def main(raw_args=None):
             top_alns_by_cluster[my_cluster] = []
         top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
     #
-    anchors_by_ref = {}
     for clustnum in sorted(top_alns_by_cluster.keys()):
-        ####print(clustnum)
+        #print(clustnum)
         chr_arm_scores = {}
+        anchors_by_ref = {}
         for n in top_alns_by_cluster[clustnum]:
             my_ref = n[1][2]
             my_refspan = abs(n[1][3] - n[1][4])
             my_anchor = n[1][4] # second refpos is always anchor coord?
             my_orr = n[1][5]
             my_mapq = n[1][6]
-            ####print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
+            #print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
             if my_ref != '*':
                 if my_ref not in chr_arm_scores:
                     chr_arm_scores[my_ref] = 0.
@@ -670,38 +674,73 @@ def main(raw_args=None):
         my_anchors = []
         if total_score > 0:
             sorted_chr_scores = sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)
-            ####print(sorted_chr_scores)
+            #print(sorted_chr_scores)
             my_anchors = [n[1] for n in sorted_chr_scores if n[0] >= ANCHORING_ASSIGNMENT_FRAC]
         else:
-            # all unmapped
-            pass
-        for n in my_anchors:
-            anchor_pos = int(np.median(anchors_by_ref[n]))
-            print('RAWR', clustnum, n, anchor_pos)
+            pass # all unmapped
+        if len(my_anchors):
+            anchor_pos = []
+            ref_builds = []
+            my_chrs    = []
+            chrs_encountered_so_far = {}
+            for n in my_anchors:
+                my_chr  = n.split('_')[1]
+                my_samp = n.split('_')[0]
+                my_pos  = str(int(np.median(anchors_by_ref[n])))
+                if my_chr in chrs_encountered_so_far:
+                    continue
+                chrs_encountered_so_far[my_chr] = True
+                anchor_pos.append(my_pos)
+                ref_builds.append(my_samp)
+                my_chrs.append(my_chr)
+            ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
+            ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
+            ALLELE_TEL_DAT[clustnum][2] = ','.join(ref_builds) # assign ref builds
+
     #
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
 
     #
+    # resort out allele dat by chr & pos
+    #
+    sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
+    ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[3]] for n in sorted_ad_inds]
+
+    #
     # write out allele TLs
     #
     print('writing allele TL results to "' + OUT_ALLELE_TL.split('/')[-1] + '"...')
-    f = open(OUT_ALLELE_TL, 'w')
-    f.write('#chr' + '\t' +
-            'position' + '\t' +
-            'allele_num' + '\t' +
-            'allele_id' + '\t' +
-            'TL_' + ALLELE_TL_METHOD + '\t' +
-            'read_TLs' + '\t' +
-            'read_lengths' + '\t' +
-            'read_mapq' + '\t' +
-            'tvr_len' + '\t' +
-            'tvr_consensus' + '\t' +
-            'supporting_reads' + '\t' +
-            'original_chr' + '\n')
-    for i in range(len(ALLELE_TEL_DAT)):
-        f.write('\t'.join(ALLELE_TEL_DAT[i]) + '\n')
-    f.close()
+    with open(OUT_ALLELE_TL, 'w') as f:
+        f.write('#chr' + '\t' +
+                'position' + '\t' +
+                'ref_samp' + '\t' +
+                'allele_id' + '\t' +
+                'TL_' + ALLELE_TL_METHOD + '\t' +
+                'read_TLs' + '\t' +
+                'read_lengths' + '\t' +
+                'read_mapq' + '\t' +
+                'tvr_len' + '\t' +
+                'tvr_consensus' + '\t' +
+                'supporting_reads' + '\n')
+        for n in ALLELE_TEL_DAT:
+            f.write('\t'.join(n) + '\n')
+
+    #
+    # violin plots
+    #
+    atl_by_arm = {}
+    for atd in ALLELE_TEL_DAT:
+        my_chr = atd[0].split(',')[0]
+        if my_chr not in atl_by_arm:
+            atl_by_arm[my_chr] = []
+        atl_by_arm[my_chr].extend([int(n) for n in atd[5].split(',')])
+    vparams = {'norm_by_readcount':True,
+               'p_ymax':20000,
+               'q_ymax':20000,
+               'y_step':5000,
+               'y_label':'<-- q      ATL      p -->'}
+    tel_len_violin_plot(atl_by_arm, VIOLIN_ATL, custom_plot_params=vparams)
 
 
 if __name__ == '__main__':
