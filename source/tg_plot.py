@@ -659,7 +659,7 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
             yp = [0, hat_l_p[i]]
             polygons2.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
             p_color2.append((0.45, 0.45, 0.45))
-        for i in range(len(hat_p_p)):
+        for i in range(len(hat_p_q)):
             xp = [hat_p_q[i]-0.3, hat_p_q[i]+0.3]
             yp = [0, -hat_l_q[i]]
             polygons2.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))

@@ -60,7 +60,8 @@ def main(raw_args=None):
     parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-noreplot', required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
-    parser.add_argument('--fast',           required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
+    parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
+    parser.add_argument('--fast-filt',      required=False, action='store_true', default=False, help="Remove interstitial telomere reads earlier")
     #
     parser.add_argument('--muscle',    type=str, required=False, metavar='muscle',    default='', help="/path/to/muscle")
     parser.add_argument('--minimap2',  type=str, required=False, metavar='minimap2',  default='', help="/path/to/minimap2")
@@ -101,7 +102,8 @@ def main(raw_args=None):
     ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npy matrices, always recompute)
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PRINT_DEBUG          = args.debug_print
-    FAST_ALIGNMENT       = args.fast
+    FAST_ALIGNMENT       = args.fast_aln
+    FAST_FILTERING       = args.fast_filt
 
     # check input
     #
@@ -258,19 +260,6 @@ def main(raw_args=None):
         sys.stdout.flush()
         print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
         #
-        if DOWNSAMPLE_READS > 0 and len(all_read_dat) > DOWNSAMPLE_READS:
-            sys.stdout.write('downsampling reads...')
-            sys.stdout.flush()
-            tt = time.perf_counter()
-            num_starting_reads = len(all_read_dat)
-            del_keys = get_downsample_inds(len(all_read_dat), len(all_read_dat) - DOWNSAMPLE_READS)
-            for di in del_keys:
-                del all_read_dat[di]
-            num_ending_reads = len(all_read_dat)
-            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-            sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
-            sys.stdout.flush()
-        #
         sys.stdout.write('getting telomere repeat composition...')
         sys.stdout.flush()
         tt = time.perf_counter()
@@ -289,12 +278,14 @@ def main(raw_args=None):
                 my_rdat = RC(my_rdat)
                 if my_qdat is not None:
                     my_qdat = my_qdat[::-1]
-            # make sure read actually ends in telomere (remove interstitial telomere regions)
+            # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
+            # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
             (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params)
-            ####if my_terminating_tel < MIN_TEL_UNANCHORED:
-            ####    continue
-            ####if my_nontel_end > NONTEL_EDGE_UNANCHORED:
-            ####    continue
+            #
+            if FAST_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
+                continue
+            if FAST_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
+                continue
             # too little subtel sequence?
             if len(my_rdat) < my_terminating_tel + SUBTEL_BUFF_UNANCHORED:
                 continue
@@ -310,6 +301,30 @@ def main(raw_args=None):
             all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
             all_terminating_tl.append(my_terminating_tel)
             all_nontel_end.append(my_nontel_end)
+        fast_filt_str = ''
+        if FAST_FILTERING:
+            fast_filt_str = ' [fast-filt applied]'
+        num_ending_reads = len(kmer_hit_dat)
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads' + fast_filt_str + '\n')
+        sys.stdout.flush()
+        #
+        if DOWNSAMPLE_READS > 0 and len(kmer_hit_dat) > DOWNSAMPLE_READS:
+            sys.stdout.write('downsampling reads...')
+            sys.stdout.flush()
+            tt = time.perf_counter()
+            num_starting_reads = len(kmer_hit_dat)
+            del_keys = get_downsample_inds(len(kmer_hit_dat), len(kmer_hit_dat) - DOWNSAMPLE_READS)
+            for di in del_keys:
+                del kmer_hit_dat[di]
+                del all_tvrtel_seq[di]
+                del all_subtel_seq[di]
+                del all_terminating_tl[di]
+                del all_nontel_end[di]
+            num_ending_reads = len(kmer_hit_dat)
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
+            sys.stdout.flush()
         #
         f = open(OUT_PICKLE_UNANCHORED, 'wb')
         pickle.dump({'kmer-hit-dat':kmer_hit_dat,
@@ -319,10 +334,6 @@ def main(raw_args=None):
                      'all-nontel-end':all_nontel_end}, f)
         f.close()
         #
-        num_ending_reads = len(kmer_hit_dat)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
-        sys.stdout.flush()
     my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
     my_rnames = [n[4] for n in kmer_hit_dat]
     #
@@ -732,10 +743,13 @@ def main(raw_args=None):
     atl_by_arm = {}
     for atd in ALLELE_TEL_DAT:
         my_chr = atd[0].split(',')[0]
+        if my_chr in ['chrUq', 'chrBq']:
+            my_chr = 'unanchored'
         if my_chr not in atl_by_arm:
             atl_by_arm[my_chr] = []
         atl_by_arm[my_chr].extend([int(n) for n in atd[5].split(',')])
     vparams = {'norm_by_readcount':True,
+               'include_unanchored':True,
                'p_ymax':20000,
                'q_ymax':20000,
                'y_step':5000,
