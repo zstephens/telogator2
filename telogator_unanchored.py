@@ -12,10 +12,10 @@ import time
 
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
-from source.tg_plot   import tel_len_violin_plot
+from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
-from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, make_tvr_plots
+from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
 from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, parse_read, RC, rm
 
 TEL_WINDOW_SIZE = 100
@@ -34,6 +34,8 @@ NONTEL_END_FILT_PARAMS = (190, 0.49)
 #
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.20
+#
+MIN_ATL_FOR_FINAL_PLOTTING = 1000
 
 
 def main(raw_args=None):
@@ -139,6 +141,7 @@ def main(raw_args=None):
     OUT_UNANCHORED_SUBTELS = OUT_DIR + 'unanchored_subtels.fa.gz'
     ALIGNED_SUBTELS = OUT_DIR + 'subtel_aln'
     VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
+    FINAL_TVRS = OUT_DIR + 'all_final_alleles.png'
 
     RAND_SHUFFLE = 3
     if FAST_ALIGNMENT:
@@ -340,7 +343,6 @@ def main(raw_args=None):
     sys.stdout.write('clustering all reads...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    allele_outdat = []
     unanchored_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_unanchored.png'
     unanchored_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_unanchored.png'
     unanchored_dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-998_unanchored.png'
@@ -514,6 +516,8 @@ def main(raw_args=None):
     tt = time.perf_counter()
     clust_num = 0
     subtels_out = []
+    allele_outdat = []
+    allele_consensus = []
     for final_clustdat in final_clustered_read_inds:
         (my_chr, current_clust_inds) = final_clustdat
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
@@ -559,6 +563,7 @@ def main(raw_args=None):
         make_tvr_plots(khd_subset, solo_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
         allele_outdat.extend(get_allele_tsv_dat(khd_subset, solo_clustdat, my_chr, fake_pos, rlens_subset, gatd_params))
+        allele_consensus.append(solo_clustdat[4][0])
         #
         clust_num += 1
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
@@ -755,6 +760,37 @@ def main(raw_args=None):
                'y_step':5000,
                'y_label':'<-- q      ATL      p -->'}
     tel_len_violin_plot(atl_by_arm, VIOLIN_ATL, custom_plot_params=vparams)
+
+    #
+    # plot all final tvrs
+    #
+    tvrs_to_plot = []
+    tvr_labels_to_plot = []
+    clustdat_to_plot = [[[]], [[]], [[]], []]
+    current_i = 0
+    for atd in ALLELE_TEL_DAT:
+        my_id = int(atd[3])
+        my_max_atl = max([int(n) for n in atd[5].split(',')])
+        if my_max_atl < MIN_ATL_FOR_FINAL_PLOTTING:
+            continue
+        if int(atd[8]) <= 0:
+            my_annot = str(atd[3]) + ' [blank]'
+        else:
+            my_annot = str(atd[3])
+        tvrs_to_plot.append(allele_consensus[my_id])
+        tvr_labels_to_plot.append(f'({my_annot}) {atd[0]}')
+        clustdat_to_plot[0][0].append(current_i)
+        clustdat_to_plot[1][0].append(60)
+        clustdat_to_plot[2][0].append(0)
+        clustdat_to_plot[3].append(0)
+        current_i += 1
+    redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
+    clust_khd = []
+    for i in range(len(redrawn_tvrs)):
+        clust_khd.append([redrawn_tvrs[i], len(tvrs_to_plot[i]), 0, 'FWD', tvr_labels_to_plot[i], 60, None])
+    title = f'All alleles\n'
+    custom_plot_params = {'xlim':[0,15000], 'xstep':1000, 'custom_title':title, 'number_label_rows':False}
+    plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
 
 
 if __name__ == '__main__':
