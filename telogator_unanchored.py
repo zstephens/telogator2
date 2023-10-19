@@ -286,7 +286,9 @@ def main(raw_args=None):
             # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
             # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
             (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params)
+            # some paranoid bounds checking
             my_terminating_tel = min(my_terminating_tel, len(my_rdat))
+            my_nontel_end = min(my_nontel_end, len(my_rdat))
             #
             if FAST_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
                 continue
@@ -297,6 +299,17 @@ def main(raw_args=None):
                 continue
             my_subtel_end = max(len(my_rdat)-my_terminating_tel-MIN_SUBTEL_BUFF, 0)
             my_teltvr_seq = my_rdat[my_subtel_end:]
+            # if there's no terminating tel at all (and no fast-filt), then lets pretend entire read is tvr+tel then
+            # - so that we can use this read for removing interstitial tel regions later
+            # - though we're probably just as well off removing them entirely at this point, I don't know for sure.
+            if len(my_teltvr_seq) == 0:
+                my_teltvr_seq = my_rdat
+                out_tvrtel_seq = my_rdat
+                out_subtel_seq = ''
+            else:
+                out_tvrtel_seq = my_rdat[len(my_rdat)-my_terminating_tel:]
+                out_subtel_seq = my_rdat[:len(my_rdat)-my_terminating_tel]
+            #
             kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
                                  len(my_teltvr_seq),   # atb, lets pretend entire read is tel
                                  0,                    # my_dbta
@@ -304,8 +317,8 @@ def main(raw_args=None):
                                  my_rnm.split(' ')[0], # my_rnm
                                  DUMMY_TEL_MAPQ,       # my_mapq
                                  None])                # out_fasta_dat
-            all_tvrtel_seq.append(my_rdat[len(my_rdat)-my_terminating_tel:])
-            all_subtel_seq.append(my_rdat[:len(my_rdat)-my_terminating_tel])
+            all_tvrtel_seq.append(out_tvrtel_seq)
+            all_subtel_seq.append(out_subtel_seq)
             all_terminating_tl.append(my_terminating_tel)
             all_nontel_end.append(my_nontel_end)
         fast_filt_str = ''
