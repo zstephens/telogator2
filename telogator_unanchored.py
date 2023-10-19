@@ -19,6 +19,7 @@ from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_color
 from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, parse_read, RC, rm
 
 TEL_WINDOW_SIZE = 100
+P_VS_Q_AMP_THRESH = 0.5
 #
 DUMMY_TEL_MAPQ = 60
 # how much subtel should we use for de-clustering alleles? [min_size, max_size]
@@ -26,7 +27,6 @@ SUBTEL_CLUSTER_SIZE = [1500, 3000]
 #
 MIN_TEL_UNANCHORED = 500
 NONTEL_EDGE_UNANCHORED = 200
-SUBTEL_BUFF_UNANCHORED = 1000
 # if >30% this fraction of reads have no terminating tel, skip the cluster
 TERM_TEL_ZERO_FRAC = 0.30
 # if the nontel content of reads exceeds 190 for >49% of reads, skip this cluster
@@ -40,18 +40,18 @@ MIN_ATL_FOR_FINAL_PLOTTING = 1000
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description='Telogator2', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-    parser.add_argument('-i', type=str,   required=True,  metavar='input.fa',     nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
-    parser.add_argument('-o', type=str,   required=True,  metavar='output/',                      help="* Path to output directory")
-    parser.add_argument('-k', type=str,   required=False, metavar='kmers.tsv',    default='',     help="Telomere kmers file")
-    parser.add_argument('-t', type=str,   required=False, metavar='telogator.fa', default='',     help="Telogator reference fasta")
-    parser.add_argument('-r', type=str,   required=False, metavar='hifi',         default='hifi', help="Read type: hifi / clr / ont")
-    parser.add_argument('-s', type=float, required=False, metavar='0.5',          default=0.5,    help="Telomere signal threshold (0-1)")
-    parser.add_argument('-l', type=int,   required=False, metavar='5000',         default=5000,   help="Minimum read length")
-    parser.add_argument('-c', type=int,   required=False, metavar='5',            default=5,      help="Minimum hits to canonical kmer")
-    parser.add_argument('-n', type=int,   required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
-    parser.add_argument('-m', type=str,   required=False, metavar='max',          default='max',  help="Method for computing chr TL: mean / median / max / p90")
-    parser.add_argument('-d', type=int,   required=False, metavar='nreads',       default=-1,     help="Downsample to this many telomere reads")
-    parser.add_argument('-p', type=int,   required=False, metavar='4',            default=4,      help="Number of processes to use")
+    parser.add_argument('-i', type=str, required=True,  metavar='input.fa',     nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
+    parser.add_argument('-o', type=str, required=True,  metavar='output/',                      help="* Path to output directory")
+    parser.add_argument('-k', type=str, required=False, metavar='kmers.tsv',    default='',     help="Telomere kmers file")
+    parser.add_argument('-t', type=str, required=False, metavar='telogator.fa', default='',     help="Telogator reference fasta")
+    parser.add_argument('-r', type=str, required=False, metavar='hifi',         default='hifi', help="Read type: hifi / clr / ont")
+    parser.add_argument('-l', type=int, required=False, metavar='4000',         default=4000,   help="Minimum read length")
+    parser.add_argument('-s', type=int, required=False, metavar='1000',         default=1000,   help="Minimum subtelomere anchor size")
+    parser.add_argument('-c', type=int, required=False, metavar='5',            default=5,      help="Minimum hits to canonical kmer")
+    parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
+    parser.add_argument('-m', type=str, required=False, metavar='max',          default='max',  help="Method for computing chr TL: mean / median / max / p90")
+    parser.add_argument('-d', type=int, required=False, metavar='nreads',       default=-1,     help="Downsample to this many telomere reads")
+    parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
     parser.add_argument('-ti', type=float,required=False, metavar='0.180', default=0.180, help="Treecut value: initial TVR clustering")
     parser.add_argument('-tp', type=float,required=False, metavar='0.120', default=0.120, help="Treecut value: merging TVRs with similar prefixes")
@@ -61,7 +61,8 @@ def main(raw_args=None):
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
     parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
-    parser.add_argument('--debug-noreplot', required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
+    parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
+    parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
     parser.add_argument('--fast-filt',      required=False, action='store_true', default=False, help="Remove interstitial telomere reads earlier")
     #
@@ -80,7 +81,7 @@ def main(raw_args=None):
     READ_TYPE           = args.r
     MINIMUM_READ_LEN    = args.l
     MINIMUM_CANON_HITS  = args.c
-    P_VS_Q_AMP_THRESH   = args.s
+    MIN_SUBTEL_BUFF     = args.s
     MIN_READS_PER_PHASE = args.n
     ALLELE_TL_METHOD    = args.m
     DOWNSAMPLE_READS    = args.d
@@ -100,8 +101,9 @@ def main(raw_args=None):
 
     # debug params
     #
-    DONT_OVERWRITE_PLOTS = args.debug_noreplot   # (True = don't replot figures if they already exist)
+    DONT_OVERWRITE_PLOTS = args.debug_noplot     # (True = don't replot figures if they already exist)
     ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npy matrices, always recompute)
+    SKIP_ANCHORING       = args.debug_noanchor
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
@@ -284,15 +286,17 @@ def main(raw_args=None):
             # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
             # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
             (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params)
+            my_terminating_tel = min(my_terminating_tel, len(my_rdat))
             #
             if FAST_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
                 continue
             if FAST_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
                 continue
             # too little subtel sequence?
-            if len(my_rdat) < my_terminating_tel + SUBTEL_BUFF_UNANCHORED:
+            if MIN_SUBTEL_BUFF > 0 and len(my_rdat) < my_terminating_tel + MIN_SUBTEL_BUFF:
                 continue
-            my_teltvr_seq = my_rdat[len(my_rdat)-my_terminating_tel-SUBTEL_BUFF_UNANCHORED:]
+            my_subtel_end = max(len(my_rdat)-my_terminating_tel-MIN_SUBTEL_BUFF, 0)
+            my_teltvr_seq = my_rdat[my_subtel_end:]
             kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
                                  len(my_teltvr_seq),   # atb, lets pretend entire read is tel
                                  0,                    # my_dbta
@@ -340,11 +344,11 @@ def main(raw_args=None):
     my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
     my_rnames = [n[4] for n in kmer_hit_dat]
     #
-    sys.stdout.write('clustering all reads...')
+    sys.stdout.write('initial clustering of all reads...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    unanchored_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_unanchored.png'
-    unanchored_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_unanchored.png'
+    ####unanchored_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_unanchored.png'
+    ####unanchored_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_unanchored.png'
     unanchored_dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-998_unanchored.png'
     unanchored_dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-998_unanchored.png'
     unanchored_dist_matrix_fn = OUT_TVR_TEMP + 'cluster-998_unanchored.npy'
@@ -370,20 +374,44 @@ def main(raw_args=None):
                                   PRINT_DEBUG=PRINT_DEBUG)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
+    n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
+    print(f' - {n_clusters} clusters formed (>= {MIN_READS_PER_PHASE} supporting reads)')
     #
-    if False:
-        sys.stdout.write('plotting all reads...')
+    if True:
+        sys.stdout.write('plotting initial clusters...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
+        ####make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
+        for clust_i in range(len(read_clust_dat[0])):
+            current_clust_inds = read_clust_dat[0][clust_i]
+            if len(current_clust_inds) < MIN_READS_PER_PHASE:
+                continue
+            khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
+            clustdat_to_plot = [[list(range(len(current_clust_inds)))],
+                                [read_clust_dat[1][clust_i]],
+                                [read_clust_dat[2][clust_i]],
+                                [read_clust_dat[3][n] for n in current_clust_inds],
+                                [read_clust_dat[4][clust_i]],
+                                [read_clust_dat[5][clust_i]],
+                                [read_clust_dat[6][n] for n in current_clust_inds],
+                                [read_clust_dat[7][clust_i]]]
+            plot_fn_reads = OUT_TVR_DIR + 'initial-clustering_' + str(clust_i).zfill(3) + '.png'
+            if DONT_OVERWRITE_PLOTS and exists_and_is_nonzero(plot_fn_reads):
+                pass
+            else:
+                make_tvr_plots(khd_subset, clustdat_to_plot, fake_chr, fake_pos, plot_fn_reads, None, mtp_params)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
+    #
+    #
     #
     sys.stdout.write('refining clusters [TVR]...')
     sys.stdout.flush()
     tt = time.perf_counter()
     clust_num = 0
     blank_inds = []
+    fail_clusters = []
+    fail_blank = []
     clusters_with_tvrs = []
     for clust_i in range(len(read_clust_dat[0])):
         current_clust_inds = read_clust_dat[0][clust_i]
@@ -391,14 +419,19 @@ def main(raw_args=None):
         if len(current_clust_inds) < MIN_READS_PER_PHASE:
             continue
         # cluster filter: blank tvr, add to blank_inds and move on
+        # - also copying the terminating-tel filters from below to avoid interstitial tel repeats
         if read_clust_dat[7][clust_i] <= 0:
+            clust_failed = False
             term_tel = [all_terminating_tl[n] for n in current_clust_inds]
             term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
             if term_zero_frac > TERM_TEL_ZERO_FRAC:
-                continue
+                clust_failed = True
             nt_end = [all_nontel_end[n] for n in current_clust_inds]
             nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
             if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
+                clust_failed = True
+            if clust_failed:
+                fail_blank.append((term_zero_frac, nontel_long_frac, [n for n in current_clust_inds]))
                 continue
             blank_inds.extend(current_clust_inds)
             continue
@@ -439,13 +472,17 @@ def main(raw_args=None):
             #
             # filters to try and remove interstitial telomere repeats
             #
+            clust_failed = False
             term_tel = [all_terminating_tl[n] for n in subclust_read_inds]
             term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
             if term_zero_frac > TERM_TEL_ZERO_FRAC:
-                continue
+                clust_failed = True
             nt_end = [all_nontel_end[n] for n in subclust_read_inds]
             nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
             if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
+                clust_failed = True
+            if clust_failed:
+                fail_clusters.append((term_zero_frac, nontel_long_frac, [n for n in subclust_read_inds]))
                 continue
             #
             # are any of the subclusters blank? --> add to blank inds
@@ -466,6 +503,10 @@ def main(raw_args=None):
         clusters_with_tvrs.append([n for n in blank_inds])
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
+    print(f' - {len(clusters_with_tvrs)} clusters with tvrs (does not yet include blanks)')
+    print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not termintating in tel)')
+    #
+    #
     #
     sys.stdout.write('refining clusters [SUBTEL]...')
     sys.stdout.flush()
@@ -510,6 +551,9 @@ def main(raw_args=None):
             final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
+    print(f' - {len(final_clustered_read_inds)} clusters')
+    #
+    #
     #
     sys.stdout.write('final reclustering to get TVRs and TLs for each allele...')
     sys.stdout.flush()
@@ -552,7 +596,7 @@ def main(raw_args=None):
         my_subtels = []
         for i,sri in enumerate(solo_clustdat[0][0]):
             read_i = current_clust_inds[sri]
-            subtel_used_in_tvr = SUBTEL_BUFF_UNANCHORED - solo_clustdat[2][0][i]
+            subtel_used_in_tvr = MIN_SUBTEL_BUFF - solo_clustdat[2][0][i]
             if subtel_used_in_tvr >= 0:
                 my_subtels.append(all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr])
             else:
@@ -570,13 +614,6 @@ def main(raw_args=None):
     sys.stdout.flush()
 
     #
-    # write out subtels
-    #
-    with gzip.open(OUT_UNANCHORED_SUBTELS, 'wt') as f:
-        for n in subtels_out:
-            f.write(f'>{n[0]}\n{n[1]}\n')
-
-    #
     # fill out allele id fields (there are no multimapped alleles at this point)
     # -- print out some TVR stats to console
     #
@@ -589,139 +626,150 @@ def main(raw_args=None):
     print(f' - {num_blank_alleles} / {num_unique_alleles} have blank TVRs')
 
     #
-    # subtel alignment
     #
-    sys.stdout.write('aligning subtels to reference...')
-    sys.stdout.flush()
-    tt = time.perf_counter()
-    cmd = ''
-    aln_log = ALIGNED_SUBTELS + '.log'
-    aln_sam = ALIGNED_SUBTELS + '.sam'
-    aln_bam = ALIGNED_SUBTELS + '.bam'
-    if WHICH_ALIGNER == 'minimap2':
-        aln_params = ''
-        if READ_TYPE == 'ont':
-            aln_params = '-ax map-ont -Y'
-        elif READ_TYPE == 'hifi':
-            aln_params = '-ax map-hifi -Y'
-        cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
-    if len(cmd):
-        with open(aln_log, 'w') as f:
-            try:
-                subprocess.check_output(cmd.split(' '), stderr=f, text=True)
-            except subprocess.CalledProcessError as exc:
-                print('Error: alignment command returned an error:', exc.returncode)
-                print(exc.output)
-                exit(1)
-    if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
-        print()
-        print('Error: subtel alignment failed. Check the log:')
-        print(f'{aln_log}')
-        exit(1)
     #
-    pysam.sort("-o", aln_bam, aln_sam)
-    pysam.index(aln_bam)
-    rm(aln_sam)
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    if exists_and_is_nonzero(aln_bam) is False:
-        print('Error: failed to create subtel bam')
-        exit(1)
+    if SKIP_ANCHORING is False:
+        #
+        # write out subtels
+        #
+        with gzip.open(OUT_UNANCHORED_SUBTELS, 'wt') as f:
+            for n in subtels_out:
+                if len(n[1]) > 0:
+                    f.write(f'>{n[0]}\n{n[1]}\n')
 
-    #
-    # get anchors from subtel alignment
-    #
-    sys.stdout.write('getting anchors from alignment...')
-    sys.stdout.flush()
-    tt = time.perf_counter()
-    ALIGNMENTS_BY_RNAME = {}
-    samfile = pysam.AlignmentFile(aln_bam, "rb")
-    refseqs = samfile.references
-    for aln in samfile.fetch(until_eof=True):
-        sam_line = str(aln).split('\t')
-        # pysam weirdness:
-        my_ref_ind = sam_line[2].replace('#','')
-        if my_ref_ind.isdigit():
-            sam_line[2] = refseqs[int(my_ref_ind)]
-        elif my_ref_ind == '-1':
-            sam_line[2] = refseqs[-1]
-        else:
-            sam_line[2] = my_ref_ind
-        [rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
-        if rnm not in ALIGNMENTS_BY_RNAME:
-            ALIGNMENTS_BY_RNAME[rnm] = []
-        ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
-    samfile.close()
-    #
-    top_alns_by_cluster = {}
-    for readname in ALIGNMENTS_BY_RNAME:
-        sorted_choices = []
-        for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
-            dist_to_end = len(aln[7]) - max(aln[0], aln[1])
-            read_span = abs(aln[1] - aln[0])
-            my_mapq = aln[6]
-            sorted_choices.append((read_span, my_mapq, -dist_to_end, i))
-        sorted_choices = sorted(sorted_choices, reverse=True)
-        top_i = sorted_choices[0][3]
-        #print(readname, sorted_choices)
-        my_cluster = int(readname.split('_')[0][8:])
-        if my_cluster not in top_alns_by_cluster:
-            top_alns_by_cluster[my_cluster] = []
-        top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
-    #
-    for clustnum in sorted(top_alns_by_cluster.keys()):
-        #print(clustnum)
-        chr_arm_scores = {}
-        anchors_by_ref = {}
-        for n in top_alns_by_cluster[clustnum]:
-            my_ref = n[1][2]
-            my_refspan = abs(n[1][3] - n[1][4])
-            my_anchor = n[1][4] # second refpos is always anchor coord?
-            my_orr = n[1][5]
-            my_mapq = n[1][6]
-            #print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
-            if my_ref != '*':
-                if my_ref not in chr_arm_scores:
-                    chr_arm_scores[my_ref] = 0.
-                    anchors_by_ref[my_ref] = []
-                chr_arm_scores[my_ref] += my_refspan * ((my_mapq + 1) / (MAX_QUAL_SCORE + 1))
-                anchors_by_ref[my_ref].append(my_anchor)
-        total_score = sum(chr_arm_scores.values())
-        my_anchors = []
-        if total_score > 0:
-            sorted_chr_scores = sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)
-            #print(sorted_chr_scores)
-            my_anchors = [n[1] for n in sorted_chr_scores if n[0] >= ANCHORING_ASSIGNMENT_FRAC]
-        else:
-            pass # all unmapped
-        if len(my_anchors):
-            anchor_pos = []
-            ref_builds = []
-            my_chrs    = []
-            chrs_encountered_so_far = {}
-            for n in my_anchors:
-                my_chr  = n.split('_')[1]
-                my_samp = n.split('_')[0]
-                my_pos  = str(int(np.median(anchors_by_ref[n])))
-                if my_chr in chrs_encountered_so_far:
-                    continue
-                chrs_encountered_so_far[my_chr] = True
-                anchor_pos.append(my_pos)
-                ref_builds.append(my_samp)
-                my_chrs.append(my_chr)
-            ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
-            ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
-            ALLELE_TEL_DAT[clustnum][2] = ','.join(ref_builds) # assign ref builds
+        #
+        # subtel alignment
+        #
+        sys.stdout.write('aligning subtels to reference...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        cmd = ''
+        aln_log = ALIGNED_SUBTELS + '.log'
+        aln_sam = ALIGNED_SUBTELS + '.sam'
+        aln_bam = ALIGNED_SUBTELS + '.bam'
+        if WHICH_ALIGNER == 'minimap2':
+            aln_params = ''
+            if READ_TYPE == 'ont':
+                aln_params = '-ax map-ont -Y'
+            elif READ_TYPE == 'hifi':
+                aln_params = '-ax map-hifi -Y'
+            cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+        if len(cmd):
+            with open(aln_log, 'w') as f:
+                try:
+                    subprocess.check_output(cmd.split(' '), stderr=f, text=True)
+                except subprocess.CalledProcessError as exc:
+                    print('Error: alignment command returned an error:', exc.returncode)
+                    print(exc.output)
+                    exit(1)
+        if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
+            print()
+            print('Error: subtel alignment failed. Check the log:')
+            print(f'{aln_log}')
+            exit(1)
+        #
+        pysam.sort("-o", aln_bam, aln_sam)
+        pysam.index(aln_bam)
+        rm(aln_sam)
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        if exists_and_is_nonzero(aln_bam) is False:
+            print('Error: failed to create subtel bam')
+            exit(1)
 
-    #
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
+        #
+        # get anchors from subtel alignment
+        #
+        sys.stdout.write('getting anchors from alignment...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        ALIGNMENTS_BY_RNAME = {}
+        samfile = pysam.AlignmentFile(aln_bam, "rb")
+        refseqs = samfile.references
+        for aln in samfile.fetch(until_eof=True):
+            sam_line = str(aln).split('\t')
+            # pysam weirdness:
+            my_ref_ind = sam_line[2].replace('#','')
+            if my_ref_ind.isdigit():
+                sam_line[2] = refseqs[int(my_ref_ind)]
+            elif my_ref_ind == '-1':
+                sam_line[2] = refseqs[-1]
+            else:
+                sam_line[2] = my_ref_ind
+            [rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
+            if rnm not in ALIGNMENTS_BY_RNAME:
+                ALIGNMENTS_BY_RNAME[rnm] = []
+            ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
+        samfile.close()
+        #
+        top_alns_by_cluster = {}
+        for readname in ALIGNMENTS_BY_RNAME:
+            sorted_choices = []
+            for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
+                dist_to_end = len(aln[7]) - max(aln[0], aln[1])
+                read_span = abs(aln[1] - aln[0])
+                my_mapq = aln[6]
+                sorted_choices.append((read_span, my_mapq, -dist_to_end, i))
+            sorted_choices = sorted(sorted_choices, reverse=True)
+            top_i = sorted_choices[0][3]
+            #print(readname, sorted_choices)
+            my_cluster = int(readname.split('_')[0][8:])
+            if my_cluster not in top_alns_by_cluster:
+                top_alns_by_cluster[my_cluster] = []
+            top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
+        #
+        for clustnum in sorted(top_alns_by_cluster.keys()):
+            #print(clustnum)
+            chr_arm_scores = {}
+            anchors_by_ref = {}
+            for n in top_alns_by_cluster[clustnum]:
+                my_ref = n[1][2]
+                my_refspan = abs(n[1][3] - n[1][4])
+                my_anchor = n[1][4] # second refpos is always anchor coord?
+                my_orr = n[1][5]
+                my_mapq = n[1][6]
+                #print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
+                if my_ref != '*':
+                    if my_ref not in chr_arm_scores:
+                        chr_arm_scores[my_ref] = 0.
+                        anchors_by_ref[my_ref] = []
+                    chr_arm_scores[my_ref] += my_refspan * ((my_mapq + 1) / (MAX_QUAL_SCORE + 1))
+                    anchors_by_ref[my_ref].append(my_anchor)
+            total_score = sum(chr_arm_scores.values())
+            my_anchors = []
+            if total_score > 0:
+                sorted_chr_scores = sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)
+                #print(sorted_chr_scores)
+                my_anchors = [n[1] for n in sorted_chr_scores if n[0] >= ANCHORING_ASSIGNMENT_FRAC]
+            else:
+                pass # all unmapped
+            if len(my_anchors):
+                anchor_pos = []
+                ref_builds = []
+                my_chrs    = []
+                chrs_encountered_so_far = {}
+                for n in my_anchors:
+                    my_chr  = n.split('_')[1]
+                    my_samp = n.split('_')[0]
+                    my_pos  = str(int(np.median(anchors_by_ref[n])))
+                    if my_chr in chrs_encountered_so_far:
+                        continue
+                    chrs_encountered_so_far[my_chr] = True
+                    anchor_pos.append(my_pos)
+                    ref_builds.append(my_samp)
+                    my_chrs.append(my_chr)
+                ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
+                ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
+                ALLELE_TEL_DAT[clustnum][2] = ','.join(ref_builds) # assign ref builds
+        #
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
 
-    #
-    # resort out allele dat by chr & pos
-    #
-    sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
-    ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[3]] for n in sorted_ad_inds]
+        #
+        # resort out allele dat by chr & pos
+        #
+        sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
+        ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[3]] for n in sorted_ad_inds]
 
     #
     # write out allele TLs
@@ -745,21 +793,22 @@ def main(raw_args=None):
     #
     # violin plots
     #
-    atl_by_arm = {}
-    for atd in ALLELE_TEL_DAT:
-        my_chr = atd[0].split(',')[0]
-        if my_chr in ['chrUq', 'chrBq']:
-            my_chr = 'unanchored'
-        if my_chr not in atl_by_arm:
-            atl_by_arm[my_chr] = []
-        atl_by_arm[my_chr].extend([int(n) for n in atd[5].split(',')])
-    vparams = {'norm_by_readcount':True,
-               'include_unanchored':True,
-               'p_ymax':20000,
-               'q_ymax':20000,
-               'y_step':5000,
-               'y_label':'<-- q      ATL      p -->'}
-    tel_len_violin_plot(atl_by_arm, VIOLIN_ATL, custom_plot_params=vparams)
+    if SKIP_ANCHORING is False:
+        atl_by_arm = {}
+        for atd in ALLELE_TEL_DAT:
+            my_chr = atd[0].split(',')[0]
+            if my_chr in ['chrUq', 'chrBq']:
+                my_chr = 'unanchored'
+            if my_chr not in atl_by_arm:
+                atl_by_arm[my_chr] = []
+            atl_by_arm[my_chr].extend([int(n) for n in atd[5].split(',')])
+        vparams = {'norm_by_readcount':True,
+                   'include_unanchored':True,
+                   'p_ymax':20000,
+                   'q_ymax':20000,
+                   'y_step':5000,
+                   'y_label':'<-- q      ATL      p -->'}
+        tel_len_violin_plot(atl_by_arm, VIOLIN_ATL, custom_plot_params=vparams)
 
     #
     # plot all final tvrs

@@ -1039,12 +1039,12 @@ def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn,
     # TVR plotting (clustered reads + consensus for each allele)
     #
     custom_plot_params = {'xlim':[-1000,15000]}
-    #custom_plot_params = {'xlim':[0,13000], 'custom_title':'', 'fig_width':12} # params for plotting figs for paper
-    if DO_NOT_OVERWRITE is False or exists_and_is_nonzero(telcompplot_fn) is False:
-        plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
-                       clust_dat=read_clust_dat,
-                       plot_params=custom_plot_params)
-    if len(consensus_clust_dat[0]):
+    if telcompplot_fn is not None:
+        if DO_NOT_OVERWRITE is False or exists_and_is_nonzero(telcompplot_fn) is False:
+            plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
+                           clust_dat=read_clust_dat,
+                           plot_params=custom_plot_params)
+    if telcompcons_fn is not None and len(consensus_clust_dat[0]):
         if DO_NOT_OVERWRITE is False or exists_and_is_nonzero(telcompcons_fn) is False:
             plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
                            clust_dat=consensus_clust_dat,
