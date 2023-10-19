@@ -36,12 +36,16 @@ def check_muscle_version(MUSCLE_EXE):
 #
 #
 def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={}, max_gap_frac=0.60, noncanon_cheat=None, mode='amino'):
+    # check if we received all empty strings for some reason
+    if len([n for n in input_sequences if len(n) > 0]) == 0:
+        return ['', '']
     # write sequences to a temp fasta
     temp_fasta = working_dir + 'clust_sequences.fa'
     f = open(temp_fasta, 'w')
     for i in range(len(input_sequences)):
-        f.write('>seq'+str(i+1).zfill(5) + '\n')
-        f.write(input_sequences[i] + '\n')
+        if len(input_sequences[i]) > 0:
+            f.write('>seq'+str(i+1).zfill(5) + '\n')
+            f.write(input_sequences[i] + '\n')
     f.close()
     # run muscle
     aln_fasta   = working_dir + 'clust_aln.fa'

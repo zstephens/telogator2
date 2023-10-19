@@ -784,6 +784,8 @@ def find_cumulative_boundary(sequence, which_letters, cum_thresh=0.05, min_hits=
 #
 #
 def denoise_colorvec(v, min_size=10, max_gap_fill=50, chars_to_delete=[], char_to_merge=''):
+    if len(v) == 0:
+        return ''
     blocks = []
     current_block = v[0]
     current_start = 0
