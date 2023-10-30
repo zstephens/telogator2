@@ -396,14 +396,14 @@ def cluster_tvrs(kmer_dat,
     if fig_name is not None:
         dendrogram_width = max(8, 0.12 * n_reads)
         dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
-        fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
         mpl.rcParams.update({'font.size': 20, 'lines.linewidth':2.0})
+        fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
         dendrogram(Zread, color_threshold=tree_cut)
         mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
         mpl.xlabel('read #')
         mpl.ylabel('distance')
         mpl.title(my_chr + ' : ' + str(my_pos))
-        mpl.tight_layout()
+        #mpl.tight_layout() # for some reason this was using 200 dpi instead of 100 and was returning ValueErrors for figures being too large
         mpl.savefig(fig_name)
         mpl.close(fig)
     #

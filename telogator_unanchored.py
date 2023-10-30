@@ -62,6 +62,7 @@ def main(raw_args=None):
     parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
+    parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip cluster refinement step that uses subtels")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
     parser.add_argument('--fast-filt',      required=False, action='store_true', default=False, help="Remove interstitial telomere reads earlier")
@@ -72,6 +73,8 @@ def main(raw_args=None):
     parser.add_argument('--pbmm2',     type=str, required=False, metavar='pbmm2',     default='', help="/path/to/pbmm2")
     #
     args = parser.parse_args()
+    #
+    print(sys.argv)
 
     INPUT_ALN     = args.i
     OUT_DIR       = args.o
@@ -103,6 +106,7 @@ def main(raw_args=None):
     #
     DONT_OVERWRITE_PLOTS = args.debug_noplot     # (True = don't replot figures if they already exist)
     ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npy matrices, always recompute)
+    SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PRINT_DEBUG          = args.debug_print
@@ -131,11 +135,19 @@ def main(raw_args=None):
     #
     if OUT_DIR[-1] != '/':
         OUT_DIR += '/'
-    OUT_TVR_DIR = OUT_DIR + 'tvr_clustering/'
-    OUT_TVR_TEMP = OUT_TVR_DIR + 'temp/'
+    OUT_CLUST_DIR = OUT_DIR + 'clust_dat/'
+    OUT_CDIR_INIT = OUT_CLUST_DIR + '00_initial/'
+    OUT_CDIR_TVR  = OUT_CLUST_DIR + '01_tvr/'
+    OUT_CDIR_SUB  = OUT_CLUST_DIR + '02_subtel/'
+    OUT_CDIR_FIN  = OUT_CLUST_DIR + '03_final/'
     makedir(OUT_DIR)
-    makedir(OUT_TVR_DIR)
-    makedir(OUT_TVR_TEMP)
+    makedir(OUT_CLUST_DIR)
+    for d in [OUT_CDIR_INIT, OUT_CDIR_TVR, OUT_CDIR_SUB, OUT_CDIR_FIN]:
+        makedir(d)
+        makedir(d + 'dendro/')
+        makedir(d + 'fa/')
+        makedir(d + 'npy/')
+        makedir(d + 'results/')
 
     TELOMERE_READS = OUT_DIR + 'tel_reads.fa.gz'
     OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
@@ -357,32 +369,32 @@ def main(raw_args=None):
     my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
     my_rnames = [n[4] for n in kmer_hit_dat]
     #
+    # [1] INITIAL CLUSTERING
+    #
     sys.stdout.write('initial clustering of all reads...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    ####unanchored_telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-998_unanchored.png'
-    ####unanchored_telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-998_unanchored.png'
-    unanchored_dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-998_unanchored.png'
-    unanchored_dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-998_unanchored.png'
-    unanchored_dist_matrix_fn = OUT_TVR_TEMP + 'cluster-998_unanchored.npy'
-    unanchored_dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-998_unanchored.npy'
-    unanchored_consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-998_unanchored.fa'
+    init_dendrogram_fn  = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
+    init_dend_prefix_fn = OUT_CDIR_INIT + 'dendro/' + 'dendrogram-prefixmerge.png'
+    init_dist_matrix_fn = OUT_CDIR_INIT + 'npy/'    + 'dist-matrix.npy'
+    init_dist_prefix_fn = OUT_CDIR_INIT + 'npy/'    + 'dist-matrix-prefixmerge.npy'
+    init_consensus_fn   = OUT_CDIR_INIT + 'fa/'     + 'consensus.fa'
     #
     if ALWAYS_REPROCESS:
-        unanchored_dist_matrix_fn = None
-        unanchored_dist_prefix_fn = None
-        unanchored_consensus_fn = None
+        init_dist_matrix_fn = None
+        init_dist_prefix_fn = None
+        init_consensus_fn = None
     #
     read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL, TREECUT_PREFIXMERGE,
                                   aln_mode='ds',
                                   alignment_processes=NUM_PROCESSES,
                                   rand_shuffle_count=RAND_SHUFFLE,
-                                  dist_in=unanchored_dist_matrix_fn,
-                                  dist_in_prefix=unanchored_dist_prefix_fn,
-                                  fig_name=unanchored_dendrogram_fn,
-                                  fig_prefix_name=unanchored_dend_prefix_fn,
-                                  save_msa=unanchored_consensus_fn,
-                                  muscle_dir=OUT_TVR_TEMP,
+                                  dist_in=init_dist_matrix_fn,
+                                  dist_in_prefix=init_dist_prefix_fn,
+                                  fig_name=init_dendrogram_fn,
+                                  fig_prefix_name=init_dend_prefix_fn,
+                                  save_msa=init_consensus_fn,
+                                  muscle_dir=OUT_CDIR_INIT + 'fa/',
                                   muscle_exe=MUSCLE_EXE,
                                   PRINT_DEBUG=PRINT_DEBUG)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
@@ -394,7 +406,6 @@ def main(raw_args=None):
         sys.stdout.write('plotting initial clusters...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        ####make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, unanchored_telcompplot_fn, unanchored_telcompcons_fn, mtp_params)
         for clust_i in range(len(read_clust_dat[0])):
             current_clust_inds = read_clust_dat[0][clust_i]
             if len(current_clust_inds) < MIN_READS_PER_PHASE:
@@ -408,7 +419,7 @@ def main(raw_args=None):
                                 [read_clust_dat[5][clust_i]],
                                 [read_clust_dat[6][n] for n in current_clust_inds],
                                 [read_clust_dat[7][clust_i]]]
-            plot_fn_reads = OUT_TVR_DIR + 'initial-clustering_' + str(clust_i).zfill(3) + '.png'
+            plot_fn_reads = OUT_CDIR_INIT + 'results/' + 'reads_' + str(clust_i).zfill(3) + '.png'
             if DONT_OVERWRITE_PLOTS and exists_and_is_nonzero(plot_fn_reads):
                 pass
             else:
@@ -416,7 +427,7 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
     #
-    #
+    # [2] TVR CLUSTERING
     #
     sys.stdout.write('refining clusters [TVR]...')
     sys.stdout.flush()
@@ -450,13 +461,13 @@ def main(raw_args=None):
             continue
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         zfcn = str(clust_num).zfill(3)
-        telcompplot_fn = OUT_TVR_DIR  + 'tvr-reads-'     + zfcn + '_unanchored.png'
-        telcompcons_fn = OUT_TVR_DIR  + 'tvr-consensus-' + zfcn + '_unanchored.png'
-        dendrogram_fn  = OUT_TVR_TEMP + 'dendrogram-'    + zfcn + '_unanchored.png'
-        dend_prefix_fn = OUT_TVR_TEMP + 'p_dendrogram-'  + zfcn + '_unanchored.png'
-        dist_matrix_fn = OUT_TVR_TEMP + 'cluster-'       + zfcn + '_unanchored.npy'
-        dist_prefix_fn = OUT_TVR_TEMP + 'p_cluster-'     + zfcn + '_unanchored.npy'
-        consensus_fn   = OUT_TVR_TEMP + 'consensus-seq-' + zfcn + '_unanchored.fa'
+        telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'                   + zfcn + '.png'
+        telcompcons_fn = OUT_CDIR_TVR + 'results/' + 'consensus_'               + zfcn + '.png'
+        dendrogram_fn  = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
+        dend_prefix_fn = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram-prefixmerge_'  + zfcn + '.png'
+        dist_matrix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix_'             + zfcn + '.npy'
+        dist_prefix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix-prefixmerge_' + zfcn + '.npy'
+        consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'               + zfcn + '.fa'
         #
         if ALWAYS_REPROCESS:
             dist_matrix_fn = None
@@ -472,7 +483,7 @@ def main(raw_args=None):
                                        fig_name=dendrogram_fn,
                                        fig_prefix_name=dend_prefix_fn,
                                        save_msa=consensus_fn,
-                                       muscle_dir=OUT_TVR_TEMP,
+                                       muscle_dir=OUT_CDIR_TVR + 'fa/',
                                        muscle_exe=MUSCLE_EXE,
                                        PRINT_DEBUG=PRINT_DEBUG)
         #
@@ -519,52 +530,63 @@ def main(raw_args=None):
     print(f' - {len(clusters_with_tvrs)} clusters with tvrs (does not yet include blanks)')
     print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not termintating in tel)')
     #
+    # [3] SUBTEL CLUSTERING
     #
-    #
-    sys.stdout.write('refining clusters [SUBTEL]...')
-    sys.stdout.flush()
-    tt = time.perf_counter()
-    final_clustered_read_inds = []
-    for sci,subclust_read_inds in enumerate(clusters_with_tvrs):
-        if sci == len(clusters_with_tvrs) - 1 and have_blank:
-            my_chr = 'chrBq'
-        else:
-            my_chr = 'chrUq'
-        subtel_sizes = [len(all_subtel_seq[n]) for n in subclust_read_inds]
-        subtel_size = max(min(min(subtel_sizes), SUBTEL_CLUSTER_SIZE[1]), SUBTEL_CLUSTER_SIZE[0])
-        my_subtels = [all_subtel_seq[n][-subtel_size:] for n in subclust_read_inds]
-        #
-        subtel_dist_fn   = OUT_TVR_TEMP+'subtels-'+str(sci).zfill(3)+'.npy'
-        subtel_dendro_fn = OUT_TVR_TEMP+'subtels_dendrogram-'+str(sci).zfill(3)+'.png'
-        my_dendro_title  = str(sci).zfill(3)
-        subtel_labels    = None
-        #
-        if ALWAYS_REPROCESS:
-            subtel_dist_fn = None
-        #
-        subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_REFINE_SUBTEL,
-                                                 alignment_processes=NUM_PROCESSES,
-                                                 aln_mode='ms',
-                                                 gap_bool=(False,False),
-                                                 rand_shuffle_count=RAND_SHUFFLE,
-                                                 adjust_lens=False,
-                                                 dist_in=subtel_dist_fn,
-                                                 dendro_name=subtel_dendro_fn,
-                                                 samp_labels=subtel_labels,
-                                                 linkage_method='ward',
-                                                 normalize_dist_matrix=False,
-                                                 job=(1,1),
-                                                 dendrogram_title=my_dendro_title,
-                                                 dendrogram_height=8)
-        #
-        for sci,subclust_inds in enumerate(subtel_clustdat):
-            subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
-            if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
-                continue
-            final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    print(f' - {len(final_clustered_read_inds)} clusters')
+    if SKIP_SUBTEL_REFINE:
+        print('skipping subtel cluster refinement...')
+        final_clustered_read_inds = []
+        for sci,subclust_read_inds in enumerate(clusters_with_tvrs):
+            if sci == len(clusters_with_tvrs) - 1 and have_blank:
+                my_chr = blank_chr
+            else:
+                my_chr = fake_chr
+            final_clustered_read_inds.append((my_chr, [n for n in subclust_read_inds]))
+    else:
+        sys.stdout.write('refining clusters [SUBTEL]...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        final_clustered_read_inds = []
+        for sci,subclust_read_inds in enumerate(clusters_with_tvrs):
+            if sci == len(clusters_with_tvrs) - 1 and have_blank:
+                my_chr = blank_chr
+            else:
+                my_chr = fake_chr
+            subtel_sizes = [len(all_subtel_seq[n]) for n in subclust_read_inds]
+            subtel_size = max(min(min(subtel_sizes), SUBTEL_CLUSTER_SIZE[1]), SUBTEL_CLUSTER_SIZE[0])
+            my_subtels = [all_subtel_seq[n][-subtel_size:] for n in subclust_read_inds]
+            #
+            zfcn = str(sci).zfill(3)
+            subtel_dendro_fn = OUT_CDIR_SUB + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
+            subtel_dist_fn   = OUT_CDIR_SUB + 'npy/'    + 'dist-matrix_' + zfcn + '.npy'
+            my_dendro_title  = zfcn
+            subtel_labels    = None
+            #
+            if ALWAYS_REPROCESS:
+                subtel_dist_fn = None
+            #
+            subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_REFINE_SUBTEL,
+                                                     alignment_processes=NUM_PROCESSES,
+                                                     aln_mode='ms',
+                                                     gap_bool=(False,False),
+                                                     rand_shuffle_count=RAND_SHUFFLE,
+                                                     adjust_lens=False,
+                                                     dist_in=subtel_dist_fn,
+                                                     dendro_name=subtel_dendro_fn,
+                                                     samp_labels=subtel_labels,
+                                                     linkage_method='ward',
+                                                     normalize_dist_matrix=False,
+                                                     job=(1,1),
+                                                     dendrogram_title=my_dendro_title,
+                                                     dendrogram_height=8)
+            #
+            for sci,subclust_inds in enumerate(subtel_clustdat):
+                subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
+                if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
+                    continue
+                final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        print(f' - {len(final_clustered_read_inds)} clusters')
     #
     #
     #
@@ -580,13 +602,13 @@ def main(raw_args=None):
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         rlens_subset = [my_rlens[n] for n in current_clust_inds]
         zfcn = str(clust_num).zfill(3)
-        telcompplot_fn = OUT_TVR_DIR  + 'final_tvr-reads-'     + zfcn + '_unanchored.png'
-        telcompcons_fn = OUT_TVR_DIR  + 'final_tvr-consensus-' + zfcn + '_unanchored.png'
-        dendrogram_fn  = OUT_TVR_TEMP + 'final_dendrogram-'    + zfcn + '_unanchored.png'
-        dend_prefix_fn = OUT_TVR_TEMP + 'final_p_dendrogram-'  + zfcn + '_unanchored.png'
-        dist_matrix_fn = OUT_TVR_TEMP + 'final_cluster-'       + zfcn + '_unanchored.npy'
-        dist_prefix_fn = OUT_TVR_TEMP + 'final_p_cluster-'     + zfcn + '_unanchored.npy'
-        consensus_fn   = OUT_TVR_TEMP + 'final_consensus-seq-' + zfcn + '_unanchored.fa'
+        telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'                   + zfcn + '.png'
+        telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'               + zfcn + '.png'
+        dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
+        dend_prefix_fn = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram-prefixmerge_'  + zfcn + '.png'
+        dist_matrix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix_'             + zfcn + '.npy'
+        dist_prefix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix-prefixmerge_' + zfcn + '.npy'
+        consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'               + zfcn + '.fa'
         #
         if ALWAYS_REPROCESS:
             dist_matrix_fn = None
@@ -602,7 +624,7 @@ def main(raw_args=None):
                                      fig_name=dendrogram_fn,
                                      fig_prefix_name=dend_prefix_fn,
                                      save_msa=consensus_fn,
-                                     muscle_dir=OUT_TVR_TEMP,
+                                     muscle_dir=OUT_CDIR_FIN + 'fa/',
                                      muscle_exe=MUSCLE_EXE,
                                      PRINT_DEBUG=PRINT_DEBUG)
         #
@@ -810,7 +832,7 @@ def main(raw_args=None):
         atl_by_arm = {}
         for atd in ALLELE_TEL_DAT:
             my_chr = atd[0].split(',')[0]
-            if my_chr in ['chrUq', 'chrBq']:
+            if my_chr in [fake_chr, blank_chr]:
                 my_chr = 'unanchored'
             if my_chr not in atl_by_arm:
                 atl_by_arm[my_chr] = []
