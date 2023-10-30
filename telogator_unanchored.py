@@ -16,7 +16,7 @@ from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
-from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, parse_read, RC, rm
+from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -74,7 +74,6 @@ def main(raw_args=None):
     #
     args = parser.parse_args()
     #
-    print(sys.argv)
 
     INPUT_ALN     = args.i
     OUT_DIR       = args.o
@@ -226,6 +225,13 @@ def main(raw_args=None):
     blank_chr   = 'chrBq'
     fake_chr    = 'chrUq'
     fake_pos    = 0
+
+    #
+    # write cmd out, for debugging purposes
+    #
+    with open(OUT_DIR + 'cmd.txt', 'w') as f:
+        stripped_strings = [strip_paths_from_string(n) for n in sys.argv]
+        f.write(' '.join(stripped_strings) + '\n')
 
     #
     # begin unanchored telogator2

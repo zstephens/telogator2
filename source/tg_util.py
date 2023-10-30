@@ -74,6 +74,13 @@ def rm(fn):
         os.remove(fn)
 
 
+def strip_paths_from_string(s):
+    if os.path.sep in s:
+        return s.split(os.path.sep)[-1]
+    else:
+        return s
+
+
 def RC(s):
     return ''.join([RC_DICT[n] for n in s[::-1]])
 
