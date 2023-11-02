@@ -534,21 +534,27 @@ def get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, g
 #
 #
 #
-def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD):
+def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD, skip_negative_vals=False):
+    if skip_negative_vals:
+        atls = [n for n in allele_tlens if n > 0]
+    else:
+        atls = allele_tlens
+    if len(atls) == 0:
+        return None
     consensus_tl_allele = None
     if ALLELE_TL_METHOD == 'mean':
-        consensus_tl_allele = np.mean(allele_tlens)
+        consensus_tl_allele = np.mean(atls)
     elif ALLELE_TL_METHOD == 'median':
-        consensus_tl_allele = np.median(allele_tlens)
+        consensus_tl_allele = np.median(atls)
     elif ALLELE_TL_METHOD == 'max':
-        consensus_tl_allele = np.max(allele_tlens)
+        consensus_tl_allele = np.max(atls)
     elif ALLELE_TL_METHOD[0] == 'p':
         my_percentile = int(ALLELE_TL_METHOD[1:])
-        consensus_tl_allele = np.percentile(allele_tlens, my_percentile)
+        consensus_tl_allele = np.percentile(atls, my_percentile)
     elif ALLELE_TL_METHOD[-7:] == 'fromtop':
-        my_fromtop = min(len(allele_tlens), int(ALLELE_TL_METHOD[:-7]))
-        consensus_tl_allele = allele_tlens[-my_fromtop]
-    return consensus_tl_allele
+        my_fromtop = min(len(atls), int(ALLELE_TL_METHOD[:-7]))
+        consensus_tl_allele = atls[-my_fromtop]
+    return int(consensus_tl_allele)
 
 #
 #

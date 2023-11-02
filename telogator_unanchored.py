@@ -238,7 +238,7 @@ def main(raw_args=None):
     #
     ALLELE_TEL_DAT = []
     #
-    print('Running Telogator2 in unanchored mode [EXPERIMENTAL]...')
+    print('beginning telogator2...')
     #
     if any_pickle:
         print('getting unanchored read dat from pickle file...')
@@ -257,6 +257,8 @@ def main(raw_args=None):
         sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
         sys.stdout.flush()
         tt = time.perf_counter()
+        total_bp_all = 0
+        total_bp_tel = 0
         with gzip.open(TELOMERE_READS, 'wt') as f:
             for ifn in INPUT_ALN:
                 my_reader = TG_Reader(ifn, verbose=False)
@@ -267,13 +269,19 @@ def main(raw_args=None):
                     count_fwd = my_rdat.count(KMER_INITIAL)
                     count_rev = my_rdat.count(KMER_INITIAL_RC)
                     all_readcount += 1
+                    total_bp_all += len(my_rdat)
                     if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
                         f.write(f'>{my_name}\n{my_rdat}\n')
                         tel_readcount += 1
+                        total_bp_tel += len(my_rdat)
                 my_reader.close()
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {all_readcount} --> {tel_readcount} reads')
+        print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
+        if tel_readcount <= 0:
+            print('Error: No telomere reads found, stopping here...')
+            exit(1)
         #
         sys.stdout.write(f'filtering by read length (>{MINIMUM_READ_LEN}bp)...')
         sys.stdout.flush()
@@ -282,6 +290,9 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
+        if len(all_read_dat) <= 0:
+            print('Error: No telomere reads remaining, stopping here...')
+            exit(1)
         #
         sys.stdout.write('getting telomere repeat composition...')
         sys.stdout.flush()
@@ -346,6 +357,9 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads' + fast_filt_str + '\n')
         sys.stdout.flush()
+        if num_ending_reads <= 0:
+            print('Error: No telomere reads remaining, stopping here...')
+            exit(1)
         #
         if DOWNSAMPLE_READS > 0 and len(kmer_hit_dat) > DOWNSAMPLE_READS:
             sys.stdout.write('downsampling reads...')
@@ -688,6 +702,7 @@ def main(raw_args=None):
         aln_log = ALIGNED_SUBTELS + '.log'
         aln_sam = ALIGNED_SUBTELS + '.sam'
         aln_bam = ALIGNED_SUBTELS + '.bam'
+        #
         if WHICH_ALIGNER == 'minimap2':
             aln_params = ''
             if READ_TYPE == 'ont':
@@ -695,6 +710,17 @@ def main(raw_args=None):
             elif READ_TYPE == 'hifi':
                 aln_params = '-ax map-hifi -Y'
             cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+        #
+        elif WHICH_ALIGNER == 'winnowmap':
+            aln_params = ''
+            if READ_TYPE == 'ont':
+                aln_params = '-ax map-ont -Y'
+            elif READ_TYPE == 'hifi':
+                aln_params = '-ax map-pb -Y'
+            cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+        #
+        elif WHICH_ALIGNER == 'pbmm2':
+            cmd = ALIGNER_EXE + ' align ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
         if len(cmd):
             with open(aln_log, 'w') as f:
                 try:
@@ -709,9 +735,10 @@ def main(raw_args=None):
             print(f'{aln_log}')
             exit(1)
         #
-        pysam.sort("-o", aln_bam, aln_sam)
-        pysam.index(aln_bam)
-        rm(aln_sam)
+        if WHICH_ALIGNER is not 'pbmm2':
+            pysam.sort("-o", aln_bam, aln_sam)
+            pysam.index(aln_bam)
+            rm(aln_sam)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         if exists_and_is_nonzero(aln_bam) is False:
