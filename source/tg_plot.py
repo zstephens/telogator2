@@ -162,14 +162,16 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
                     'custom_title':None,
                     'custom_xlabel':None,
                     'number_label_rows':True,
-                    'fig_width':15}
+                    'fig_width':15,
+                    'font.size':12,
+                    'font.weight':'normal'}
     for k in plot_params.keys():
         stock_params[k] = plot_params[k]
     #
     X_STEP = stock_params['xstep']
     xlim   = stock_params['xlim']
     #
-    mpl.rcParams.update({'font.size': 12, 'font.weight':'normal', 'lines.linewidth':1.0})
+    mpl.rcParams.update({'font.size':stock_params['font.size'], 'font.weight':stock_params['font.weight'], 'lines.linewidth':1.0})
     #
     if clust_dat is None:
         read_clusters      = [list(range(n_reads))]
