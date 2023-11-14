@@ -88,7 +88,7 @@ def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_a
     ####rm(aln_fasta)
     rm(muscle_log)
     rm(matrix)
-    print('CURRENT:', tempfile_prefix)
+    ####print('CURRENT:', tempfile_prefix)
     # get consensus
     consensus_seq = []
     for i in range(len(out_seq[0])):    # we're gonna hope that muscle worked as expected and all seq are same len
@@ -101,6 +101,9 @@ def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_a
                 if out_seq[j][i] not in char_count:
                     char_count[out_seq[j][i]] = 0
                 char_count[out_seq[j][i]] += 1
+        # apparently muscle can fail and produce blank alignments, just bail and pretend first read is consensus
+        if len(char_count) == 0:
+            return [input_sequences, input_sequences[0]]
         # if first or second most frequent character is non-canonical (and has enough support), lets just go with that
         if noncanon_cheat is not None:
             (canon_char, min_noncanon_reads) = noncanon_cheat
