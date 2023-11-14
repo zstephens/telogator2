@@ -88,6 +88,7 @@ def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_a
     ####rm(aln_fasta)
     rm(muscle_log)
     rm(matrix)
+    print('CURRENT:', tempfile_prefix)
     # get consensus
     consensus_seq = []
     for i in range(len(out_seq[0])):    # we're gonna hope that muscle worked as expected and all seq are same len

@@ -467,14 +467,14 @@ def cluster_tvrs(kmer_dat,
                 subtel_consensus.append(buffered_subs[out_clust[i][0]])
             else:
                 clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
-                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5) + '_'
+                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5)
                 [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
                 out_consensus.append(consensus_seq)
                 clust_seq = [buffered_subs[n] for n in out_clust[i]]
                 if clust_seq[0] == '':
                     subtel_consensus.append('')
                 else:
-                    my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5) + '_'
+                    my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5)
                     [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
                     subtel_consensus.append(consensus_seq)
         #
