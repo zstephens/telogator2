@@ -35,12 +35,12 @@ def check_muscle_version(MUSCLE_EXE):
 #
 #
 #
-def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={}, max_gap_frac=0.60, noncanon_cheat=None, mode='amino'):
+def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_adj={}, max_gap_frac=0.60, noncanon_cheat=None, mode='amino'):
     # check if we received all empty strings for some reason
     if len([n for n in input_sequences if len(n) > 0]) == 0:
         return ['', '']
     # write sequences to a temp fasta
-    temp_fasta = working_dir + 'clust_sequences.fa'
+    temp_fasta = tempfile_prefix + '.muscle.input.fa'
     f = open(temp_fasta, 'w')
     for i in range(len(input_sequences)):
         if len(input_sequences[i]) > 0:
@@ -48,9 +48,9 @@ def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={
             f.write(input_sequences[i] + '\n')
     f.close()
     # run muscle
-    aln_fasta   = working_dir + 'clust_aln.fa'
-    muscle_log  = working_dir + 'muscle.log'
-    matrix      = working_dir + 'scoring_matrix.txt'
+    aln_fasta   = tempfile_prefix + '.muscle.output.fa'
+    muscle_log  = tempfile_prefix + '.muscle.log'
+    matrix      = tempfile_prefix + '.muscle.matrix.txt'
     if mode == 'amino':
         write_amino_scoring_matrix(matrix)
         score_param = '-seqtype protein -gapopen -12.0 -gapextend -4.0 -center 0.0 -matrix ' + matrix
@@ -84,8 +84,8 @@ def get_muscle_msa(input_sequences, muscle_exe, working_dir='', char_score_adj={
     ####    print(n)
     ####exit(1)
     # cleanup
-    rm(temp_fasta)
-    rm(aln_fasta)
+    ####rm(temp_fasta)
+    ####rm(aln_fasta)
     rm(muscle_log)
     rm(matrix)
     # get consensus

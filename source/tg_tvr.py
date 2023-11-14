@@ -235,7 +235,6 @@ def cluster_tvrs(kmer_dat,
                  dist_in_prefix=None,
                  fig_name=None,
                  fig_prefix_name=None,
-                 muscle_dir='',
                  save_msa=None,
                  tvr_truncate=3000,
                  alignment_processes=4,
@@ -243,6 +242,10 @@ def cluster_tvrs(kmer_dat,
                  PRINT_DEBUG=False):
     #
     [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
+    #
+    muscle_prefix = ''
+    if save_msa is not None and '.' in save_msa:
+        muscle_prefix = '.'.join(save_msa.split('.')[:-1])
     #
     n_reads = len(kmer_dat)
     pq      = my_chr[-1]
@@ -464,13 +467,15 @@ def cluster_tvrs(kmer_dat,
                 subtel_consensus.append(buffered_subs[out_clust[i][0]])
             else:
                 clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
-                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
+                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5) + '_'
+                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
                 out_consensus.append(consensus_seq)
                 clust_seq = [buffered_subs[n] for n in out_clust[i]]
                 if clust_seq[0] == '':
                     subtel_consensus.append('')
                 else:
-                    [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, working_dir=muscle_dir)
+                    my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5) + '_'
+                    [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
                     subtel_consensus.append(consensus_seq)
         #
         if save_msa is not None:

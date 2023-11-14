@@ -76,7 +76,11 @@ def rm(fn):
 
 def strip_paths_from_string(s):
     if os.path.sep in s:
-        return s.split(os.path.sep)[-1]
+        s_out = s.split(os.path.sep)[-1]
+        if len(s_out) > 0:
+            return s_out
+        else:
+            return '.' + os.path.sep
     else:
         return s
 

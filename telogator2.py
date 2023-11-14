@@ -420,7 +420,6 @@ def main(raw_args=None):
                                   fig_name=init_dendrogram_fn,
                                   fig_prefix_name=init_dend_prefix_fn,
                                   save_msa=init_consensus_fn,
-                                  muscle_dir=OUT_CDIR_INIT + 'fa/',
                                   muscle_exe=MUSCLE_EXE,
                                   PRINT_DEBUG=PRINT_DEBUG)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
@@ -509,7 +508,6 @@ def main(raw_args=None):
                                        fig_name=dendrogram_fn,
                                        fig_prefix_name=dend_prefix_fn,
                                        save_msa=consensus_fn,
-                                       muscle_dir=OUT_CDIR_TVR + 'fa/',
                                        muscle_exe=MUSCLE_EXE,
                                        PRINT_DEBUG=PRINT_DEBUG)
         #
@@ -650,7 +648,6 @@ def main(raw_args=None):
                                      fig_name=dendrogram_fn,
                                      fig_prefix_name=dend_prefix_fn,
                                      save_msa=consensus_fn,
-                                     muscle_dir=OUT_CDIR_FIN + 'fa/',
                                      muscle_exe=MUSCLE_EXE,
                                      PRINT_DEBUG=PRINT_DEBUG)
         #
@@ -893,14 +890,16 @@ def main(raw_args=None):
     current_i = 0
     for atd in ALLELE_TEL_DAT:
         my_id = int(atd[3])
+        my_rep_atl = int(atd[4])
         my_max_atl = max([int(n) for n in atd[5].split(',')])
+        my_tvr_len = int(atd[8])
         if my_max_atl < MIN_ATL_FOR_FINAL_PLOTTING:
             continue
         if int(atd[8]) <= 0:
             my_annot = str(atd[3]) + 'b'
         else:
             my_annot = str(atd[3])
-        tvrs_to_plot.append(allele_consensus[my_id])
+        tvrs_to_plot.append(allele_consensus[my_id][:my_tvr_len+my_rep_atl])
         tvr_labels_to_plot.append(f'({my_annot}) {atd[0]}')
         clustdat_to_plot[0][0].append(current_i)
         clustdat_to_plot[1][0].append(60)
