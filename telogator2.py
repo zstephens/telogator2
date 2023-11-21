@@ -57,6 +57,7 @@ def main(raw_args=None):
     parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="Treecut value: cluster refinement [SUBTEL]")
     #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
+    parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
     parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
@@ -113,6 +114,7 @@ def main(raw_args=None):
     ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npy matrices, always recompute)
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
+    PLOT_ALL_INITIAL     = args.plot_all_reads
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
@@ -426,6 +428,16 @@ def main(raw_args=None):
     sys.stdout.flush()
     n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
     print(f' - {n_clusters} clusters formed (>= {MIN_READS_PER_PHASE} supporting reads)')
+    #
+    if PLOT_ALL_INITIAL:
+        sys.stdout.write('plotting all tel reads in a single big plot...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        init_telcompplot_fn = OUT_CDIR_INIT + 'results/' + 'all_reads.png'
+        init_telcompcons_fn = OUT_CDIR_INIT + 'results/' + 'all_consensus.png'
+        make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, init_telcompplot_fn, init_telcompcons_fn, mtp_params)
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
     #
     if True:
         sys.stdout.write('plotting initial clusters...')
@@ -906,17 +918,20 @@ def main(raw_args=None):
         clustdat_to_plot[2][0].append(0)
         clustdat_to_plot[3].append(0)
         current_i += 1
-    redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
-    clust_khd = []
-    for i in range(len(redrawn_tvrs)):
-        clust_khd.append([redrawn_tvrs[i], len(tvrs_to_plot[i]), 0, 'FWD', tvr_labels_to_plot[i], MAX_QUAL_SCORE, None])
-    custom_plot_params = {'xlim':[0,FINAL_PLOTTING_XMAX],
-                          'xstep':FINAL_PLOTTING_XTICK,
-                          'custom_title':'',
-                          'number_label_rows':False,
-                          'font.size':16,
-                          'font.weight':'bold'}
-    plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
+    if len(tvrs_to_plot):
+        redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
+        clust_khd = []
+        for i in range(len(redrawn_tvrs)):
+            clust_khd.append([redrawn_tvrs[i], len(tvrs_to_plot[i]), 0, 'FWD', tvr_labels_to_plot[i], MAX_QUAL_SCORE, None])
+        custom_plot_params = {'xlim':[0,FINAL_PLOTTING_XMAX],
+                              'xstep':FINAL_PLOTTING_XTICK,
+                              'custom_title':'',
+                              'number_label_rows':False,
+                              'font.size':16,
+                              'font.weight':'bold'}
+        plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
+    else:
+        print('no alleles to plot.')
 
 
 if __name__ == '__main__':

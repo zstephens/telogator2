@@ -394,7 +394,11 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
     ref_2_x['unanchore']  = xtck[0]
     #
     if len(tel_len_dict):
-        readcount_denom = max([len(tel_len_dict[k]) for k in tel_len_dict.keys() if k != 'unanchored'])
+        tel_readcounts = [len(tel_len_dict[k]) for k in tel_len_dict.keys() if k != 'unanchored']
+        if len(tel_readcounts):
+            readcount_denom = max(tel_readcounts)
+        else:
+            readcount_denom = 1
     else:
         readcount_denom = 1
     width_max = 0.9
