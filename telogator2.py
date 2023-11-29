@@ -564,7 +564,7 @@ def main(raw_args=None):
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     print(f' - {len(clusters_with_tvrs)} clusters with tvrs (does not yet include blanks)')
-    print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not termintating in tel)')
+    print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not ending in tel)')
     #
     # [3] SUBTEL CLUSTERING
     #
@@ -928,7 +928,7 @@ def main(raw_args=None):
                               'custom_title':'',
                               'number_label_rows':False,
                               'font.size':16,
-                              'font.weight':'bold'}
+                              'font.weight':'normal'}
         plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
     else:
         print('no alleles to plot.')

@@ -1,11 +1,11 @@
 # Telogator2
-A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads. Telogator2 was designed to work with long reads that are capable of representing telomere regions without high sequencing error rates, and has been tested primarily on PacBio HiFi reads.
+A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads. Telogator2 was designed to work with long reads that are capable of representing telomere regions without high sequencing error rates, and has been tested primarily on PacBio HiFi reads and ONT reads basecalled with Dorado.
 
 If this software has been useful for your work, please cite us at:
 
 (Publication currently in submission)
 
-Alternately, see our paper for the previous version of Telogator:
+In the mean time, see our paper for the previous version of Telogator:
 
 Stephens, Zachary, et al. "Telogator: a method for reporting chromosome-specific telomere lengths from long reads." *Bioinformatics* 38.7 (2022): 1788-1793. https://doi.org/10.1093/bioinformatics/btac005
 
@@ -23,48 +23,31 @@ conda activate telogator2
 ```
 
 
-## (1) extract reads with telomere repeats:
+## Running Telogator2:
 
-
-```bash
-python3 get_reads_with_kmer_hits.py -i input.fq.gz -o telomere-reads.fa.gz
-```
-
-With default parameters this script extracts reads that contain at least 5 TTAGGTTAGG (or CCTAACCTAA) repeats. `-i` accepts .fa / .fa.gz / .fq / .fq.gz / .bam. Multiple input files can be provided. `-o` can be .fa / .fa.gz / .fq / .fq.gz.
-
-
-## (2) align read subset to telogator reference:
-
-We recommend using the [winnowmap](https://github.com/marbl/Winnowmap) aligner for best results. An example for HiFi reads:
+Telogator2 can be run in single command:
 
 ```bash
-winnowmap -ax map-pb -Y -W resources/t2t-telogator-ref-k15.txt -o aln-unsort.sam resources/t2t-telogator-ref.fa telomere-reads.fa.gz
-samtools sort -o aln.bam aln-unsort.sam
-samtools index aln.bam
+python telogator2.py -i input.fq \ 
+                     -o results/ \ 
+                     --muscle /path/to/muscle \ 
+                     --minimap2 /path/to/minimap2
 ```
 
-Though you could also use pbmm2, minimap2, or another aligner of your choice.
+`-i` accepts .fa / .fa.gz / .fq / .fq.gz / .bam. Multiple input files can be provided.
 
+Telogator2 requires that muscle v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory.
 
-## (3) run telogator2:
-
-```bash
-python3 telogator2.py -i aln.bam -o telogator_out/
-```
-
-The `-p` input option specifies the number of processes to use (default: 4).
-
-Telogator2 requires that the muscle multiple sequence aligner v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm
-
-The path to the muscle executable is specified via the `-m` input option. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory.
+Additionally, Telogator2 requires a path to a long read sequence aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
 
 
 ## Test data
 
-To quickly test the functionality of Telogator2, we provided a subset of hg002 telomere reads in test_data/
+Telomere reads for HG002 can be found in the `test_data/` directory.
 
-```bash
-python3 telogator2.py -i test_data/hg002_chr1q.p -o telogator_out/
+```
+HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
+ONT reads  (~25x): hg002-telreads_ont.fa.gz
 ```
 
 
@@ -72,28 +55,21 @@ python3 telogator2.py -i test_data/hg002_chr1q.p -o telogator_out/
 
 The primary output files are:
 
-* `tlens_by_chr.tsv` chromosome-specific telomere lengths
 * `tlens_by_allele.tsv` allele-specific telomere lengths
-* `tvr_clustering/tvr-consensus-*` plots of consensus sequence for each allele at each anchor position
-* `tvr_clustering/tvr-reads-*` pileup of supporting reads at each anchor position
+* `all_final_alleles.png` plots of all alleles (TVR + telomere regions)
+* `violin_atl.png` violin plot of ATLs at each chromosome arm
 
 The main results are in `tlens_by_allele.tsv`, which has the following columns:
 
 * `chr` anchor chromosome arm
 * `position` anchor coordinate
-* `allele_num` an ID number used for keeping track of alleles internally
-* `allele_id` ID number for this specific TVR. Multimapped alleles will have the same value
-* `TL_max` allele-specific telomere length
-* `read_TLs` TL of each supporting read in the cluster
+* `ref_samp` the specific T2T reference contig to which the subtelomere was aligned
+* `allele_id` ID number for this specific allele
+* `TL_p75` ATL (reports 75th percentile by default)
+* `read_TLs` ATL of each supporting read in the cluster
 * `read_lengths` length of each read in the cluster
 * `read_mapq` mapping quality of each read in the cluster
 * `tvr_len` length of the cluster's TVR region
 * `tvr_consensus` consensus TVR region sequence
 * `supporting_reads` readnames of each read in the cluster
-* `original_chr` chromosome arm that reads were originally mapped to prior to being grouped together (only applicable to clusters with 'blank' TVR regions)
 
-
-
-## Temporary files
-
-During TVR clustering, intermediary files are produced in the `tvr_clustering/temp/` directory which may be useful for debugging purposes. E.g. if reads at a particular chromosome arm are not being clustered together in the expected manner, consider investigating the `dendrogram-*` files to see if the default value for cutting clusters should be adjusted. This parameter can be adjusted via the `-att` input option.
