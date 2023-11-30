@@ -34,11 +34,9 @@ python telogator2.py -i input.fq \
                      --minimap2 /path/to/minimap2
 ```
 
-`-i` accepts .fa / .fa.gz / .fq / .fq.gz / .bam. Multiple input files can be provided.
+`-i` accepts fa / fa.gz / fq / fq.gz / bam. Multiple arguments can be provided (e.g. `-i reads1.fa reads2.fa`).
 
-Telogator2 requires that muscle v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory.
-
-Additionally, Telogator2 requires a path to a long read sequence aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
+Telogator2 requires that muscle v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory. Additionally, Telogator2 requires a path to an aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
 
 
 ## Test data

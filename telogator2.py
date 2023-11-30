@@ -47,14 +47,18 @@ def main(raw_args=None):
     parser.add_argument('-s', type=int, required=False, metavar='1000',         default=1000,   help="Minimum subtelomere anchor size")
     parser.add_argument('-c', type=int, required=False, metavar='5',            default=5,      help="Minimum hits to canonical kmer")
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
-    parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for computing chr TL: mean / median p75 / max")
+    parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for computing chr TL: mean / median / p75 / max")
     parser.add_argument('-d', type=int, required=False, metavar='nreads',       default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.180', default=0.180, help="Treecut value: initial TVR clustering")
-    parser.add_argument('-tp', type=float, required=False, metavar='0.120', default=0.120, help="Treecut value: merging TVRs with similar prefixes")
-    parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="Treecut value: cluster refinement [TVR]")
-    parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="Treecut value: cluster refinement [SUBTEL]")
+    parser.add_argument('-ti', type=float, required=False, metavar='0.180', default=0.180, help="[Treecut value]: initial TVR clustering")
+    parser.add_argument('-tp', type=float, required=False, metavar='0.120', default=0.120, help="[Treecut value]: merging TVRs with similar prefixes")
+    parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [TVR]")
+    parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [SUBTEL]")
+    #
+    parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[all_final_alleles.png] X axis max")
+    parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
+    parser.add_argument('-afa-a', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] Min ATL to include allele")
     #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
@@ -66,14 +70,10 @@ def main(raw_args=None):
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
     parser.add_argument('--fast-filt',      required=False, action='store_true', default=False, help="Remove interstitial telomere reads earlier")
     #
-    parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[all_final_alleles.png] X axis max")
-    parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
-    parser.add_argument('-afa-a', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] Min ATL to include allele")
-    #
-    parser.add_argument('--muscle',    type=str, required=False, metavar='muscle',    default='', help="/path/to/muscle")
-    parser.add_argument('--minimap2',  type=str, required=False, metavar='minimap2',  default='', help="/path/to/minimap2")
-    parser.add_argument('--winnowmap', type=str, required=False, metavar='winnowmap', default='', help="/path/to/winnowmap")
-    parser.add_argument('--pbmm2',     type=str, required=False, metavar='pbmm2',     default='', help="/path/to/pbmm2")
+    parser.add_argument('--muscle',    type=str, required=False, metavar='exe', default='', help="/path/to/muscle")
+    parser.add_argument('--minimap2',  type=str, required=False, metavar='exe', default='', help="/path/to/minimap2")
+    parser.add_argument('--winnowmap', type=str, required=False, metavar='exe', default='', help="/path/to/winnowmap")
+    parser.add_argument('--pbmm2',     type=str, required=False, metavar='exe', default='', help="/path/to/pbmm2")
     #
     args = parser.parse_args()
     #
