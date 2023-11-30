@@ -435,7 +435,7 @@ def main(raw_args=None):
         tt = time.perf_counter()
         init_telcompplot_fn = OUT_CDIR_INIT + 'results/' + 'all_reads.png'
         init_telcompcons_fn = OUT_CDIR_INIT + 'results/' + 'all_consensus.png'
-        make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, init_telcompplot_fn, init_telcompcons_fn, mtp_params)
+        make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, init_telcompplot_fn, init_telcompcons_fn, mtp_params, dpi=100)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
     #

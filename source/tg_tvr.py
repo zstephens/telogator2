@@ -1007,7 +1007,7 @@ def cluster_consensus_tvrs(sequences,
 #
 #
 #
-def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params):
+def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params, dpi=None):
     #
     [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DO_NOT_OVERWRITE] = mtp_params
     #
@@ -1046,6 +1046,8 @@ def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn,
     # TVR plotting (clustered reads + consensus for each allele)
     #
     custom_plot_params = {'xlim':[-1000,15000]}
+    if dpi is not None:
+        custom_plot_params['dpi'] = dpi
     if telcompplot_fn is not None:
         if DO_NOT_OVERWRITE is False or exists_and_is_nonzero(telcompplot_fn) is False:
             plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
