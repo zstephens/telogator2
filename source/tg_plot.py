@@ -190,7 +190,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
     # plotting
     #
     vert_fig_size = max(3, total_rows_to_plot * 0.35)
-    vert_fig_size = min(vert_fig_size, MAX_PLOT_SIZE / stock_params['dpi'])
+    vert_fig_size = min(vert_fig_size, (MAX_PLOT_SIZE / stock_params['dpi']) / 2)
     ####print('[debug:], requesting vert_fig_size:', vert_fig_size, 'with dpi:', stock_params['dpi'])
     #
     if which_tel == 'p':
