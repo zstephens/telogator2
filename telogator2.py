@@ -48,7 +48,7 @@ def main(raw_args=None):
     parser.add_argument('-c', type=int, required=False, metavar='5',            default=5,      help="Minimum hits to canonical kmer")
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
     parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for computing chr TL: mean / median / p75 / max")
-    parser.add_argument('-d', type=int, required=False, metavar='nreads',       default=-1,     help="Downsample to this many telomere reads")
+    parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
     parser.add_argument('-ti', type=float, required=False, metavar='0.180', default=0.180, help="[Treecut value]: initial TVR clustering")
