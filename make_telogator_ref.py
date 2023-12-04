@@ -63,7 +63,7 @@ sorted_chr  = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', '
 ####             'chrX':'chrX',
 ####             'chrY_PATERNAL':'chrY'}
 
-remap_rev = {remap_chr[k]:k for k in remap_chr.keys()}
+####remap_rev = {remap_chr[k]:k for k in remap_chr.keys()}
 
 TEL_WINDOW_SIZE   = 100
 P_VS_Q_AMP_THRESH = 0.500
@@ -159,6 +159,8 @@ def main(raw_args=None):
                     if cum_score[max_i] >= MIN_TEL_SCORE:
                         my_tel_len = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
                         tl_vals = [0, my_tel_len]
+                if my_tel_len is None:  # if we got this far then I guess the contig had no tel repeats
+                    my_tel_len = 0
                 pq_tlens.append((pq, my_tel_len))
                 #
                 density_data = [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power, len(subtel_seq), TEL_WINDOW_SIZE]
@@ -171,6 +173,7 @@ def main(raw_args=None):
                     out_sequences.append((f'{SAMP_NAME}{chr_name}p', 'N'*pqt[1] + p_arm[pqt[1]:]))
                     tel_sequences.append((f'{SAMP_NAME}tel-{chr_name}p', p_arm[:pqt[1]]))
                 elif pqt[0] == 'q':
+                    print(' --', SAMP_NAME, chr_name, len(q_arm), pqt)
                     out_sequences.append((f'{SAMP_NAME}{chr_name}q', q_arm[:len(q_arm)-pqt[1]] + 'N'*pqt[1]))
                     tel_sequences.append((f'{SAMP_NAME}tel-{chr_name}q', q_arm[len(q_arm)-pqt[1]:]))
     tel_sequences.append(('tel_TAACCC', 'TAACCC'*10000))
