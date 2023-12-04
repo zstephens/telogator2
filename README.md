@@ -5,9 +5,9 @@ If this software has been useful for your work, please cite us at:
 
 (Publication currently in submission)
 
-In the mean time, see our paper for the previous version of Telogator:
+In the mean time, see our preprint:
 
-Stephens, Zachary, et al. "Telogator: a method for reporting chromosome-specific telomere lengths from long reads." *Bioinformatics* 38.7 (2022): 1788-1793. https://doi.org/10.1093/bioinformatics/btac005
+https://www.researchsquare.com/article/rs-3673861/v1
 
 
 ## Dependencies:
@@ -71,3 +71,15 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 * `tvr_consensus` consensus TVR region sequence
 * `supporting_reads` readnames of each read in the cluster
 
+
+
+## Telogator reference
+
+The reference sequence used for telomere anchoring currently contains the subtelomeres (first/last 500kb) of contigs from the following T2T assemblies:
+
+* `T2T-chm13` - https://github.com/marbl/CHM13
+* `T2T-yao` - https://ngdc.cncb.ac.cn/bioproject/browse/PRJCA017932
+* `T2T-cn1` - https://github.com/T2T-CN1/CN1
+* `T2T-hg002` - https://github.com/marbl/hg002
+
+More will be added as they become available.

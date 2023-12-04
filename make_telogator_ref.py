@@ -13,6 +13,58 @@ TEL_SEARCH  = 50000
 READ_TYPE   = 'hifi'
 sorted_chr  = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY']
 
+####remap_chr = {'chr10_MATERNAL':'chr10',
+####             'chr11_MATERNAL':'chr11',
+####             'chr12_MATERNAL':'chr12',
+####             'chr13_MATERNAL':'chr13',
+####             'chr14_MATERNAL':'chr14',
+####             'chr15_MATERNAL':'chr15',
+####             'chr16_MATERNAL':'chr16',
+####             'chr17_MATERNAL':'chr17',
+####             'chr18_MATERNAL':'chr18',
+####             'chr19_MATERNAL':'chr19',
+####             'chr1_MATERNAL':'chr1',
+####             'chr20_MATERNAL':'chr20',
+####             'chr21_MATERNAL':'chr21',
+####             'chr22_MATERNAL':'chr22',
+####             'chr2_MATERNAL':'chr2',
+####             'chr3_MATERNAL':'chr3',
+####             'chr4_MATERNAL':'chr4',
+####             'chr5_MATERNAL':'chr5',
+####             'chr6_MATERNAL':'chr6',
+####             'chr7_MATERNAL':'chr7',
+####             'chr8_MATERNAL':'chr8',
+####             'chr9_MATERNAL':'chr9',
+####             'chrX_MATERNAL':'chrX',
+####             'chrY':'chrY'}
+
+####remap_chr = {'chr10_PATERNAL':'chr10',
+####             'chr11_PATERNAL':'chr11',
+####             'chr12_PATERNAL':'chr12',
+####             'chr13_PATERNAL':'chr13',
+####             'chr14_PATERNAL':'chr14',
+####             'chr15_PATERNAL':'chr15',
+####             'chr16_PATERNAL':'chr16',
+####             'chr17_PATERNAL':'chr17',
+####             'chr18_PATERNAL':'chr18',
+####             'chr19_PATERNAL':'chr19',
+####             'chr1_PATERNAL':'chr1',
+####             'chr20_PATERNAL':'chr20',
+####             'chr21_PATERNAL':'chr21',
+####             'chr22_PATERNAL':'chr22',
+####             'chr2_PATERNAL':'chr2',
+####             'chr3_PATERNAL':'chr3',
+####             'chr4_PATERNAL':'chr4',
+####             'chr5_PATERNAL':'chr5',
+####             'chr6_PATERNAL':'chr6',
+####             'chr7_PATERNAL':'chr7',
+####             'chr8_PATERNAL':'chr8',
+####             'chr9_PATERNAL':'chr9',
+####             'chrX':'chrX',
+####             'chrY_PATERNAL':'chrY'}
+
+remap_rev = {remap_chr[k]:k for k in remap_chr.keys()}
+
 TEL_WINDOW_SIZE   = 100
 P_VS_Q_AMP_THRESH = 0.500
 MIN_TEL_SCORE     = 100
