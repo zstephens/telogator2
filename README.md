@@ -36,7 +36,7 @@ python telogator2.py -i input.fq \
 
 `-i` accepts fa / fa.gz / fq / fq.gz / bam. Multiple arguments can be provided (e.g. `-i reads1.fa reads2.fa`).
 
-Telogator2 requires that muscle v3.8 is installed in order to produce consensus TVR sequences: https://drive5.com/muscle/downloads_v3.htm. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory. Additionally, Telogator2 requires a path to an aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
+Telogator2 requires that [muscle v3.8](https://drive5.com/muscle/downloads_v3.htm) is installed in order to produce consensus TVR sequences. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory. Additionally, Telogator2 requires a path to an aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
 
 
 ## Test data
@@ -75,7 +75,7 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 
 ## Telogator reference
 
-The reference sequence used for telomere anchoring currently contains the subtelomeres (first/last 500kb) of contigs from the following T2T assemblies:
+The reference sequence used for telomere anchoring currently contains the first and last 500kb of sequences from the following T2T assemblies:
 
 * `T2T-chm13` - https://github.com/marbl/CHM13
 * `T2T-yao` - https://ngdc.cncb.ac.cn/bioproject/browse/PRJCA017932
