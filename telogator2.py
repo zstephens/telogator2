@@ -60,11 +60,16 @@ def main(raw_args=None):
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
     parser.add_argument('-afa-a', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] Min ATL to include allele")
     #
+    parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[violin_atl.png] Y axis max")
+    parser.add_argument('-va-t', type=int, required=False, metavar='5000',  default=5000,  help="[violin_atl.png] Y axis tick steps")
+    parser.add_argument('-va-p', type=int, required=False, metavar='2',     default=2,     help="[violin_atl.png] ploidy. i.e. number of alleles per arm")
+    #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
     parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
+    parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip cluster refinement step that uses subtels")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
@@ -97,6 +102,10 @@ def main(raw_args=None):
     TREECUT_REFINE_SUBTEL = args.ts
     TREECUT_REFINE_TVR    = args.tt
     #
+    VIOLIN_YMAX   = args.va_y
+    VIOLIN_TICK   = args.va_t
+    VIOLIN_PLOIDY = args.va_p
+    #
     FINAL_PLOTTING_XMAX  = args.afa_x
     FINAL_PLOTTING_XTICK = args.afa_t
     MIN_ATL_FOR_FINAL_PLOTTING = args.afa_a
@@ -112,6 +121,7 @@ def main(raw_args=None):
     #
     DONT_OVERWRITE_PLOTS = args.debug_noplot     # (True = don't replot figures if they already exist)
     ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npy matrices, always recompute)
+    NO_SUBTEL_REALIGN    = args.debug_realign
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
     PLOT_ALL_INITIAL     = args.plot_all_reads
@@ -710,55 +720,58 @@ def main(raw_args=None):
         #
         # subtel alignment
         #
-        sys.stdout.write('aligning subtels to reference...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        cmd = ''
         aln_log = ALIGNED_SUBTELS + '.log'
         aln_sam = ALIGNED_SUBTELS + '.sam'
         aln_bam = ALIGNED_SUBTELS + '.bam'
-        #
-        if WHICH_ALIGNER == 'minimap2':
-            aln_params = ''
-            if READ_TYPE == 'ont':
-                aln_params = '-ax map-ont -Y'
-            elif READ_TYPE == 'hifi':
-                aln_params = '-ax map-hifi -Y'
-            cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
-        #
-        elif WHICH_ALIGNER == 'winnowmap':
-            aln_params = ''
-            if READ_TYPE == 'ont':
-                aln_params = '-ax map-ont -Y'
-            elif READ_TYPE == 'hifi':
-                aln_params = '-ax map-pb -Y'
-            cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
-        #
-        elif WHICH_ALIGNER == 'pbmm2':
-            cmd = ALIGNER_EXE + ' align ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
-        if len(cmd):
-            with open(aln_log, 'w') as f:
-                try:
-                    subprocess.check_output(cmd.split(' '), stderr=f, text=True)
-                except subprocess.CalledProcessError as exc:
-                    print('Error: alignment command returned an error:', exc.returncode)
-                    print(exc.output)
-                    exit(1)
-        if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
-            print()
-            print('Error: subtel alignment failed. Check the log:')
-            print(f'{aln_log}')
-            exit(1)
-        #
-        if WHICH_ALIGNER != 'pbmm2':
-            pysam.sort("-o", aln_bam, aln_sam)
-            pysam.index(aln_bam)
-            rm(aln_sam)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
-        if exists_and_is_nonzero(aln_bam) is False:
-            print('Error: failed to create subtel bam')
-            exit(1)
+        if exists_and_is_nonzero(aln_bam) and NO_SUBTEL_REALIGN:
+            pass
+        else:
+            sys.stdout.write('aligning subtels to reference...')
+            sys.stdout.flush()
+            tt = time.perf_counter()
+            cmd = ''
+            #
+            if WHICH_ALIGNER == 'minimap2':
+                aln_params = ''
+                if READ_TYPE == 'ont':
+                    aln_params = '-ax map-ont -Y'
+                elif READ_TYPE == 'hifi':
+                    aln_params = '-ax map-hifi -Y'
+                cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+            #
+            elif WHICH_ALIGNER == 'winnowmap':
+                aln_params = ''
+                if READ_TYPE == 'ont':
+                    aln_params = '-ax map-ont -Y'
+                elif READ_TYPE == 'hifi':
+                    aln_params = '-ax map-pb -Y'
+                cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+            #
+            elif WHICH_ALIGNER == 'pbmm2':
+                cmd = ALIGNER_EXE + ' align ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
+            if len(cmd):
+                with open(aln_log, 'w') as f:
+                    try:
+                        subprocess.check_output(cmd.split(' '), stderr=f, text=True)
+                    except subprocess.CalledProcessError as exc:
+                        print('Error: alignment command returned an error:', exc.returncode)
+                        print(exc.output)
+                        exit(1)
+            if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
+                print()
+                print('Error: subtel alignment failed. Check the log:')
+                print(f'{aln_log}')
+                exit(1)
+            #
+            if WHICH_ALIGNER != 'pbmm2':
+                pysam.sort("-o", aln_bam, aln_sam)
+                pysam.index(aln_bam)
+                rm(aln_sam)
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.flush()
+            if exists_and_is_nonzero(aln_bam) is False:
+                print('Error: failed to create subtel bam')
+                exit(1)
 
         #
         # get anchors from subtel alignment
@@ -874,22 +887,24 @@ def main(raw_args=None):
             f.write('\t'.join(n) + '\n')
 
     #
-    # violin plots
+    # violin plot
     #
     if SKIP_ANCHORING is False:
-        atl_by_arm = {}
+        atl_by_arm = [{} for n in range(max(1,VIOLIN_PLOIDY))]
         for atd in ALLELE_TEL_DAT:
             my_chr = atd[0].split(',')[0]
+            my_tvr_len = int(atd[8])
             if my_chr in [fake_chr, blank_chr]:
                 my_chr = 'unanchored'
-            if my_chr not in atl_by_arm:
-                atl_by_arm[my_chr] = []
-            atl_by_arm[my_chr].extend([int(n) for n in atd[5].split(',')])
+            for i in range(len(atl_by_arm)):
+                if my_chr not in atl_by_arm[i]:
+                    atl_by_arm[i][my_chr] = [my_tvr_len + int(n) for n in atd[5].split(',')]
+                    break
         vparams = {'norm_by_readcount':True,
-                   'include_unanchored':True,
-                   'p_ymax':20000,
-                   'q_ymax':20000,
-                   'y_step':5000,
+                   'include_unanchored':False,
+                   'p_ymax':VIOLIN_YMAX,
+                   'q_ymax':VIOLIN_YMAX,
+                   'y_step':VIOLIN_TICK,
                    'y_label':'<-- q      ATL      p -->'}
         tel_len_violin_plot(atl_by_arm, VIOLIN_ATL, custom_plot_params=vparams)
 

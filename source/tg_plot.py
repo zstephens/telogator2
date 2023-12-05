@@ -352,7 +352,7 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
 #
 #
 #
-def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict={}, custom_plot_params={}):
+def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth_dict={}, custom_plot_params={}):
     #
     # plotting constants
     #
@@ -374,7 +374,16 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
     for k in custom_plot_params.keys():
         plot_params[k] = custom_plot_params[k]
     #
-    xlab = ['-'] + [str(n) for n in range(1,22+1)] + ['X', 'Y']
+    alleles_per_arm = len(tel_len_dict_list)
+    spacer_between_alleles = 2
+    #
+    xlab_temp = [str(n) for n in range(1,22+1)] + ['X', 'Y']
+    xlab = ['-']
+    for n in xlab_temp:
+        xlab.append(n)
+        if alleles_per_arm > 1:
+            for i in range(1,alleles_per_arm+spacer_between_alleles):
+                xlab.append('')
     xtck = list(range(1,len(xlab)+1))
     ydel = plot_params['y_step']
     if plot_params['custom_yticks'] is not None:
@@ -393,16 +402,19 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
     #
     ref_2_x = {'chr'+xlab[i]:xtck[i] for i in range(len(xlab))}
     ref_2_x['unanchored'] = xtck[0]
-    ref_2_x['unanchore']  = xtck[0]
+    ref_2_x['unanchore'] = xtck[0]
     #
-    if len(tel_len_dict):
-        tel_readcounts = [len(tel_len_dict[k]) for k in tel_len_dict.keys() if k != 'unanchored']
-        if len(tel_readcounts):
-            readcount_denom = max(tel_readcounts)
+    rcds = []
+    for tldi,tel_len_dict in enumerate(tel_len_dict_list):
+        if len(tel_len_dict):
+            tel_readcounts = [len(tel_len_dict[k]) for k in tel_len_dict.keys() if k != 'unanchored']
+            if len(tel_readcounts):
+                readcount_denom = max(tel_readcounts)
+            else:
+                readcount_denom = 1
         else:
             readcount_denom = 1
-    else:
-        readcount_denom = 1
+        rcds.append(readcount_denom)
     width_max = 0.9
     width_min = 0.1
     width_box = 0.6
@@ -412,29 +424,30 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
     (dat_l_p, dat_l_q) = ([], [])
     (dat_p_p, dat_p_q) = ([], [])
     (dat_w_p, dat_w_q) = ([], [])
-    for k in tel_len_dict.keys():
-        if len(tel_len_dict[k]) == 0 or k in plot_params['skip_plot']:
-            continue
-        if plot_params['norm_by_readcount']:
-            my_width = min([width_max, max([width_min, width_max*(float(len(tel_len_dict[k]))/readcount_denom)])])
-        else:
-            if plot_params['boxplot']:
-                my_width = width_box
+    for tldi,tel_len_dict in enumerate(tel_len_dict_list):
+        for k in tel_len_dict.keys():
+            if len(tel_len_dict[k]) == 0 or k in plot_params['skip_plot']:
+                continue
+            if plot_params['norm_by_readcount']:
+                my_width = min([width_max, max([width_min, width_max*(float(len(tel_len_dict[k]))/rcds[tldi])])])
             else:
-                my_width = width_max
-        if k[-1] == 'p' or k == 'unanchored':
-            dat_p_p.append(ref_2_x[k[:-1]])
-            dat_l_p.append([])
-            dat_w_p.append(my_width)
-        elif k[-1] == 'q':
-            dat_p_q.append(ref_2_x[k[:-1]])
-            dat_l_q.append([])
-            dat_w_q.append(my_width)
-        for n in tel_len_dict[k]:
+                if plot_params['boxplot']:
+                    my_width = width_box
+                else:
+                    my_width = width_max
             if k[-1] == 'p' or k == 'unanchored':
-                dat_l_p[-1].append(n)
+                dat_p_p.append(ref_2_x[k[:-1]] + tldi)
+                dat_l_p.append([])
+                dat_w_p.append(my_width)
             elif k[-1] == 'q':
-                dat_l_q[-1].append(-n)
+                dat_p_q.append(ref_2_x[k[:-1]] + tldi)
+                dat_l_q.append([])
+                dat_w_q.append(my_width)
+            for n in tel_len_dict[k]:
+                if k[-1] == 'p' or k == 'unanchored':
+                    dat_l_p[-1].append(n)
+                elif k[-1] == 'q':
+                    dat_l_q[-1].append(-n)
     #
     # violin plot
     #
@@ -463,16 +476,22 @@ def tel_len_violin_plot(tel_len_dict, out_fn, plot_means=True, ground_truth_dict
             continue
         mpl.plot([xval - 0.35, xval + 0.35], [yval, yval], '-k', linewidth=3, alpha=1.0)
     #
-    mpl.plot([0,len(xlab)+1], [0,0], '-k', linewidth=3)
+    xt_packed = [(xtck[i]+0.5*(alleles_per_arm-1), xlab[i]) for i in range(len(xtck)) if len(xlab[i])]
+    num_blank = len([n for n in xlab if len(n) == 0])
+    if alleles_per_arm > 1:
+        num_blank -= spacer_between_alleles  # don't need right-padding for chrY because it's the last
+    xtck = [n[0] for n in xt_packed]
+    xlab = [n[1] for n in xt_packed]
+    mpl.plot([0,len(xlab)+num_blank+1], [0,0], '-k', linewidth=3)
     if 'chrYp' in plot_params['skip_plot'] and 'chrYq' in plot_params['skip_plot']:
         xtck = xtck[:-1]
         xlab = xlab[:-1]
     if plot_params['include_unanchored']:
         mpl.xticks(xtck, xlab, rotation=plot_params['xlabel_rot'], fontweight='bold')
-        mpl.xlim([0,len(xlab)+1])
+        mpl.xlim([0,len(xlab)+num_blank+1])
     else:
         mpl.xticks(xtck[1:], xlab[1:], rotation=plot_params['xlabel_rot'], fontweight='bold')
-        mpl.xlim([1,len(xlab)+1])
+        mpl.xlim([1,len(xlab)+num_blank+1])
     mpl.yticks(ytck, ylab)
     mpl.ylim([-q_ymax, p_ymax])
     mpl.ylabel(plot_params['y_label'], fontweight='bold')
