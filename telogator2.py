@@ -900,7 +900,7 @@ def main(raw_args=None):
                 if my_chr not in atl_by_arm[i]:
                     atl_by_arm[i][my_chr] = [my_tvr_len + int(n) for n in atd[5].split(',')]
                     break
-        vparams = {'norm_by_readcount':True,
+        vparams = {'norm_by_readcount':False,
                    'include_unanchored':False,
                    'p_ymax':VIOLIN_YMAX,
                    'q_ymax':VIOLIN_YMAX,
