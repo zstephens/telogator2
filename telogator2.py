@@ -815,7 +815,7 @@ def main(raw_args=None):
             top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
         #
         for clustnum in sorted(top_alns_by_cluster.keys()):
-            #print(clustnum)
+            ####print(clustnum)
             chr_arm_scores = {}
             anchors_by_ref = {}
             for n in top_alns_by_cluster[clustnum]:
@@ -824,7 +824,7 @@ def main(raw_args=None):
                 my_anchor = n[1][4] # second refpos is always anchor coord?
                 my_orr = n[1][5]
                 my_mapq = n[1][6]
-                #print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
+                ####print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
                 if my_ref != '*':
                     if my_ref not in chr_arm_scores:
                         chr_arm_scores[my_ref] = 0.
@@ -835,7 +835,7 @@ def main(raw_args=None):
             my_anchors = []
             if total_score > 0:
                 sorted_chr_scores = sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)
-                #print(sorted_chr_scores)
+                ####print(sorted_chr_scores)
                 my_anchors = [n[1] for n in sorted_chr_scores if n[0] >= ANCHORING_ASSIGNMENT_FRAC]
             else:
                 pass # all unmapped
