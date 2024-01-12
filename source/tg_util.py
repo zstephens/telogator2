@@ -48,6 +48,7 @@ FILE_SUFFIX = {'.fa':       'fasta',
                '.fq.gz':    'fastq',
                '.fastq.gz': 'fastq',
                '.bam':      'bam',
+               '.cram':     'cram',
                '.p':        'pickle'}
 
 REF_CHAR  = 'MX=D'

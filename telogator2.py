@@ -139,8 +139,8 @@ def main(raw_args=None):
             print(ifn)
             exit(1)
         input_type = get_file_type(ifn)[0]
-        if input_type not in ['fasta', 'fastq', 'bam', 'pickle']:
-            print('Error: input must be fasta, fastq, bam, or pickle')
+        if input_type not in ['fasta', 'fastq', 'bam', 'cram', 'pickle']:
+            print('Error: input must be fasta, fastq, bam, cram, or pickle')
             exit(1)
         if input_type == 'pickle':
             any_pickle = True
