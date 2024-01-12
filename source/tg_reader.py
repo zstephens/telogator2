@@ -3,7 +3,7 @@ import gzip
 import sys
 
 #
-# accepts fq / fq.gz / fa / fa.gz / bam
+# accepts fq / fq.gz / fa / fa.gz / bam / cram
 #
 # handles fa files with newlines in read sequence
 #
@@ -21,15 +21,20 @@ class TG_Reader:
             self.filetype = 'FASTA'
         elif fnl[-3:] == 'bam':
             self.filetype = 'BAM'
+        elif fnl[-4:] == 'cram':
+            self.filetype = 'CRAM'
         else:
             print('Error: unknown file type given to TG_Reader():')
-            print(' - acceptable input types: fq / fq.gz / fa / fa.gz / bam')
+            print(' - acceptable input types: fq / fq.gz / fa / fa.gz / bam / cram')
             exit(1)
         #
-        if self.filetype == 'BAM':
+        if self.filetype in ['BAM', 'CRAM']:
             if self.verbose:
                 print('getting reads from ' + self.filetype + '...')
-            self.f = pysam.AlignmentFile(input_filename, "rb", ignore_truncation=True, check_sq=False)
+            if self.filetype == 'BAM':
+                self.f = pysam.AlignmentFile(input_filename, "rb", ignore_truncation=True, check_sq=False)
+            else:
+                self.f = pysam.AlignmentFile(input_filename, "rc", ignore_truncation=True, check_sq=False)
             self.alns = self.f.fetch(until_eof=True)
         else:
             if fnl[-3:] == '.gz':
@@ -85,7 +90,7 @@ class TG_Reader:
                 self.buffer = []
             return out_dat
         #
-        elif self.filetype == 'BAM':
+        elif self.filetype in ['BAM', 'CRAM']:
             try:
                 aln = next(self.alns)
                 my_name = aln.qname
