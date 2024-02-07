@@ -559,7 +559,7 @@ def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD, skip_negative_va
 #
 #
 #
-def get_terminating_tl(rdat, pq, gtt_params):
+def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
     [SIGNAL_KMERS, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH] = gtt_params
     #
     (td_p_e0, td_p_e1) = get_telomere_kmer_density(rdat, SIGNAL_KMERS,     TEL_WINDOW_SIZE)
@@ -599,6 +599,14 @@ def get_terminating_tl(rdat, pq, gtt_params):
         max_i     = posmax(cum_score)
         if cum_score[max_i] >= MIN_TEL_SCORE:
             my_tel_len = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
+    #
+    if telplot_dat is not None:
+        (telplot_title, telplot_fn) = telplot_dat
+        density_data = [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power, len(rdat), TEL_WINDOW_SIZE]
+        tl_vals_to_plot = None
+        if my_tel_len is not None and my_tel_len > 0:
+            tl_vals_to_plot = [0, my_tel_len]
+        plot_tel_signal(density_data, telplot_title, telplot_fn, tl_vals=tl_vals_to_plot)
     #
     if my_tel_len is None or my_tel_len <= 0:
         return (0, 0)

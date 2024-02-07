@@ -31,6 +31,8 @@ CCCTCGCCCTAA	tan	G	tvr,hor
 CCCTAACCCTCG	tan	G	tvr,hor
 CCCTCG	tan	G	tvr,nofilt
 
+CCCTGACCCTAACCCCTAA	red	D	tvr,hor
+CCCTAACCCCTAACCCTGA	red	D	tvr,hor
 CCCTGA	red	D	tvr
 
 CCCGGA	pink	L	tvr

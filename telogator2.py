@@ -66,6 +66,7 @@ def main(raw_args=None):
     #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
+    parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="Plot tel signals for all reads")
     parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
@@ -126,6 +127,7 @@ def main(raw_args=None):
     SKIP_ANCHORING       = args.debug_noanchor
     PLOT_ALL_INITIAL     = args.plot_all_reads
     PLOT_FILT_CVECS      = args.plot_filt_tvr
+    PLOT_TEL_SIGNALS     = args.plot_signals
     PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
     FAST_FILTERING       = args.fast_filt
@@ -165,6 +167,9 @@ def main(raw_args=None):
         makedir(d + 'fa/')
         makedir(d + 'npy/')
         makedir(d + 'results/')
+    TEL_SIGNAL_DIR = OUT_DIR + 'tel_signal/'
+    if PLOT_TEL_SIGNALS:
+        makedir(TEL_SIGNAL_DIR)
 
     TELOMERE_READS = OUT_DIR + 'tel_reads.fa.gz'
     OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
@@ -322,6 +327,7 @@ def main(raw_args=None):
         all_nontel_end = []
         gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
         num_starting_reads = len(all_read_dat)
+        tel_signal_plot_num = 0
         for (my_rnm, my_rdat, my_qdat) in all_read_dat:
             tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
             tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
@@ -332,7 +338,12 @@ def main(raw_args=None):
                     my_qdat = my_qdat[::-1]
             # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
             # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
-            (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params)
+            if PLOT_TEL_SIGNALS:
+                tel_signal_plot_dat = (my_rnm, TEL_SIGNAL_DIR + 'signal_' + str(tel_signal_plot_num).zfill(5) + '.png')
+                tel_signal_plot_num += 1
+            else:
+                tel_signal_plot_dat = None
+            (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
             # some paranoid bounds checking
             my_terminating_tel = min(my_terminating_tel, len(my_rdat))
             my_nontel_end = min(my_nontel_end, len(my_rdat))
