@@ -16,7 +16,7 @@ from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
-from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, parse_read, RC, rm, strip_paths_from_string
+from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -282,7 +282,7 @@ def main(raw_args=None):
         tt = time.perf_counter()
         total_bp_all = 0
         total_bp_tel = 0
-        with gzip.open(TELOMERE_READS, 'wt') as f:
+        with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
             for ifn in INPUT_ALN:
                 my_reader = TG_Reader(ifn, verbose=False)
                 while True:
@@ -298,6 +298,7 @@ def main(raw_args=None):
                         tel_readcount += 1
                         total_bp_tel += len(my_rdat)
                 my_reader.close()
+        mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {all_readcount} --> {tel_readcount} reads')

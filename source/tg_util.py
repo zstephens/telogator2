@@ -75,6 +75,10 @@ def rm(fn):
         os.remove(fn)
 
 
+def mv(source, dest):
+    os.rename(source, dest)
+
+
 def strip_paths_from_string(s):
     if os.path.sep in s:
         s_out = s.split(os.path.sep)[-1]
