@@ -168,6 +168,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
                     'fig_width':15,
                     'font.size':12,
                     'font.weight':'normal',
+                    'mpl_fignum':1,
                     'dpi':KMER_HITS_DPI}
     for k in plot_params.keys():
         stock_params[k] = plot_params[k]
@@ -217,7 +218,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             xtt = [n for n in range(0,max_tlen,X_STEP)]
             xtl = [n for n in range(0,max_tlen,X_STEP)]
     #
-    fig = mpl.figure(1, figsize=(stock_params['fig_width'],vert_fig_size), dpi=stock_params['dpi'])
+    fig = mpl.figure(stock_params['mpl_fignum'], figsize=(stock_params['fig_width'],vert_fig_size), dpi=stock_params['dpi'])
     reads_plotted_thus_far = 0
     for clust_i in range(len(read_clusters)):
         for i in range(len(read_clusters[clust_i])):
