@@ -888,6 +888,7 @@ def cluster_consensus_tvrs(sequences,
                            job=(1,1),
                            dendrogram_title=None,
                            dendrogram_height=12,
+                           dendrogram_allblack=False,
                            overwrite_figures=True):
     #
     n_seq = len(sequences)
@@ -980,7 +981,10 @@ def cluster_consensus_tvrs(sequences,
         replot_labels = [f'({labels_fromtop.index(n)}) {n}' for n in samp_labels]
         mpl.close(fig)
         fig = mpl.figure(figsize=(8,dendrogram_height))
-        dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
+        if dendrogram_allblack:
+            dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut, above_threshold_color='black', link_color_func=lambda k:'black')
+        else:
+            dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
         #
         mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
         mpl.xlabel('distance')
