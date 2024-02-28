@@ -16,7 +16,7 @@ from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
-from source.tg_util   import exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
+from source.tg_util   import annotate_interstitial_tel, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -58,7 +58,7 @@ def main(raw_args=None):
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[all_final_alleles.png] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
-    parser.add_argument('-afa-a', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] Min ATL to include allele")
+    parser.add_argument('-afa-a', type=int, required=False, metavar='0',     default=0,     help="[all_final_alleles.png] Min ATL to include allele")
     #
     parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[violin_atl.png] Y axis max")
     parser.add_argument('-va-t', type=int, required=False, metavar='5000',  default=5000,  help="[violin_atl.png] Y axis tick steps")
@@ -859,16 +859,18 @@ def main(raw_args=None):
                 for n in my_anchors:
                     my_chr  = n.split('_')[1]
                     my_samp = n.split('_')[0]
-                    my_pos  = str(int(np.median(anchors_by_ref[n])))
+                    my_pos  = int(np.median(anchors_by_ref[n]))
                     if my_chr in chrs_encountered_so_far:
                         continue
                     chrs_encountered_so_far[my_chr] = True
-                    anchor_pos.append(my_pos)
+                    anchor_pos.append(str(my_pos))
                     ref_builds.append(my_samp)
                     my_chrs.append(my_chr)
                 ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
                 ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
                 ALLELE_TEL_DAT[clustnum][2] = ','.join(ref_builds) # assign ref builds
+                if annotate_interstitial_tel(my_chrs[0], int(anchor_pos[0])): # annotate interstitial
+                    ALLELE_TEL_DAT[clustnum][3] += 'i'
         #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()

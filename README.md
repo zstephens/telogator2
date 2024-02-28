@@ -60,9 +60,11 @@ The primary output files are:
 The main results are in `tlens_by_allele.tsv`, which has the following columns:
 
 * `chr` anchor chromosome arm
+  * subtelomeres that could not be aligned are labeled `chrU` for 'unknown'
 * `position` anchor coordinate
 * `ref_samp` the specific T2T reference contig to which the subtelomere was aligned
 * `allele_id` ID number for this specific allele
+  * ids ending in `i` indicate subtelomeres that were aligned to known interstitial telomere regions. These alleles should likely be excluded from subsequent analyses.
 * `TL_p75` ATL (reports 75th percentile by default)
 * `read_TLs` ATL of each supporting read in the cluster
 * `read_lengths` length of each read in the cluster
