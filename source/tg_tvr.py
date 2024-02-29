@@ -796,11 +796,10 @@ def denoise_colorvec(v, replace_char=UNKNOWN_LETTER, min_size=10, max_gap_fill=5
     blocks = []
     current_block = v[0]
     current_start = 0
-    v += UNKNOWN_LETTER
+    v += replace_char
     for i in range(1,len(v)):
         if v[i] != current_block:
-            if current_block != UNKNOWN_LETTER:
-                blocks.append((current_start, i, current_block))
+            blocks.append((current_start, i, current_block))
             current_block = v[i]
             current_start = i
     #
