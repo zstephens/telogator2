@@ -84,5 +84,6 @@ The reference sequence used for telomere anchoring currently contains the first 
 * `T2T-cn1` - https://github.com/T2T-CN1/CN1
 * `T2T-hg002` - https://github.com/marbl/hg002
 * `T2T-ksa001` - https://github.com/bio-ontology-research-group/KSA001
+* `T2T-i002c` - https://github.com/LHG-GG/I002C
 
 More will be added as they become available.
