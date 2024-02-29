@@ -255,8 +255,6 @@ def cluster_tvrs(kmer_dat,
     tvr_letters      = []
     nofilt_letters   = []
     for i in range(len(kmer_list)):
-        if 'hor' in kmer_flags[i]: # skip HORs until I can figure out what to do with them
-            continue
         if 'canonical' in kmer_flags[i]:
             canonical_letter = kmer_letters[i]
         if 'denoise' in kmer_flags[i]:
@@ -897,8 +895,6 @@ def cluster_consensus_tvrs(sequences,
     #
     canonical_letter = None
     for i in range(len(kmer_list)):
-        if 'hor' in kmer_flags[i]: # skip HORs until I can figure out what to do with them
-            continue
         if 'canonical' in kmer_flags[i]:
             canonical_letter = kmer_letters[i]
         if kmer_letters[i] == UNKNOWN_LETTER:

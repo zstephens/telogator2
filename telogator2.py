@@ -929,13 +929,28 @@ def main(raw_args=None):
     tvr_labels_to_plot = []
     clustdat_to_plot = [[[]], [[]], [[]], []]
     current_i = 0
+    num_alleles_too_short = 0
+    num_alleles_interstitial = 0
+    num_alleles_unmapped = 0
+    num_pass_alleles = 0
     for atd in ALLELE_TEL_DAT:
-        my_id = int(atd[3])
+        my_id = atd[3]
+        while my_id[-1].isdigit() is False:
+            my_id = my_id[:-1]
+        my_id = int(my_id)
         my_rep_atl = int(atd[4])
         my_max_atl = max([int(n) for n in atd[5].split(',')])
         my_tvr_len = int(atd[8])
-        if my_max_atl < MIN_ATL_FOR_FINAL_PLOTTING:
+        if atd[0] == 'chrUq':
+            num_alleles_unmapped += 1
             continue
+        if my_max_atl < MIN_ATL_FOR_FINAL_PLOTTING:
+            num_alleles_too_short += 1
+            continue
+        if 'i' in atd[3]:
+            num_alleles_interstitial += 1
+            continue
+        num_pass_alleles += 1
         if int(atd[8]) <= 0:
             my_annot = str(atd[3]) + 'b'
         else:
@@ -961,6 +976,10 @@ def main(raw_args=None):
         plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
     else:
         print('no alleles to plot.')
+    print(f' - {num_pass_alleles} final telomere alleles')
+    print(f' - {num_alleles_unmappedll} (unmapped)')
+    print(f' - {num_alleles_too_short} (atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp)')
+    print(f' - {num_alleles_interstitial} (interstitial)')
 
 
 if __name__ == '__main__':

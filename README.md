@@ -60,7 +60,7 @@ The primary output files are:
 The main results are in `tlens_by_allele.tsv`, which has the following columns:
 
 * `chr` anchor chromosome arm
-  * subtelomeres that could not be aligned are labeled `chrU` for 'unknown'
+  * subtelomeres that could not be aligned are labeled `chrU` for 'unmapped'
 * `position` anchor coordinate
 * `ref_samp` the specific T2T reference contig to which the subtelomere was aligned
 * `allele_id` ID number for this specific allele
