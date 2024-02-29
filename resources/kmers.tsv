@@ -25,18 +25,10 @@ CCCAGT	orange	H	tvr,nanopore_only
 CCCCTAG	darkorange	N	tvr
 CCTAG	darkorange	N	tvr
 
-CCCTCACCCTAA	yellow	E	tvr,hor
-CCCTAACCCTCA	yellow	E	tvr,hor
-CCCTAACCCTAACCCTCA	yellow	E	tvr,hor
-CCCTCACCCTAACCCTAA	yellow	E	tvr,hor
 CCCTCA	yellow	E	tvr,nofilt
 
-CCCTCGCCCTAA	tan	G	tvr,hor
-CCCTAACCCTCG	tan	G	tvr,hor
 CCCTCG	tan	G	tvr,nofilt
 
-CCCTGACCCTAACCCCTAA	red	D	tvr,hor
-CCCTAACCCCTAACCCTGA	red	D	tvr,hor
 CCCTGA	red	D	tvr
 
 CCCGGA	pink	L	tvr

@@ -34,8 +34,6 @@ def read_kmer_tsv(fn, READ_TYPE):
                 continue
             if 'nanopore_only' in splt[3] and READ_TYPE not in ['ont']:
                 continue
-            if 'hor' in splt[3]: # skip HORs until I can figure out something better way to handle them
-                continue
             KMER_LIST.append(splt[0])
             KMER_COLORS.append(splt[1])
             KMER_LETTER.append(splt[2])

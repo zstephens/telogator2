@@ -39,15 +39,6 @@ python telogator2.py -i input.fq \
 Telogator2 requires that [muscle v3.8](https://drive5.com/muscle/downloads_v3.htm) is installed in order to produce consensus TVR sequences. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory. Additionally, Telogator2 requires a path to an aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
 
 
-## Test data
-
-Telomere reads for HG002 can be found in the `test_data/` directory.
-
-```
-HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
-ONT reads  (~25x): hg002-telreads_ont.fa.gz
-```
-
 
 ## Output files
 
@@ -72,6 +63,17 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 * `tvr_len` length of the cluster's TVR region
 * `tvr_consensus` consensus TVR region sequence
 * `supporting_reads` readnames of each read in the cluster
+
+
+
+## Test data
+
+Telomere reads for HG002 can be found in the `test_data/` directory.
+
+```
+HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
+ONT reads  (~25x): hg002-telreads_ont.fa.gz
+```
 
 
 
