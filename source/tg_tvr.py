@@ -305,7 +305,7 @@ def cluster_tvrs(kmer_dat,
             ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
             ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
-            seq_right_denoise = denoise_colorvec(seq_right, chars_to_delete=denoise_chars, char_to_merge=canonical_letter)
+            seq_right_denoise = denoise_colorvec(seq_right, canonical_letter, chars_to_delete=denoise_chars, chars_to_merge=[canonical_letter])
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
             (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], canonical_letter, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
             #
@@ -327,7 +327,7 @@ def cluster_tvrs(kmer_dat,
             ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
             ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
-            seq_right_denoise = denoise_colorvec(seq_right, chars_to_delete=denoise_chars, char_to_merge=canonical_letter)
+            seq_right_denoise = denoise_colorvec(seq_right, canonical_letter, chars_to_delete=denoise_chars, chars_to_merge=[canonical_letter])
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
             (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], canonical_letter, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
             #
@@ -525,10 +525,10 @@ def cluster_tvrs(kmer_dat,
                 current_cons = out_consensus[i][:MAX_TVR_LEN] + canonical_letter*(len(out_consensus[i])-MAX_TVR_LEN)
         else:
             current_cons = out_consensus[i]
-        denoised_consensus = denoise_colorvec(current_cons,
+        denoised_consensus = denoise_colorvec(current_cons, canonical_letter,
                                               chars_to_delete=[n for n in tvr_letters if n not in nofilt_letters],
                                               min_size=TVR_CANON_FILT_PARAMS_STRICT[0],
-                                              char_to_merge=canonical_letter)
+                                              chars_to_merge=[canonical_letter]+tvr_letters)
         if pq == 'q':
             denoised_consensus = denoised_consensus[::-1]
         tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters,
@@ -545,10 +545,10 @@ def cluster_tvrs(kmer_dat,
                     current_cons = out_consensus[i][:MAX_TVR_LEN_SHORT] + canonical_letter*(len(out_consensus[i])-MAX_TVR_LEN_SHORT)
             else:
                 current_cons = out_consensus[i]
-            denoised_consensus = denoise_colorvec(current_cons,
+            denoised_consensus = denoise_colorvec(current_cons, canonical_letter,
                                                   chars_to_delete=[n for n in tvr_letters if n not in nofilt_letters],
                                                   min_size=TVR_CANON_FILT_PARAMS_LENIENT[0],
-                                                  char_to_merge=canonical_letter)
+                                                  chars_to_merge=[canonical_letter]+tvr_letters)
             if pq == 'q':
                 denoised_consensus = denoised_consensus[::-1]
             tel_boundary = find_cumulative_boundary(denoised_consensus, tvr_letters,
@@ -788,7 +788,7 @@ def find_cumulative_boundary(sequence, which_letters, cum_thresh=0.05, min_hits=
 #
 #
 #
-def denoise_colorvec(v, min_size=10, max_gap_fill=50, chars_to_delete=[], char_to_merge=''):
+def denoise_colorvec(v, canonical_char, min_size=10, max_gap_fill=50, chars_to_delete=[], chars_to_merge=[]):
     if len(v) == 0:
         return ''
     blocks = []
@@ -811,13 +811,13 @@ def denoise_colorvec(v, min_size=10, max_gap_fill=50, chars_to_delete=[], char_t
         del blocks[di]
     #
     for i in range(len(blocks)-1,0,-1):
-        if blocks[i][2] == blocks[i-1][2] and blocks[i][2] == char_to_merge:
+        if blocks[i][2] == blocks[i-1][2] and blocks[i][2] in chars_to_merge:
             our_gap = blocks[i][0] - blocks[i-1][1]
             if our_gap <= max_gap_fill:
                 blocks[i-1] = (blocks[i-1][0], blocks[i][1], blocks[i][2])
                 del blocks[i]
     #
-    v_out = [UNKNOWN_LETTER for n in v]
+    v_out = [canonical_char for n in v]
     for block in blocks:
         for i in range(block[0],block[1]):
             v_out[i] = block[2]
