@@ -977,7 +977,7 @@ def main(raw_args=None):
     else:
         print('no alleles to plot.')
     print(f' - {num_pass_alleles} final telomere alleles')
-    print(f' - {num_alleles_unmappedll} (unmapped)')
+    print(f' - {num_alleles_unmapped} (unmapped)')
     print(f' - {num_alleles_too_short} (atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp)')
     print(f' - {num_alleles_interstitial} (interstitial)')
 
