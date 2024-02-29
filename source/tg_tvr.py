@@ -546,7 +546,7 @@ def cluster_tvrs(kmer_dat,
                     current_cons = out_consensus[i][:MAX_TVR_LEN_SHORT] + canonical_letter*(len(out_consensus[i])-MAX_TVR_LEN_SHORT)
             else:
                 current_cons = out_consensus[i]
-            denoised_consensus = denoise_colorvec(current_cons
+            denoised_consensus = denoise_colorvec(current_cons,
                                                   replace_char=canonical_letter,
                                                   chars_to_delete=[n for n in tvr_letters if n not in nofilt_letters],
                                                   min_size=TVR_CANON_FILT_PARAMS_LENIENT[0],
