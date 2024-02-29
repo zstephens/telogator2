@@ -6,8 +6,8 @@ CCAT	blue	C	canonical,nanopore_only
 CCTA	darkblue	T	denoise
 CCTAA	darkblue	T	denoise
 CCCTA	darkblue	T	denoise
-CCCCTA	darkblue	T	denoise
-CCCCTAA	darkblue	T	tvr
+CCCCTA	deepskyblue	Y	tvr
+CCCCTAA	deepskyblue	Y	tvr
 
 CCCCCA	lightgreen	Q	denoise
 CCCAA	darkgreen	V	denoise
