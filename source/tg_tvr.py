@@ -568,10 +568,14 @@ def cluster_tvrs(kmer_dat,
                     tel_boundary += 1
             else:
                 while denoised_consensus[tel_boundary] in tvr_letters:
+                    found_new_pos = False
                     for i in range(1,TVR_BOUNDARY_ADJ_STEP):
                         if denoised_consensus[tel_boundary-i] in tvr_letters:
                             tel_boundary -= i
+                            found_new_pos = True
                             break
+                    if found_new_pos is False:
+                        break
                 #tel_boundary += 1
             print(denoised_consensus[tel_boundary-100:tel_boundary])
             print(denoised_consensus[tel_boundary:tel_boundary+100])
