@@ -869,7 +869,8 @@ def main(raw_args=None):
                 ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
                 ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
                 ALLELE_TEL_DAT[clustnum][2] = ','.join(ref_builds) # assign ref builds
-                if annotate_interstitial_tel(ref_builds[0]+'_'+my_chrs[0], int(anchor_pos[0])): # annotate interstitial
+                any_interstitial = any([annotate_interstitial_tel(ref_builds[n]+'_'+my_chrs[n], int(anchor_pos[n])) for n in range(len(my_chrs))])
+                if any_interstitial:
                     ALLELE_TEL_DAT[clustnum][3] += 'i'
         #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
