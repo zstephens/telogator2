@@ -22,6 +22,7 @@ UNKNOWN_LETTER = AMINO[0]
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 30      # add this many bp to detected TVR boundary
+TVR_BOUNDARY_ADJ_STEP = 13  # how far are we willing to look for more variant repeats to extend TVR boundary?
 
 # if tvr + tel region has at least this many unknown characters, use minimum-dens pos instead of first-below-dens ps
 TOO_MUCH_UNKNOWN_IN_TVRTEL = 1000
@@ -560,7 +561,6 @@ def cluster_tvrs(kmer_dat,
         # if we did find a boundary, buffer slightly to include variant repeats at the edge
         # - then adjust to nearest canonical / variant repeat
         #
-        TVR_BOUNDARY_ADJ_STEP = 13
         if tel_boundary != len(out_consensus[i])+1:
             tel_boundary = max(0, tel_boundary - TVR_BOUNDARY_BUFF)
             if denoised_consensus[tel_boundary] == canonical_letter:
@@ -569,16 +569,16 @@ def cluster_tvrs(kmer_dat,
             else:
                 while denoised_consensus[tel_boundary] in tvr_letters:
                     found_new_pos = False
-                    for i in range(1,TVR_BOUNDARY_ADJ_STEP):
-                        if denoised_consensus[tel_boundary-i] in tvr_letters:
-                            tel_boundary -= i
+                    for j in range(1,TVR_BOUNDARY_ADJ_STEP):
+                        if denoised_consensus[tel_boundary-j] in tvr_letters:
+                            tel_boundary -= j
                             found_new_pos = True
                             break
                     if found_new_pos is False:
                         break
-                #tel_boundary += 1
-            print(denoised_consensus[tel_boundary-100:tel_boundary])
-            print(denoised_consensus[tel_boundary:tel_boundary+100])
+            #print()
+            #print(denoised_consensus[tel_boundary-100:tel_boundary])
+            #print(denoised_consensus[tel_boundary:tel_boundary+100])
             my_telbound = len(out_consensus[i]) - tel_boundary
         else:
             my_telbound = len(out_consensus[i]) - tel_boundary + 1
