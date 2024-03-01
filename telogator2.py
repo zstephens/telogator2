@@ -58,7 +58,7 @@ def main(raw_args=None):
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[all_final_alleles.png] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
-    parser.add_argument('-afa-a', type=int, required=False, metavar='0',     default=0,     help="[all_final_alleles.png] Min ATL to include allele")
+    parser.add_argument('-afa-a', type=int, required=False, metavar='200',   default=200,   help="[all_final_alleles.png] Min ATL to include allele")
     #
     parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[violin_atl.png] Y axis max")
     parser.add_argument('-va-t', type=int, required=False, metavar='5000',  default=5000,  help="[violin_atl.png] Y axis tick steps")

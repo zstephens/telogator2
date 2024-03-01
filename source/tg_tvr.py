@@ -35,7 +35,7 @@ UNKNOWN_END_DENS_CONS = 0.800
 CANON_WIN_SIZE = 100
 CANON_END_DENS = 0.700
 # parameters for determining tvr / canonical boundaries: (denoise_region_size, cum_thresh, min_hits)
-TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.05, 100)
+TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.10, 100)
 TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.20,  50)
 
 #

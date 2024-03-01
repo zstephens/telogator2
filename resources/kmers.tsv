@@ -7,7 +7,8 @@ CCTA	darkblue	T	denoise
 CCTAA	darkblue	T	denoise
 CCCTA	darkblue	T	denoise
 CCCCTA	darkblue	T	denoise,tvr
-CCCCTAA	darkblue	T	denoise,tvr
+
+CCCCTAA	deepskyblue	Y	tvr
 CCCCTACCCCTA	deepskyblue	Y	tvr
 CCCCTAACCCCTAA	deepskyblue	Y	tvr
 CCCCTACCCTAACCCCTA	deepskyblue	Y	tvr
