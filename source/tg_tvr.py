@@ -560,17 +560,21 @@ def cluster_tvrs(kmer_dat,
         # if we did find a boundary, buffer slightly to include variant repeats at the edge
         # - then adjust to nearest canonical / variant repeat
         #
+        TVR_BOUNDARY_ADJ_STEP = 13
         if tel_boundary != len(out_consensus[i])+1:
             tel_boundary = max(0, tel_boundary - TVR_BOUNDARY_BUFF)
             if denoised_consensus[tel_boundary] == canonical_letter:
                 while denoised_consensus[tel_boundary] == canonical_letter:
                     tel_boundary += 1
             else:
-                while denoised_consensus[tel_boundary] not in [canonical_letter, UNKNOWN_LETTER]:
-                    tel_boundary -= 1
-                tel_boundary += 1
-            #print(denoised_consensus[tel_boundary-100:tel_boundary])
-            #print(denoised_consensus[tel_boundary:tel_boundary+100])
+                while denoised_consensus[tel_boundary] in tvr_letters:
+                    for i in range(1,TVR_BOUNDARY_ADJ_STEP):
+                        if denoised_consensus[tel_boundary-i] in tvr_letters:
+                            tel_boundary -= i
+                            break
+                #tel_boundary += 1
+            print(denoised_consensus[tel_boundary-100:tel_boundary])
+            print(denoised_consensus[tel_boundary:tel_boundary+100])
             my_telbound = len(out_consensus[i]) - tel_boundary
         else:
             my_telbound = len(out_consensus[i]) - tel_boundary + 1

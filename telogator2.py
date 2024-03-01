@@ -45,7 +45,7 @@ def main(raw_args=None):
     parser.add_argument('-r', type=str, required=False, metavar='hifi',         default='hifi', help="Read type: hifi / clr / ont")
     parser.add_argument('-l', type=int, required=False, metavar='4000',         default=4000,   help="Minimum read length")
     parser.add_argument('-s', type=int, required=False, metavar='1000',         default=1000,   help="Minimum subtelomere anchor size")
-    parser.add_argument('-c', type=int, required=False, metavar='5',            default=5,      help="Minimum hits to canonical kmer")
+    parser.add_argument('-c', type=int, required=False, metavar='10',           default=10,     help="Minimum hits to tandem canonical kmer")
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
     parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for computing chr TL: mean / median / p75 / max")
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
@@ -58,7 +58,7 @@ def main(raw_args=None):
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[all_final_alleles.png] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
-    parser.add_argument('-afa-a', type=int, required=False, metavar='200',   default=200,   help="[all_final_alleles.png] Min ATL to include allele")
+    parser.add_argument('-afa-a', type=int, required=False, metavar='100',   default=100,   help="[all_final_alleles.png] Min ATL to include allele")
     #
     parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[violin_atl.png] Y axis max")
     parser.add_argument('-va-t', type=int, required=False, metavar='5000',  default=5000,  help="[violin_atl.png] Y axis tick steps")

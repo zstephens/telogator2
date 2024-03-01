@@ -6,13 +6,13 @@ CCAT	blue	C	canonical,nanopore_only
 CCTA	darkblue	T	denoise
 CCTAA	darkblue	T	denoise
 CCCTA	darkblue	T	denoise
-CCCCTA	darkblue	T	denoise,tvr
 
-CCCCTAA	deepskyblue	Y	tvr
-CCCCTACCCCTA	deepskyblue	Y	tvr
-CCCCTAACCCCTAA	deepskyblue	Y	tvr
-CCCCTACCCTAACCCCTA	deepskyblue	Y	tvr
-CCCCTAACCCTAACCCCTAA	deepskyblue	Y	tvr
+CCCCTA	darkblue	Y	denoise,tvr
+CCCCTAA	darkblue	Y	tvr
+CCCCTACCCCTA	darkblue	Y	tvr
+CCCCTAACCCCTAA	darkblue	Y	tvr
+CCCCTACCCTAACCCCTA	darkblue	Y	tvr
+CCCCTAACCCTAACCCCTAA	darkblue	Y	tvr
 
 CCCCCA	lightgreen	Q	denoise
 CCCAA	darkgreen	V	denoise
@@ -26,7 +26,6 @@ CCCTTAA	darkcyan	R	tvr
 CCCTTGA	darkcyan	R	tvr
 
 CCCTAG	orange	H	tvr
-CCCAGT	orange	H	tvr,nanopore_only
 CCCCTAG	darkorange	N	tvr
 CCTAG	darkorange	N	tvr
 
@@ -42,6 +41,7 @@ CCCGA	darkviolet	P	tvr
 CCCCGA	darkviolet	P	tvr
 CCCGGA	darkviolet	P	tvr
 CCCCAG	purple	I	tvr
+CCCAGT	purple	I	tvr
 
 CCCTCTAA	gold	S	tvr
 CTCTAA	gold	S	tvr
