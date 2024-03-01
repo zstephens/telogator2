@@ -22,7 +22,7 @@ UNKNOWN_LETTER = AMINO[0]
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 30      # add this many bp to detected TVR boundary
-TVR_BOUNDARY_ADJ_STEP = 13  # how far are we willing to look for more variant repeats to extend TVR boundary?
+TVR_BOUNDARY_ADJ_STEP = 20  # how far are we willing to look for more variant repeats to extend TVR boundary?
 
 # if tvr + tel region has at least this many unknown characters, use minimum-dens pos instead of first-below-dens ps
 TOO_MUCH_UNKNOWN_IN_TVRTEL = 1000

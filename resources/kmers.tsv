@@ -7,7 +7,7 @@ CCTA	darkblue	T	denoise
 CCTAA	darkblue	T	denoise
 CCCTA	darkblue	T	denoise
 
-CCCCTA	darkblue	Y	denoise,tvr
+CCCCTA	darkblue	Y	tvr
 CCCCTAA	darkblue	Y	tvr
 CCCCTACCCCTA	darkblue	Y	tvr
 CCCCTAACCCCTAA	darkblue	Y	tvr
