@@ -3,22 +3,22 @@ CCCATT	blue	C	canonical,nanopore_only
 CCCAT	blue	C	canonical,nanopore_only
 CCATT	blue	C	canonical,nanopore_only
 CCAT	blue	C	canonical,nanopore_only
-CCTA	darkblue	T	denoise
-CCTAA	darkblue	T	denoise
-CCCTA	darkblue	T	denoise
+CCTA	darkblue	T	denoise,dubious
+CCTAA	darkblue	T	denoise,dubious
+CCCTA	darkblue	T	denoise,dubious
 
-CCCCTA	darkblue	Y	tvr
-CCCCTAA	darkblue	Y	tvr
-CCCCTACCCCTA	darkblue	Y	tvr
-CCCCTAACCCCTAA	darkblue	Y	tvr
-CCCCTACCCTAACCCCTA	darkblue	Y	tvr
-CCCCTAACCCTAACCCCTAA	darkblue	Y	tvr
+CCCCTA	darkblue	Y	tvr,dubious
+CCCCTAA	darkblue	Y	tvr,dubious
+CCCCTACCCCTA	darkblue	Y	tvr,dubious
+CCCCTAACCCCTAA	darkblue	Y	tvr,dubious
+CCCCTACCCTAACCCCTA	darkblue	Y	tvr,dubious
+CCCCTAACCCTAACCCCTAA	darkblue	Y	tvr,dubious
 
-CCCCCA	lightgreen	Q	denoise
-CCCAA	darkgreen	V	denoise
-CCCA	darkgreen	V	denoise
-CCAA	darkgreen	V	denoise
-CCCCAA	green	F	denoise,tvr
+CCCCCA	lightgreen	Q	denoise,dubious
+CCCAA	darkgreen	V	denoise,dubious
+CCCA	darkgreen	V	denoise,dubious
+CCAA	darkgreen	V	denoise,dubious
+CCCCAA	green	F	denoise,dubious,tvr
 
 CCCTTA	cyan	K	tvr
 CCTTAA	darkcyan	R	tvr
@@ -46,4 +46,4 @@ CCCAGT	purple	I	tvr
 CCCTCTAA	gold	S	tvr
 CTCTAA	gold	S	tvr
 
-CCCCCC	gray	W	denoise
+CCCCCC	gray	W	denoise,dubious

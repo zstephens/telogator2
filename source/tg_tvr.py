@@ -186,11 +186,11 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
     n_reads = len(kmer_dat)
     pq      = my_chr[-1]
     [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
-    denoise_chars = []
+    denoise_letters = []
     for i in range(len(kmer_list)):
         if 'denoise' in kmer_flags[i]:
-            denoise_chars.append(kmer_letters[i])
-    denoise_chars = list(set(denoise_chars))
+            denoise_letters.append(kmer_letters[i])
+    denoise_letters = list(set(denoise_letters))
     #
     # create color vector
     #
@@ -212,7 +212,7 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
         #
         my_count_unknown = seq_right.count(UNKNOWN_LETTER)
         my_count_denoise = 0
-        for dc in denoise_chars:
+        for dc in denoise_letters:
             my_count_denoise += seq_right.count(dc)
         my_num = my_count_unknown + my_count_denoise
         my_den = float(max([1, len(seq_right)]))
@@ -252,30 +252,37 @@ def cluster_tvrs(kmer_dat,
     pq      = my_chr[-1]
     #
     canonical_letter = None
-    denoise_chars    = []
+    denoise_letters  = []
     tvr_letters      = []
     nofilt_letters   = []
+    dubious_letters  = [UNKNOWN_LETTER]
     for i in range(len(kmer_list)):
         if 'canonical' in kmer_flags[i]:
             canonical_letter = kmer_letters[i]
         if 'denoise' in kmer_flags[i]:
-            denoise_chars.append(kmer_letters[i])
+            denoise_letters.append(kmer_letters[i])
         if 'tvr' in kmer_flags[i]:
             tvr_letters.append(kmer_letters[i])
         if 'nofilt' in kmer_flags[i]:
             nofilt_letters.append(kmer_letters[i])
+        if 'dubious' in kmer_flags[i]:
+            dubious_letters.append(kmer_letters[i])
         if kmer_letters[i] == UNKNOWN_LETTER:
-            print('Error: character A is reserved for unknown sequence')
+            print(f'Error: character {UNKNOWN_LETTER} is reserved for unknown sequence')
             exit(1)
     if canonical_letter is None:
         print('Error: cluster_tvrs() received a kmer list that does not have any canonical')
         exit(1)
+    denoise_letters = list(set(denoise_letters))
+    tvr_letters     = list(set(tvr_letters))
+    nofilt_letters  = list(set(nofilt_letters))
+    dubious_letters = list(set(dubious_letters))
 
     #
     # when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
     #
     char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
-    noncanon_cheat = (canonical_letter, 3)
+    noncanon_cheat = ([canonical_letter]+dubious_letters, 3)
     #
     # create color vector
     #
@@ -306,7 +313,7 @@ def cluster_tvrs(kmer_dat,
             ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
             ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
-            seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_chars, chars_to_merge=[canonical_letter])
+            seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter])
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
             (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], canonical_letter, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
             #
@@ -328,7 +335,7 @@ def cluster_tvrs(kmer_dat,
             ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
             ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
-            seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_chars, chars_to_merge=[canonical_letter])
+            seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter])
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
             (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], canonical_letter, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
             #
@@ -561,16 +568,17 @@ def cluster_tvrs(kmer_dat,
         # if we did find a boundary, buffer slightly to include variant repeats at the edge
         # - then adjust to nearest canonical / variant repeat
         #
+        letters_worth_chasing = [n for n in tvr_letters if n not in dubious_letters]
         if tel_boundary != len(out_consensus[i])+1:
             tel_boundary = max(0, tel_boundary - TVR_BOUNDARY_BUFF)
             if denoised_consensus[tel_boundary] == canonical_letter:
                 while denoised_consensus[tel_boundary] == canonical_letter:
                     tel_boundary += 1
             else:
-                while denoised_consensus[tel_boundary] in tvr_letters:
+                while denoised_consensus[tel_boundary] in letters_worth_chasing:
                     found_new_pos = False
                     for j in range(1,TVR_BOUNDARY_ADJ_STEP):
-                        if denoised_consensus[tel_boundary-j] in tvr_letters:
+                        if denoised_consensus[tel_boundary-j] in letters_worth_chasing:
                             tel_boundary -= j
                             found_new_pos = True
                             break

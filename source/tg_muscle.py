@@ -106,12 +106,12 @@ def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_a
             return [input_sequences, input_sequences[0]]
         # if first or second most frequent character is non-canonical (and has enough support), lets just go with that
         if noncanon_cheat is not None:
-            (canon_char, min_noncanon_reads) = noncanon_cheat
+            (dont_cheat_these_chars, min_noncanon_reads) = noncanon_cheat
             sorted_chars = sorted([(char_count[k],k) for k in char_count.keys()], reverse=True)
-            if sorted_chars[0][0] >= min_noncanon_reads and sorted_chars[0][1] != canon_char:
+            if sorted_chars[0][0] >= min_noncanon_reads and sorted_chars[0][1] not in dont_cheat_these_chars:
                 consensus_seq.append(sorted_chars[0][1])
                 continue
-            if len(sorted_chars) >= 2 and sorted_chars[1][0] >= min_noncanon_reads and sorted_chars[1][1] != canon_char:
+            if len(sorted_chars) >= 2 and sorted_chars[1][0] >= min_noncanon_reads and sorted_chars[1][1] not in dont_cheat_these_chars:
                 consensus_seq.append(sorted_chars[1][1])
                 continue
         #
