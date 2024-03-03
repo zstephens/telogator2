@@ -18,7 +18,7 @@ CCCCCA	lightgreen	Q	denoise,dubious
 CCCAA	darkgreen	V	denoise,dubious
 CCCA	darkgreen	V	denoise,dubious
 CCAA	darkgreen	V	denoise,dubious
-CCCCAA	green	F	denoise,dubious,tvr
+CCCCAA	green	F	denoise,tvr
 
 CCCTTA	cyan	K	tvr
 CCTTAA	darkcyan	R	tvr
@@ -33,7 +33,7 @@ CCCTCA	yellow	E	tvr,nofilt
 
 CCCTCG	tan	G	tvr,nofilt
 
-CCCTGA	red	D	tvr
+CCCTGA	red	D	tvr,nofilt
 
 CCCCCG	pink	L	tvr
 CCCGAA	violet	M	tvr

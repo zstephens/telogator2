@@ -21,7 +21,7 @@ UNKNOWN_LETTER = AMINO[0]
 
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
-TVR_BOUNDARY_BUFF = 30      # add this many bp to detected TVR boundary
+TVR_BOUNDARY_BUFF = 10      # add this many bp to detected TVR boundary
 TVR_BOUNDARY_ADJ_STEP = 50  # how far are we willing to look for more variant repeats to extend TVR boundary?
 
 # if tvr + tel region has at least this many unknown characters, use minimum-dens pos instead of first-below-dens ps
@@ -36,8 +36,8 @@ UNKNOWN_END_DENS_CONS = 0.800
 CANON_WIN_SIZE = 100
 CANON_END_DENS = 0.700
 # parameters for determining tvr / canonical boundaries: (denoise_region_size, cum_thresh, min_hits)
-TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.10, 100)
-TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.15,  50)
+TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.125, 100)
+TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.250,  50)
 
 #
 # scoring matrix parameters
@@ -571,19 +571,28 @@ def cluster_tvrs(kmer_dat,
         letters_worth_chasing = [n for n in tvr_letters if n not in dubious_letters]
         if tel_boundary != len(out_consensus[i])+1:
             tel_boundary = max(0, tel_boundary - TVR_BOUNDARY_BUFF)
-            if denoised_consensus[tel_boundary] == canonical_letter:
-                while denoised_consensus[tel_boundary] == canonical_letter:
-                    tel_boundary += 1
-            else:
-                while denoised_consensus[tel_boundary] in letters_worth_chasing:
-                    found_new_pos = False
-                    for j in range(1,TVR_BOUNDARY_ADJ_STEP):
-                        if denoised_consensus[tel_boundary-j] in letters_worth_chasing:
-                            tel_boundary -= j
-                            found_new_pos = True
+            if tel_boundary > TVR_BOUNDARY_ADJ_STEP+1:  # do we actually have room to adjust it?
+                found_letters_ahead = -1
+                for j in range(0,TVR_BOUNDARY_ADJ_STEP+1):
+                    if denoised_consensus[tel_boundary-j] in letters_worth_chasing:
+                        found_letters_ahead = j
+                if found_letters_ahead >= 0:
+                    tel_boundary -= found_letters_ahead
+                    while denoised_consensus[tel_boundary] in letters_worth_chasing:
+                        if tel_boundary <= 0:
+                            tel_boundary = 0
                             break
-                    if found_new_pos is False:
-                        break
+                        found_new_pos = False
+                        for j in range(1,TVR_BOUNDARY_ADJ_STEP+1):
+                            if denoised_consensus[tel_boundary-j] in letters_worth_chasing:
+                                tel_boundary -= j
+                                found_new_pos = True
+                                break
+                        if found_new_pos is False:
+                            break
+                else:
+                    while denoised_consensus[tel_boundary] == canonical_letter:
+                        tel_boundary += 1
             #print()
             #print(denoised_consensus[tel_boundary-100:tel_boundary])
             #print(denoised_consensus[tel_boundary:tel_boundary+100])
