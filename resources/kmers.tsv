@@ -9,10 +9,11 @@ CCCTA	darkblue	T	denoise,dubious
 
 CCCCTA	darkblue	Y	tvr,dubious
 CCCCTAA	darkblue	Y	tvr,dubious
-CCCCTACCCCTA	darkblue	Y	tvr,dubious
-CCCCTAACCCCTAA	darkblue	Y	tvr,dubious
-CCCCTACCCTAACCCCTA	darkblue	Y	tvr,dubious
-CCCCTAACCCTAACCCCTAA	darkblue	Y	tvr,dubious
+CCCCTACCCCTA	darkblue	Y	tvr,dubious,hor
+CCCCTAACCCCTAA	darkblue	Y	tvr,dubious,hor
+CCCCTACCCTAACCCCTA	darkblue	Y	tvr,dubious,hor
+CCCCTAACCCTAACCCCTAA	darkblue	Y	tvr,dubious,hor
+CCCTAAAA	darkblue	Y	tvr,dubious
 
 CCCCCA	lightgreen	Q	denoise,dubious
 CCCAA	darkgreen	V	denoise,dubious
