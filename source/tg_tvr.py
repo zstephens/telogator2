@@ -310,8 +310,6 @@ def cluster_tvrs(kmer_dat,
         if pq == 'p':
             # identify subtel/tvr boundary based on density of unknown characters
             (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
-            ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
-            ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
             # denoise tvr+tel section
             seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter]+tvr_letters)
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
@@ -319,21 +317,21 @@ def cluster_tvrs(kmer_dat,
             #
             cleaned_colorvecs.append(err_right + seq_left[::-1])    # the entire denoised read (for plotting)
             err_end_lens.append(len(err_left))                      # needed for adjusting offsets in plots
-            #
-            #colorvecs_for_msa.append(seq_right_denoise[::-1])      # I don't remember why I was using denoised tvr for msa...
             colorvecs_for_msa.append(err_right)
             #
             subtel_regions.append(seq_left[::-1])                   # subtel regions (currently not used for anything)
             tvrtel_regions.append(err_right)                        # tvr sequence used for clustering
             if len(tvrtel_regions[-1]) > tvr_truncate:
                 tvrtel_regions[-1] = tvrtel_regions[-1][-tvr_truncate:]
-            #cleaned_colorvecs[-1] = tvrtel_regions[-1]
         #
         elif pq == 'q':
             # identify subtel/tvr boundary based on density of unknown characters
             (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
-            ####if seq_right.count(UNKNOWN_LETTER) >= TOO_MUCH_UNKNOWN_IN_TVRTEL:
-            ####    (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', use_lowest_dens=True)
+            adj = 0
+            while seq_right[adj] == UNKNOWN_LETTER:
+                adj += 1
+            seq_left = seq_left + seq_right[:adj]
+            seq_right = seq_right[adj:]
             # denoise tvr+tel section
             seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter]+tvr_letters)
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
@@ -341,15 +339,12 @@ def cluster_tvrs(kmer_dat,
             #
             cleaned_colorvecs.append(seq_left + err_right[::-1])    # the entire denoised read (for plotting)
             err_end_lens.append(len(err_left))                      # needed for adjusting offsets in plots
-            #
-            #colorvecs_for_msa.append(seq_right_denoise)            # I don't remember why I was using denoised tvr for msa...
             colorvecs_for_msa.append(err_right[::-1])
             #
             subtel_regions.append(seq_left)                         # subtel regions (currently not used for anything)
             tvrtel_regions.append(err_right[::-1])                  # tvr sequence used for clustering
             if len(tvrtel_regions[-1]) > tvr_truncate:
                 tvrtel_regions[-1] = tvrtel_regions[-1][:tvr_truncate]
-            #cleaned_colorvecs[-1] = tvrtel_regions[-1]
 
     #
     # PAIRWISE ALIGNMENT OF ALL SEQUENCES
@@ -496,19 +491,20 @@ def cluster_tvrs(kmer_dat,
                 f.write(subtel_consensus[i] + '\n')
             f.close()
 
-    #
-    # check subtel for variant repeats --> add to tvr
-    #
-    subtel_recovery = []
-    for i in range(len(out_consensus)):
-        if pq == 'p':
-            (scons_left, scons_right) = find_density_boundary(subtel_consensus[i], UNKNOWN_LETTER, 50, 0.800, thresh_dir='above', debug_plot=False)
-            out_consensus[i] = out_consensus[i] + scons_left
-            subtel_recovery.append(scons_left)
-        elif pq == 'q':
-            (scons_left, scons_right) = find_density_boundary(subtel_consensus[i][::-1], UNKNOWN_LETTER, 50, 0.800, thresh_dir='above', debug_plot=False)
-            out_consensus[i] = scons_left[::-1] + out_consensus[i]
-            subtel_recovery.append(scons_left[::-1])
+    #####
+    ##### check subtel for variant repeats --> add to tvr
+    #####
+    ####subtel_recovery = []
+    ####for i in range(len(out_consensus)):
+    ####    if pq == 'p':
+    ####        (scons_left, scons_right) = find_density_boundary(subtel_consensus[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE_CONS, UNKNOWN_END_DENS_CONS, thresh_dir='above', debug_plot=False)
+    ####        out_consensus[i] = out_consensus[i] + scons_left
+    ####        subtel_recovery.append(scons_left)
+    ####    elif pq == 'q':
+    ####        (scons_left, scons_right) = find_density_boundary(subtel_consensus[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE_CONS, UNKNOWN_END_DENS_CONS, thresh_dir='above', debug_plot=False)
+    ####        out_consensus[i] = scons_left[::-1] + out_consensus[i]
+    ####        subtel_recovery.append(scons_left[::-1])
+    subtel_recovery = ['' for n in out_consensus] # skipping this entire step
 
     #####
     ##### prune subtel from consensus
@@ -771,7 +767,7 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
                 pos_with_lowest_dens = j
     #
     if debug_plot:
-        fig = mpl.figure(0)
+        fig = mpl.figure(0,figsize=(12,3))
         mpl.plot(list(range(len(my_unknown_dens))), my_unknown_dens)
         mpl.plot([first_pos_below_thresh, first_pos_below_thresh], [0,1], '--r')
         mpl.plot([pos_with_lowest_dens, pos_with_lowest_dens], [0,1], '--b')
