@@ -187,13 +187,13 @@ def main(raw_args=None):
     # check exes
     #
     if len(MUSCLE_EXE) == 0:
-        print('Error: --muscle not specified')
-        exit(1)
+        print('Warning: --muscle not specified, trying "muscle"...')
+        MUSCLE_EXE = 'muscle'
     check_muscle_version(MUSCLE_EXE)
     #
     if len([n for n in [MINIMAP2_EXE, WINNOWMAP_EXE, PBMM2_EXE] if len(n)]) == 0:
-        print('Error: no aligner was specified')
-        exit(1)
+        print('Warning: no aligner was specified, trying "minimap2"...')
+        MINIMAP2_EXE = 'minimap2'
     elif len([n for n in [MINIMAP2_EXE, WINNOWMAP_EXE, PBMM2_EXE] if len(n)]) > 1:
         print('Error: multiple aligners specified, use only one of the following:')
         print(' --minimap2')
@@ -203,10 +203,10 @@ def main(raw_args=None):
     if len(MINIMAP2_EXE):
         ALIGNER_EXE = MINIMAP2_EXE
         WHICH_ALIGNER = 'minimap2'
-    if len(WINNOWMAP_EXE):
+    elif len(WINNOWMAP_EXE):
         ALIGNER_EXE = WINNOWMAP_EXE
         WHICH_ALIGNER = 'winnowmap'
-    if len(PBMM2_EXE):
+    elif len(PBMM2_EXE):
         ALIGNER_EXE = PBMM2_EXE
         WHICH_ALIGNER = 'pbmm2'
 

@@ -64,9 +64,7 @@ MIN_SEQ_DIST = 0.0001
 # to prevent pesky div-by-zeros in edge cases
 MIN_MSD      = 3.0
 
-#
-#
-#
+
 def get_scoring_matrix(canonical_letter, canonical_score=MATCH_CANON):
     all_amino = tuple(AMINO)
     d = {}
@@ -88,9 +86,7 @@ def get_scoring_matrix(canonical_letter, canonical_score=MATCH_CANON):
     d[UNKNOWN_LETTER,canonical_letter]   = float(MATCH_CANON_UNKNOWN)  # canon = unknown
     return substitution_matrices.Array(alphabet=None, dims=None, data=d)
 
-#
-#
-#
+
 def parallel_alignment_job(sequences,
                            ij,
                            pq,
@@ -177,6 +173,26 @@ def parallel_alignment_job(sequences,
         #
         #print((i,j), aln_score, iden_score, rand_scores, '{0:0.3f}'.format(my_dist_shuffle))
         results_dict[(i,j)] = my_dist_shuffle
+
+
+def parallel_msa_job(my_inds, out_clust, buffered_tvrs, buffered_subs, muscle_params, results_dict):
+    [muscle_exe, muscle_prefix, char_score_adj, noncanon_cheat] = muscle_params
+    for i in my_inds:
+        if len(out_clust[i]) == 1:
+            results_dict[('tvr',i)] = buffered_tvrs[out_clust[i][0]]
+            results_dict[('sub',i)] = buffered_subs[out_clust[i][0]]
+        else:
+            clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
+            my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5)
+            [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
+            results_dict[('tvr',i)] = consensus_seq
+            clust_seq = [buffered_subs[n] for n in out_clust[i]]
+            if clust_seq[0] == '':
+                results_dict[('sub',i)] = ''
+            else:
+                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5)
+                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
+                results_dict[('sub',i)] = consensus_seq
 
 #
 #
@@ -464,22 +480,45 @@ def cluster_tvrs(kmer_dat,
                     buffered_tvrs[ci] = colorvecs_for_msa[ci] + tvr_buff_seq
                     buffered_subs[ci] = sub_buff_seq + subtel_regions[ci]
         #
-        for i in range(len(out_clust)):
-            if len(out_clust[i]) == 1:
-                out_consensus.append(buffered_tvrs[out_clust[i][0]])
-                subtel_consensus.append(buffered_subs[out_clust[i][0]])
-            else:
-                clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
-                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5)
-                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
-                out_consensus.append(consensus_seq)
-                clust_seq = [buffered_subs[n] for n in out_clust[i]]
-                if clust_seq[0] == '':
-                    subtel_consensus.append('')
-                else:
-                    my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5)
-                    [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
-                    subtel_consensus.append(consensus_seq)
+        manager     = multiprocessing.Manager()
+        msa_results = manager.dict()
+        processes   = []
+        muscle_params = [muscle_exe, muscle_prefix, char_score_adj, noncanon_cheat]
+        for i in range(alignment_processes):
+            my_inds = list(range(i,len(out_clust),alignment_processes))
+            p = multiprocessing.Process(target=parallel_msa_job,
+                                        args=(my_inds, out_clust, buffered_tvrs, buffered_subs, muscle_params, msa_results))
+            processes.append(p)
+        for i in range(alignment_processes):
+            processes[i].start()
+        for i in range(alignment_processes):
+            processes[i].join()
+        #
+        out_consensus    = ['' for n in out_clust]
+        subtel_consensus = ['' for n in out_clust]
+        msa_keys = sorted(msa_results.keys())
+        for k in msa_keys:
+            if k[0] == 'tvr':
+                out_consensus[k[1]] = msa_results[k]
+            elif k[0] == 'sub':
+                subtel_consensus[k[1]] = msa_results[k]
+        #
+        ####for i in range(len(out_clust)):
+        ####    if len(out_clust[i]) == 1:
+        ####        out_consensus.append(buffered_tvrs[out_clust[i][0]])
+        ####        subtel_consensus.append(buffered_subs[out_clust[i][0]])
+        ####    else:
+        ####        clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
+        ####        my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5)
+        ####        [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
+        ####        out_consensus.append(consensus_seq)
+        ####        clust_seq = [buffered_subs[n] for n in out_clust[i]]
+        ####        if clust_seq[0] == '':
+        ####            subtel_consensus.append('')
+        ####        else:
+        ####            my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5)
+        ####            [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
+        ####            subtel_consensus.append(consensus_seq)
         #
         if save_msa is not None:
             f = open(save_msa,'w')
