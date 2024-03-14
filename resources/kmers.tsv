@@ -30,7 +30,7 @@ CCCTTAA	darkcyan	R	tvr
 CCCTTGA	darkcyan	R	tvr
 CCTGAA	darkcyan	R	tvr
 
-CCCTAG	orange	H	tvr
+CCCTAG	orange	H	tvr,nofilt
 CCCCTAG	darkorange	N	tvr
 CCTAG	darkorange	N	tvr
 
@@ -53,5 +53,6 @@ CCCTCTAA	gold	S	tvr,nofilt
 CTCTAA	gold	S	tvr,nofilt
 CGCTAA	gold	S	tvr,nofilt
 CCGTAA	gold	S	tvr,nofilt
+CCGTCA	gold	S	tvr,nofilt
 
 CCCCCC	gray	W	denoise,dubious

@@ -28,10 +28,12 @@ TVR_BOUNDARY_ADJ_STEP = 50  # how far are we willing to look for more variant re
 TOO_MUCH_UNKNOWN_IN_TVRTEL = 1000
 # density parameters for identifing subtel / tvr boundaries (individual reads)
 UNKNOWN_WIN_SIZE = 100
-UNKNOWN_END_DENS = 0.120
-# density parameters for recovering variant repeats from subtel consensus
-UNKNOWN_WIN_SIZE_CONS = 50
-UNKNOWN_END_DENS_CONS = 0.800
+UNKNOWN_END_DENS = 0.125
+UNKNOWN_WIN_SIZE_FINE = 50
+UNKNOWN_END_DENS_FINE = 0.500
+## density parameters for recovering variant repeats from subtel consensus
+#UNKNOWN_WIN_SIZE_CONS = 50
+#UNKNOWN_END_DENS_CONS = 0.800
 # density parameters for discerning canonical regions from sequencing artifacts
 CANON_WIN_SIZE = 100
 CANON_END_DENS = 0.700
@@ -293,6 +295,7 @@ def cluster_tvrs(kmer_dat,
     tvr_letters     = list(set(tvr_letters))
     nofilt_letters  = list(set(nofilt_letters))
     dubious_letters = list(set(dubious_letters))
+    letters_worth_chasing = [n for n in tvr_letters if n not in dubious_letters]
 
     #
     # when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
@@ -342,9 +345,14 @@ def cluster_tvrs(kmer_dat,
         #
         elif pq == 'q':
             # identify subtel/tvr boundary based on density of unknown characters
-            (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+            (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
+            # lets walk backwards with a smaller window to see if there are some tvrs we missed
+            (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
+            seq_right = recovered_tvr[::-1] + seq_right
+            seq_left = rest_is_subtel[::-1]
+            # adjust subtel boundary so that tvr does not begin with an unknown character
             adj = 0
-            while seq_right[adj] == UNKNOWN_LETTER:
+            while seq_right[adj] == UNKNOWN_LETTER and adj < len(seq_right)-1:
                 adj += 1
             seq_left = seq_left + seq_right[:adj]
             seq_right = seq_right[adj:]
@@ -603,7 +611,6 @@ def cluster_tvrs(kmer_dat,
         # if we did find a boundary, buffer slightly to include variant repeats at the edge
         # - then adjust to nearest canonical / variant repeat
         #
-        letters_worth_chasing = [n for n in tvr_letters if n not in dubious_letters]
         if tel_boundary != len(out_consensus[i])+1:
             tel_boundary = max(0, tel_boundary - TVR_BOUNDARY_BUFF)
             if tel_boundary > TVR_BOUNDARY_ADJ_STEP+1:  # do we actually have room to adjust it?
@@ -774,7 +781,7 @@ def cluster_tvrs(kmer_dat,
 #
 #
 #
-def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', starting_coord=0, use_lowest_dens=False, debug_plot=False):
+def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', starting_coord=0, use_lowest_dens=False, debug_plot=False, readname=''):
     my_unknown = np.zeros(len(sequence))
     for j in range(starting_coord, len(sequence)):
         if sequence[j] == which_letter:
@@ -810,7 +817,10 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
         mpl.plot(list(range(len(my_unknown_dens))), my_unknown_dens)
         mpl.plot([first_pos_below_thresh, first_pos_below_thresh], [0,1], '--r')
         mpl.plot([pos_with_lowest_dens, pos_with_lowest_dens], [0,1], '--b')
-        mpl.title(which_letter + ' ' + thresh_dir)
+        mpl.yticks([0,dens_thresh,1],['0',f'{dens_thresh:.3f}','1'])
+        mpl.grid(which='both', linestyle='--', alpha=0.6)
+        mpl.axis([0,2000,0,1])
+        mpl.title(readname + ' ' + which_letter + ' ' + thresh_dir)
         mpl.show()
         mpl.close(fig)
     #
