@@ -43,12 +43,12 @@ CCCAGT	cyan	S	tvr,nofilt
 CCCTTA	darkcyan	T	tvr
 CCTTAA	darkcyan	T	tvr
 CCCTTAA	darkcyan	T	tvr
-CCCCTA	slategray	V	tvr,dubious
-CCCCTAA	slategray	V	tvr,dubious
-CCCTAAA	slategray	V	tvr,dubious
-CCCTAAAA	slategray	V	tvr,dubious
-CCCCTACCCTAACCCCTA	slategray	V	tvr,dubious,hor
-CCCCTAACCCTAACCCCTAA	slategray	V	tvr,dubious,hor
+CCCCTA	slateblue	V	tvr,dubious
+CCCCTAA	slateblue	V	tvr,dubious
+CCCTAAA	slateblue	V	tvr,dubious
+CCCTAAAA	slateblue	V	tvr,dubious
+CCCCTACCCTAACCCCTA	slateblue	V	tvr,dubious,hor
+CCCCTAACCCTAACCCCTAA	slateblue	V	tvr,dubious,hor
 
 # likely sequencing errors
 CCTA	darkblue	W	denoise,dubious
