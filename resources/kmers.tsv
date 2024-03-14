@@ -1,58 +1,61 @@
+# canonical
 CCCTAA	blue	C	canonical
-CCCATT	blue	C	canonical,nanopore_only
-CCCAT	blue	C	canonical,nanopore_only
-CCATT	blue	C	canonical,nanopore_only
-CCAT	blue	C	canonical,nanopore_only
-CCTA	darkblue	T	denoise,dubious
-CCTAA	darkblue	T	denoise,dubious
-CCCTA	darkblue	T	denoise,dubious
 
-CCCCTA	darkblue	Y	tvr,dubious
-CCCCTAA	darkblue	Y	tvr,dubious
-CCCCTACCCCTA	darkblue	Y	tvr,dubious,hor
-CCCCTAACCCCTAA	darkblue	Y	tvr,dubious,hor
-CCCCTACCCTAACCCCTA	darkblue	Y	tvr,dubious,hor
-CCCCTAACCCTAACCCCTAA	darkblue	Y	tvr,dubious,hor
-CCCTAAA	darkblue	Y	tvr,dubious
-CCCTAAAA	darkblue	Y	tvr,dubious
-
-CCCCAA	green	F	denoise,tvr
-CCCCCA	lightgreen	Q	denoise,tvr
-CCCAAA	lightgreen	Q	denoise,tvr
-CCCAA	darkgreen	V	denoise,dubious
-CCCA	darkgreen	V	denoise,dubious
-CCAA	darkgreen	V	denoise,dubious
-CCA	darkgreen	V	denoise,dubious
-
-CCCTTA	cyan	K	tvr
-CCTTAA	darkcyan	R	tvr
-CCCTTAA	darkcyan	R	tvr
-CCCTTGA	darkcyan	R	tvr
-CCTGAA	darkcyan	R	tvr
-
-CCCTAG	orange	H	tvr,nofilt
-CCCCTAG	darkorange	N	tvr
-CCTAG	darkorange	N	tvr
-
-CCCTCA	yellow	E	tvr,nofilt
-
-CCCTCG	tan	G	tvr,nofilt
-
+# C-type + variations
 CCCTGA	red	D	tvr,nofilt
+CCTTGA	darkred	E	tvr
+CGCTGA	darkred	E	tvr
+CCGTGA	darkred	E	tvr
+CCCTTGA	darkred	E	tvr
+CCGCTGA	darkred	E	tvr
 
-CCCCCG	pink	L	tvr
-CCCGAA	violet	M	tvr
+# G-type + variations
+CCCTCA	yellow	F	tvr,nofilt
+CCGTCA	gold	G	tvr,nofilt
+
+# J-type + variations
+CCCCAA	green	H	denoise,tvr
+CCCCCA	lightgreen	I	denoise,tvr
+CCCAAA	lightgreen	I	denoise,tvr
+
+# other variations
+CCCTCG	tan	K	tvr,nofilt
+CCCTAG	orange	L	tvr,nofilt
+CCCCTAG	darkorange	M	tvr
+CCTAG	darkorange	M	tvr
+CCCGAA	violet	N	tvr
 CCCGA	darkviolet	P	tvr
 CCCCGA	darkviolet	P	tvr
 CCCGGA	darkviolet	P	tvr
 CCCCGAA	darkviolet	P	tvr
-CCCCAG	purple	I	tvr
-CCCAGT	purple	I	tvr
+CCCCCG	pink	Q	tvr
+CCCCAG	purple	R	tvr
 
-CCCTCTAA	gold	S	tvr,nofilt
-CTCTAA	gold	S	tvr,nofilt
-CGCTAA	gold	S	tvr,nofilt
-CCGTAA	gold	S	tvr,nofilt
-CCGTCA	gold	S	tvr,nofilt
+# rare variations (usually singletons)
+CCCTCTAA	cyan	S	tvr,nofilt
+CTCTAA	cyan	S	tvr,nofilt
+CGCTAA	cyan	S	tvr,nofilt
+CCGTAA	cyan	S	tvr,nofilt
+CCTGAA	cyan	S	tvr,nofilt
+CCCAGT	cyan	S	tvr,nofilt
 
-CCCCCC	gray	W	denoise,dubious
+# canonical indel variations
+CCCTTA	darkcyan	T	tvr
+CCTTAA	darkcyan	T	tvr
+CCCTTAA	darkcyan	T	tvr
+CCCCTA	slategray	V	tvr,dubious
+CCCCTAA	slategray	V	tvr,dubious
+CCCTAAA	slategray	V	tvr,dubious
+CCCTAAAA	slategray	V	tvr,dubious
+CCCCTACCCTAACCCCTA	slategray	V	tvr,dubious,hor
+CCCCTAACCCTAACCCCTAA	slategray	V	tvr,dubious,hor
+
+# likely sequencing errors
+CCTA	darkblue	W	denoise,dubious
+CCTAA	darkblue	W	denoise,dubious
+CCCTA	darkblue	W	denoise,dubious
+CCCCCC	darkgreen	Y	denoise,dubious
+CCCAA	darkgreen	Y	denoise,dubious
+CCCA	darkgreen	Y	denoise,dubious
+CCAA	darkgreen	Y	denoise,dubious
+CCA	darkgreen	Y	denoise,dubious

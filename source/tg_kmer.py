@@ -30,14 +30,15 @@ def read_kmer_tsv(fn, READ_TYPE):
     for line in f:
         if line[0] != '#' and len(line.strip()):
             splt = line.strip().split('\t')
-            if 'pacbio_only' in splt[3] and READ_TYPE not in ['hifi', 'clr']:
+            splt2 = splt[3].split(',')
+            if 'pacbio_only' in splt2 and READ_TYPE not in ['hifi', 'clr']:
                 continue
-            if 'nanopore_only' in splt[3] and READ_TYPE not in ['ont']:
+            if 'nanopore_only' in splt2 and READ_TYPE not in ['ont']:
                 continue
             KMER_LIST.append(splt[0])
             KMER_COLORS.append(splt[1])
             KMER_LETTER.append(splt[2])
-            KMER_FLAGS.append(splt[3])
+            KMER_FLAGS.append(tuple(splt2))
             if 'canonical' in KMER_FLAGS[-1]:
                 CANONICAL_STRINGS.append(KMER_LIST[-1])
     f.close()
@@ -46,7 +47,7 @@ def read_kmer_tsv(fn, READ_TYPE):
     KMER_LIST        = [n[1] for n in sorted_kmer_dat]
     KMER_COLORS      = [n[2] for n in sorted_kmer_dat]
     KMER_LETTER      = [n[3] for n in sorted_kmer_dat]
-    KMER_FLAGS       = [n[4].split(',') for n in sorted_kmer_dat]
+    KMER_FLAGS       = [n[4] for n in sorted_kmer_dat]
     #
     # for nanopore reads we use both forward and reverse kmers
     #
