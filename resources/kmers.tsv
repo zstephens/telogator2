@@ -3,14 +3,18 @@ CCCTAA	blue	C	canonical
 
 # C-type + variations
 CCCTGA	red	D	tvr,nofilt
+CCTGA	darkred	E	tvr
 CCTTGA	darkred	E	tvr
 CGCTGA	darkred	E	tvr
 CCGTGA	darkred	E	tvr
 CCCTTGA	darkred	E	tvr
+CCCTGGA	darkred	E	tvr
+CCCAGGA	darkred	E	tvr
 CCGCTGA	darkred	E	tvr
 
 # G-type + variations
 CCCTCA	yellow	F	tvr,nofilt
+CCTCA	gold	G	tvr,nofilt
 CCGTCA	gold	G	tvr,nofilt
 
 # J-type + variations
@@ -28,16 +32,19 @@ CCCGA	darkviolet	P	tvr
 CCCCGA	darkviolet	P	tvr
 CCCGGA	darkviolet	P	tvr
 CCCCGAA	darkviolet	P	tvr
-CCCCCG	pink	Q	tvr
 CCCCAG	purple	R	tvr
 
 # rare variations (usually singletons)
 CCCTCTAA	cyan	S	tvr,nofilt
+CCCATAA	cyan	S	tvr,nofilt
 CTCTAA	cyan	S	tvr,nofilt
 CGCTAA	cyan	S	tvr,nofilt
 CCGTAA	cyan	S	tvr,nofilt
 CCTGAA	cyan	S	tvr,nofilt
 CCCAGT	cyan	S	tvr,nofilt
+CCCGTA	cyan	S	tvr,nofilt
+CCCCCG	pink	Q	tvr
+CCCTGG	pink	Q	tvr
 
 # canonical indel variations
 CCCTTA	darkcyan	T	tvr
@@ -59,3 +66,4 @@ CCCAA	darkgreen	Y	denoise,dubious
 CCCA	darkgreen	Y	denoise,dubious
 CCAA	darkgreen	Y	denoise,dubious
 CCA	darkgreen	Y	denoise,dubious
+CAA	darkgreen	Y	denoise,dubious
