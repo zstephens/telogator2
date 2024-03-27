@@ -76,10 +76,11 @@ def main(raw_args=None):
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
     parser.add_argument('--fast-filt',      required=False, action='store_true', default=False, help="Remove interstitial telomere reads earlier")
     #
-    parser.add_argument('--muscle',    type=str, required=False, metavar='exe', default='', help="/path/to/muscle")
-    parser.add_argument('--minimap2',  type=str, required=False, metavar='exe', default='', help="/path/to/minimap2")
-    parser.add_argument('--winnowmap', type=str, required=False, metavar='exe', default='', help="/path/to/winnowmap")
-    parser.add_argument('--pbmm2',     type=str, required=False, metavar='exe', default='', help="/path/to/pbmm2")
+    parser.add_argument('--muscle',    type=str, required=False, metavar='exe',    default='', help="/path/to/muscle")
+    parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
+    parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
+    parser.add_argument('--pbmm2',     type=str, required=False, metavar='exe',    default='', help="/path/to/pbmm2")
+    parser.add_argument('--ref',       type=str, required=False, metavar='ref.fa', default='', help="Reference filename (only needed if input is cram)")
     #
     args = parser.parse_args()
     #
@@ -131,9 +132,12 @@ def main(raw_args=None):
     PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
     FAST_FILTERING       = args.fast_filt
+    #
+    CRAM_REF_FILE = args.ref
 
     # check input
     #
+    any_cram = False
     any_pickle = False
     for ifn in INPUT_ALN:
         if exists_and_is_nonzero(ifn) is False:
@@ -144,10 +148,15 @@ def main(raw_args=None):
         if input_type not in ['fasta', 'fastq', 'bam', 'cram', 'pickle']:
             print('Error: input must be fasta, fastq, bam, cram, or pickle')
             exit(1)
-        if input_type == 'pickle':
+        if input_type == 'cram':
+            any_cram = True
+        elif input_type == 'pickle':
             any_pickle = True
     if len(INPUT_ALN) >= 2 and any_pickle:
         print('Error: if multiple inputs are specified, none can be pickle')
+        exit(1)
+    if any_cram and CRAM_REF_FILE == '':
+        print('Error: cram input requires reference fasta via --ref')
         exit(1)
 
     # prep output directory
@@ -277,6 +286,7 @@ def main(raw_args=None):
     else:
         all_readcount = 0
         tel_readcount = 0
+        sup_readcount = 0
         sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
         sys.stdout.flush()
         tt = time.perf_counter()
@@ -284,11 +294,14 @@ def main(raw_args=None):
         total_bp_tel = 0
         with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
             for ifn in INPUT_ALN:
-                my_reader = TG_Reader(ifn, verbose=False)
+                my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
                 while True:
-                    (my_name, my_rdat, my_qdat) = my_reader.get_next_read()
+                    (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
                     if not my_name:
                         break
+                    if my_issup:
+                        sup_readcount += 1
+                        continue
                     count_fwd = my_rdat.count(KMER_INITIAL)
                     count_rev = my_rdat.count(KMER_INITIAL_RC)
                     all_readcount += 1
@@ -301,6 +314,8 @@ def main(raw_args=None):
         mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
+        if sup_readcount:
+            print(f' - skipped {sup_readcount} supplementary alignments')
         print(f' - {all_readcount} --> {tel_readcount} reads')
         print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
         if tel_readcount <= 0:

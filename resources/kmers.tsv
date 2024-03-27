@@ -31,6 +31,7 @@ CCCGAA	violet	N	tvr
 CCCGA	darkviolet	P	tvr
 CCCCGA	darkviolet	P	tvr
 CCCGGA	darkviolet	P	tvr
+CCGGAA	darkviolet	P	tvr
 CCCCGAA	darkviolet	P	tvr
 CCCCAG	purple	R	tvr
 
@@ -61,6 +62,7 @@ CCCCTAACCCTAACCCCTAA	slateblue	V	tvr,dubious,hor
 CCTA	darkblue	W	denoise,dubious
 CCTAA	darkblue	W	denoise,dubious
 CCCTA	darkblue	W	denoise,dubious
+CCCTCC	darkgreen	Y	denoise,dubious
 CCCCCC	darkgreen	Y	denoise,dubious
 CCCAA	darkgreen	Y	denoise,dubious
 CCCA	darkgreen	Y	denoise,dubious

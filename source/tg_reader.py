@@ -10,7 +10,7 @@ import sys
 
 
 class TG_Reader:
-    def __init__(self, input_filename, replace_tabs_with_spaces=True, verbose=True):
+    def __init__(self, input_filename, replace_tabs_with_spaces=True, verbose=True, ref_fasta=''):
         self.replace_tabs_with_spaces = replace_tabs_with_spaces
         self.verbose = verbose
         fnl = input_filename.lower()
@@ -34,7 +34,13 @@ class TG_Reader:
             if self.filetype == 'BAM':
                 self.f = pysam.AlignmentFile(input_filename, "rb", ignore_truncation=True, check_sq=False)
             else:
-                self.f = pysam.AlignmentFile(input_filename, "rc", ignore_truncation=True, check_sq=False)
+                if ref_fasta == '': # cram without reference will almost certainly break, but try anyway
+                    print()
+                    print('Warning: trying to open a cram without a specified reference...')
+                    print()
+                    self.f = pysam.AlignmentFile(input_filename, "rc", ignore_truncation=True, check_sq=False)
+                else:
+                    self.f = pysam.AlignmentFile(input_filename, "rc", ignore_truncation=True, check_sq=False, reference_filename=ref_fasta)
             self.alns = self.f.fetch(until_eof=True)
         else:
             if fnl[-3:] == '.gz':
@@ -50,25 +56,25 @@ class TG_Reader:
         self.current_readname = None
 
     #
-    # returns (readname, readsequence, qualitysequence)
+    # returns (readname, readsequence, qualitysequence, is_supplementary)
     #
     def get_next_read(self):
         if self.filetype == 'FASTQ':
             my_name = self.f.readline().strip()[1:]
             if not my_name:
-                return ('','','')
+                return ('','','',False)
             if self.replace_tabs_with_spaces:
                 my_name = my_name.replace('\t', ' ')
             my_read = self.f.readline().strip()
             skip    = self.f.readline().strip()
             my_qual = self.f.readline().strip()
-            return (my_name, my_read, my_qual)
+            return (my_name, my_read, my_qual, False)
         #
         elif self.filetype == 'FASTA':
             if self.current_readname is None:
                 self.current_readname = self.f.readline().strip()[1:]
             if not self.current_readname:
-                return ('','','')
+                return ('','','',False)
             if self.replace_tabs_with_spaces:
                 self.current_readname = self.current_readname.replace('\t', ' ')
             hit_eof = False
@@ -81,11 +87,11 @@ class TG_Reader:
                 if '>' in self.buffer[-1]:
                     break
             if hit_eof:
-                out_dat = (self.current_readname, ''.join(self.buffer), '')
+                out_dat = (self.current_readname, ''.join(self.buffer), '', False)
                 self.current_readname = None
                 self.buffer = []
             else:
-                out_dat = (self.current_readname, ''.join(self.buffer[:-1]), '')
+                out_dat = (self.current_readname, ''.join(self.buffer[:-1]), '', False)
                 self.current_readname = self.buffer[-1][1:]
                 self.buffer = []
             return out_dat
@@ -103,16 +109,16 @@ class TG_Reader:
                     pass
                 # get read sequence directly from SAM entry instead of using aln.query (which doesn't include softclipped bases)
                 aln_readdat = str(aln).split('\t')[9]
-                return (my_name, aln_readdat, aln.qual)
+                return (my_name, aln_readdat, aln.qual, aln.is_supplementary)
             # we reached the end of file
             except StopIteration:
-                return ('','','')
+                return ('','','',False)
             # this can happen if file is truncated
             except OSError:
-                return ('','','')
+                return ('','','',False)
 
     #
-    # returns list of [(readname1, readsequence1, qualitysequence1), (readname2, readsequence2, qualitysequence2), ...]
+    # returns list of [(readname1, readsequence1, qualitysequence1, issup1), (readname2, readsequence2, qualitysequence2, issup2), ...]
     #
     def get_all_reads(self):
         all_read_dat = []
@@ -120,7 +126,7 @@ class TG_Reader:
             read_dat = self.get_next_read()
             if not read_dat[0]:
                 break
-            all_read_dat.append((read_dat[0], read_dat[1], read_dat[2]))
+            all_read_dat.append((read_dat[0], read_dat[1], read_dat[2], read_dat[3]))
         return all_read_dat
 
     def close(self):
