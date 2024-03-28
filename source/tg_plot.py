@@ -169,6 +169,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
                     'fig_height':None,
                     'font.size':12,
                     'font.weight':'normal',
+                    'draw_grid':True,
                     'mpl_fignum':1,
                     'dpi':KMER_HITS_DPI}
     for k in plot_params.keys():
@@ -198,7 +199,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
     vert_fig_size = min(vert_fig_size, (MAX_PLOT_SIZE / stock_params['dpi']) / 2)
     ####print('[debug:], requesting vert_fig_size:', vert_fig_size, 'with dpi:', stock_params['dpi'])
     if stock_params['fig_height'] is not None:
-        vert_fig_size = stock_params['fig_width']
+        vert_fig_size = stock_params['fig_height']
     #
     if which_tel == 'p':
         if xlim is not None:
@@ -300,7 +301,8 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             else:
                 mpl.xlim([0, max_tlen])
             mpl.xticks(xtt, xtl)
-            mpl.grid(axis='x', linestyle='--', alpha=0.6)
+            if stock_params['draw_grid']:
+                mpl.grid(axis='x', linestyle='--', alpha=0.6)
             #
             reads_plotted_thus_far += 1
     #
