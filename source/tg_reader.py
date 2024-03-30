@@ -66,7 +66,7 @@ class TG_Reader:
             if self.replace_tabs_with_spaces:
                 my_name = my_name.replace('\t', ' ')
             my_read = self.f.readline().strip()
-            skip    = self.f.readline().strip()
+            _       = self.f.readline().strip()
             my_qual = self.f.readline().strip()
             return (my_name, my_read, my_qual, False)
         #

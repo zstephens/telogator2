@@ -365,7 +365,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth
     #
     # plotting constants
     #
-    mpl.rcParams.update({'font.size': 18})
+    mpl.rcParams.update({'font.size': 18, 'font.weight':'normal'})
     plot_params = {'p_color':'steelblue',
                    'q_color':'mediumorchid',
                    'xlabel_rot':0,
@@ -720,4 +720,34 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
     mpl.grid(linestyle='--', alpha=0.5)
     mpl.tight_layout()
     mpl.savefig(out_fn)
+    mpl.close(fig)
+
+#
+#
+#
+def readlen_plot(readlens_all, readlens_tel, plot_fn, xlim=(1000,1000000), nbins=60):
+    mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
+    fig = mpl.figure(1,figsize=(10,8))
+    #
+    mpl.subplot(211)
+    logbins = np.geomspace(xlim[0], xlim[1], nbins)
+    mpl.hist(readlens_all, bins=logbins, color='gray')
+    mpl.xscale('log')
+    mpl.xlim(xlim[0], xlim[1])
+    mpl.grid(which='both', linestyle='--', alpha=0.5)
+    mpl.ylabel('read count')
+    mpl.legend([f'{len(readlens_all)} total reads'])
+    #
+    mpl.subplot(212)
+    logbins = np.geomspace(xlim[0], xlim[1], nbins)
+    mpl.hist(readlens_tel, bins=logbins, color='blue')
+    mpl.xscale('log')
+    mpl.xlim(xlim[0], xlim[1])
+    mpl.grid(which='both', linestyle='--', alpha=0.5)
+    mpl.xlabel('length (bp)')
+    mpl.ylabel('read count')
+    mpl.legend([f'{len(readlens_tel)} tel reads'])
+    #
+    mpl.tight_layout()
+    mpl.savefig(plot_fn)
     mpl.close(fig)

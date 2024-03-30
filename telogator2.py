@@ -12,7 +12,7 @@ import time
 
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_muscle import check_muscle_version
-from source.tg_plot   import plot_kmer_hits, tel_len_violin_plot
+from source.tg_plot   import plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
@@ -187,6 +187,7 @@ def main(raw_args=None):
     ALIGNED_SUBTELS = OUT_DIR + 'subtel_aln'
     VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
     FINAL_TVRS = OUT_DIR + 'all_final_alleles.png'
+    QC_READLEN = OUT_DIR + 'qc_readlens.png'
 
     RAND_SHUFFLE = 3
     if FAST_ALIGNMENT:
@@ -292,6 +293,8 @@ def main(raw_args=None):
         tt = time.perf_counter()
         total_bp_all = 0
         total_bp_tel = 0
+        readlens_all = []
+        readlens_tel = []
         with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
             for ifn in INPUT_ALN:
                 my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
@@ -305,13 +308,21 @@ def main(raw_args=None):
                     count_fwd = my_rdat.count(KMER_INITIAL)
                     count_rev = my_rdat.count(KMER_INITIAL_RC)
                     all_readcount += 1
-                    total_bp_all += len(my_rdat)
+                    my_rlen = len(my_rdat)
+                    total_bp_all += my_rlen
+                    readlens_all.append(my_rlen)
                     if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
                         f.write(f'>{my_name}\n{my_rdat}\n')
                         tel_readcount += 1
-                        total_bp_tel += len(my_rdat)
+                        total_bp_tel += my_rlen
+                        readlens_tel.append(my_rlen)
                 my_reader.close()
         mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
+        #
+        readlen_plot(readlens_all, readlens_tel, QC_READLEN)
+        del readlens_all
+        del readlens_tel
+        #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         if sup_readcount:
