@@ -163,13 +163,15 @@ def main(raw_args=None):
     #
     if OUT_DIR[-1] != '/':
         OUT_DIR += '/'
-    OUT_CLUST_DIR = OUT_DIR + 'clust_dat/'
+    OUT_CLUST_DIR = OUT_DIR + 'temp/'
     OUT_CDIR_INIT = OUT_CLUST_DIR + '00_initial/'
     OUT_CDIR_TVR  = OUT_CLUST_DIR + '01_tvr/'
     OUT_CDIR_SUB  = OUT_CLUST_DIR + '02_subtel/'
     OUT_CDIR_FIN  = OUT_CLUST_DIR + '03_final/'
+    OUT_QC_DIR    = OUT_DIR + 'qc/'
     makedir(OUT_DIR)
     makedir(OUT_CLUST_DIR)
+    makedir(OUT_QC_DIR)
     for d in [OUT_CDIR_INIT, OUT_CDIR_TVR, OUT_CDIR_SUB, OUT_CDIR_FIN]:
         makedir(d)
         makedir(d + 'dendro/')
@@ -180,14 +182,16 @@ def main(raw_args=None):
     if PLOT_TEL_SIGNALS:
         makedir(TEL_SIGNAL_DIR)
 
-    TELOMERE_READS = OUT_DIR + 'tel_reads.fa.gz'
+    TELOMERE_READS = OUT_CLUST_DIR + 'tel_reads.fa.gz'
     OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
-    OUT_PICKLE_UNANCHORED = OUT_DIR + 'unanchored-dat.p'
-    OUT_UNANCHORED_SUBTELS = OUT_DIR + 'unanchored_subtels.fa.gz'
-    ALIGNED_SUBTELS = OUT_DIR + 'subtel_aln'
+    ####OUT_PICKLE_UNANCHORED = OUT_CLUST_DIR + 'unanchored-dat.p'
+    OUT_UNANCHORED_SUBTELS = OUT_CLUST_DIR + 'unanchored_subtels.fa.gz'
+    ALIGNED_SUBTELS = OUT_CLUST_DIR + 'subtel_aln'
     VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
     FINAL_TVRS = OUT_DIR + 'all_final_alleles.png'
-    QC_READLEN = OUT_DIR + 'qc_readlens.png'
+    QC_READLEN = OUT_QC_DIR + 'qc_readlens.png'
+    QC_CMD     = OUT_QC_DIR + 'cmd.txt'
+    QC_STATS   = OUT_QC_DIR + 'stats.txt'
 
     RAND_SHUFFLE = 3
     if FAST_ALIGNMENT:
@@ -262,7 +266,7 @@ def main(raw_args=None):
     #
     # write cmd out, for debugging purposes
     #
-    with open(OUT_DIR + 'cmd.txt', 'w') as f:
+    with open(QC_CMD, 'w') as f:
         stripped_strings = [strip_paths_from_string(n) for n in sys.argv]
         f.write(' '.join(stripped_strings) + '\n')
 
@@ -434,13 +438,13 @@ def main(raw_args=None):
             sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
             sys.stdout.flush()
         #
-        f = open(OUT_PICKLE_UNANCHORED, 'wb')
-        pickle.dump({'kmer-hit-dat':kmer_hit_dat,
-                     'all-tvrtel-seq':all_tvrtel_seq,
-                     'all-subtel-seq':all_subtel_seq,
-                     'all-terminating-tl':all_terminating_tl,
-                     'all-nontel-end':all_nontel_end}, f)
-        f.close()
+        ####f = open(OUT_PICKLE_UNANCHORED, 'wb')
+        ####pickle.dump({'kmer-hit-dat':kmer_hit_dat,
+        ####             'all-tvrtel-seq':all_tvrtel_seq,
+        ####             'all-subtel-seq':all_subtel_seq,
+        ####             'all-terminating-tl':all_terminating_tl,
+        ####             'all-nontel-end':all_nontel_end}, f)
+        ####f.close()
         #
     my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
     my_rnames = [n[4] for n in kmer_hit_dat]
@@ -1007,6 +1011,11 @@ def main(raw_args=None):
     print(f' - {num_alleles_unmapped} (unmapped)')
     print(f' - {num_alleles_too_short} (atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp)')
     print(f' - {num_alleles_interstitial} (interstitial)')
+    with open(QC_STATS, 'w') as f:
+        f.write(f' - {num_pass_alleles} final telomere alleles\n')
+        f.write(f' - {num_alleles_unmapped} (unmapped)\n')
+        f.write(f' - {num_alleles_too_short} (atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp)\n')
+        f.write(f' - {num_alleles_interstitial} (interstitial)\n')
 
 
 if __name__ == '__main__':
