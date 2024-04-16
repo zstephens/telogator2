@@ -529,6 +529,7 @@ def main(raw_args=None):
     fail_clusters = []
     fail_blank = []
     clusters_with_tvrs = []
+    n_reads = 0
     for clust_i in range(len(read_clust_dat[0])):
         current_clust_inds = read_clust_dat[0][clust_i]
         # cluster filter: not enough reads
@@ -580,7 +581,6 @@ def main(raw_args=None):
         #
         make_tvr_plots(khd_subset, subset_clustdat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
-        n_reads = 0
         for sci,subclust_inds in enumerate(subset_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
             if len(subclust_read_inds) < MIN_READS_PER_PHASE:
