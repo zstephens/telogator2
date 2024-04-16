@@ -189,6 +189,7 @@ def main(raw_args=None):
     ALIGNED_SUBTELS = OUT_CLUST_DIR + 'subtel_aln'
     VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
     FINAL_TVRS = OUT_DIR + 'all_final_alleles.png'
+    READLEN_NPZ = OUT_CLUST_DIR + 'readlens.npz'
     QC_READLEN = OUT_QC_DIR + 'qc_readlens.png'
     QC_CMD     = OUT_QC_DIR + 'cmd.txt'
     QC_STATS   = OUT_QC_DIR + 'stats.txt'
@@ -323,7 +324,7 @@ def main(raw_args=None):
                 my_reader.close()
         mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
         #
-        readlen_plot(readlens_all, readlens_tel, QC_READLEN)
+        np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
         del readlens_all
         del readlens_tel
         #
@@ -479,7 +480,9 @@ def main(raw_args=None):
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
+    n_reads = sum([len(n) for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
     print(f' - {n_clusters} clusters formed (>= {MIN_READS_PER_PHASE} supporting reads)')
+    print(f' - ({n_reads} reads)')
     #
     if PLOT_ALL_INITIAL:
         sys.stdout.write('plotting all tel reads in a single big plot...')
@@ -577,10 +580,12 @@ def main(raw_args=None):
         #
         make_tvr_plots(khd_subset, subset_clustdat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
+        n_reads = 0
         for sci,subclust_inds in enumerate(subset_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
             if len(subclust_read_inds) < MIN_READS_PER_PHASE:
                 continue
+            n_reads += len(subclust_read_inds)
             #
             # filters to try and remove interstitial telomere repeats
             #
@@ -617,6 +622,7 @@ def main(raw_args=None):
     sys.stdout.flush()
     print(f' - {len(clusters_with_tvrs)} clusters with tvrs (does not yet include blanks)')
     print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not ending in tel)')
+    print(f' - ({n_reads} reads)')
     #
     # [3] SUBTEL CLUSTERING
     #
@@ -634,6 +640,7 @@ def main(raw_args=None):
         sys.stdout.flush()
         tt = time.perf_counter()
         final_clustered_read_inds = []
+        n_reads = 0
         for sci,subclust_read_inds in enumerate(clusters_with_tvrs):
             if sci == len(clusters_with_tvrs) - 1 and have_blank:
                 my_chr = blank_chr
@@ -671,10 +678,12 @@ def main(raw_args=None):
                 subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
                 if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
                     continue
+                n_reads += len(subsubclust_read_inds)
                 final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {len(final_clustered_read_inds)} clusters')
+        print(f' - ({n_reads} reads)')
     #
     #
     #
@@ -745,7 +754,7 @@ def main(raw_args=None):
     num_unique_alleles = len(set([n[3] for n in ALLELE_TEL_DAT]))
     num_blank_alleles  = len([n[0] for n in ALLELE_TEL_DAT if n[0] == blank_chr])
     print(f' - {num_unique_alleles} unique alleles')
-    print(f' - {num_blank_alleles} / {num_unique_alleles} have blank TVRs')
+    print(f' - {num_blank_alleles} / {num_unique_alleles} alleles have blank TVRs')
 
     #
     #
@@ -964,6 +973,7 @@ def main(raw_args=None):
     num_alleles_interstitial = 0
     num_alleles_unmapped = 0
     num_pass_alleles = 0
+    readlens_final = []
     for atd in ALLELE_TEL_DAT:
         my_id = atd[3]
         while my_id[-1].isdigit() is False:
@@ -986,6 +996,7 @@ def main(raw_args=None):
             my_annot = str(atd[3]) + 'b'
         else:
             my_annot = str(atd[3])
+        readlens_final.extend([int(n) for n in atd[6].split(',')])
         tvrs_to_plot.append(allele_consensus[my_id][:my_tvr_len+my_rep_atl])
         tvr_labels_to_plot.append(f'({my_annot}) {atd[0]}')
         clustdat_to_plot[0][0].append(current_i)
@@ -993,6 +1004,13 @@ def main(raw_args=None):
         clustdat_to_plot[2][0].append(0)
         clustdat_to_plot[3].append(0)
         current_i += 1
+    #
+    in_npz = np.load(READLEN_NPZ)
+    readlens_all = in_npz['readlen_all']
+    readlens_tel = in_npz['readlen_tel']
+    readlen_plot(readlens_all, readlens_tel, readlens_final, QC_READLEN)
+    rm(READLEN_NPZ)
+    #
     if len(tvrs_to_plot):
         redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
         clust_khd = []

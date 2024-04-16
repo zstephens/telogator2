@@ -725,7 +725,7 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
 #
 #
 #
-def readlen_plot(readlens_all, readlens_tel, plot_fn, xlim=(1000,1000000), nbins=60):
+def readlen_plot(readlens_all, readlens_tel, readlens_final, plot_fn, xlim=(1000,1000000), nbins=60):
     mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
     fig = mpl.figure(1,figsize=(10,8))
     #
@@ -741,12 +741,13 @@ def readlen_plot(readlens_all, readlens_tel, plot_fn, xlim=(1000,1000000), nbins
     mpl.subplot(212)
     logbins = np.geomspace(xlim[0], xlim[1], nbins)
     mpl.hist(readlens_tel, bins=logbins, color='blue')
+    mpl.hist(readlens_final, bins=logbins, color='green')
     mpl.xscale('log')
     mpl.xlim(xlim[0], xlim[1])
     mpl.grid(which='both', linestyle='--', alpha=0.5)
     mpl.xlabel('length (bp)')
     mpl.ylabel('read count')
-    mpl.legend([f'{len(readlens_tel)} tel reads'])
+    mpl.legend([f'{len(readlens_tel)} initial tel reads', f'{len(readlens_final)} final tel reads'])
     #
     mpl.tight_layout()
     mpl.savefig(plot_fn)
