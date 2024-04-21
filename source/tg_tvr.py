@@ -907,9 +907,11 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
     #
     out_kmerhits = []
     for i in range(len(colorvecs)):
+        out_kmerhits.append([[] for n in range(len(kmer_colors))])
+        if len(colorvecs[i]) == 0:
+            continue
         current_block = colorvecs[i][0]
         current_start = 0
-        out_kmerhits.append([[] for n in range(len(kmer_colors))])
         colorvecs[i] += UNKNOWN_LETTER
         for j in range(1,len(colorvecs[i])):
             if colorvecs[i][j] != current_block:
