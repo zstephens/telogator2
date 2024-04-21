@@ -481,8 +481,8 @@ def main(raw_args=None):
     sys.stdout.flush()
     n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
     n_reads = sum([len(n) for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
-    print(f' - {n_clusters} clusters formed (>= {MIN_READS_PER_PHASE} supporting reads)')
-    print(f' - ({n_reads} reads)')
+    print(f' - {n_clusters} clusters ({n_reads} reads)')
+    print(f' - (>= {MIN_READS_PER_PHASE} reads per cluster)')
     #
     if PLOT_ALL_INITIAL:
         sys.stdout.write('plotting all tel reads in a single big plot...')
@@ -529,28 +529,32 @@ def main(raw_args=None):
     fail_clusters = []
     fail_blank = []
     clusters_with_tvrs = []
+    n_rescued = [0,0] # (failed_initial_clustering, clustered_but_no_tvr)
     n_reads = 0
     for clust_i in range(len(read_clust_dat[0])):
         current_clust_inds = read_clust_dat[0][clust_i]
+        # terminating-tel filters (to prevent interstitial tels from getting into fail/blank sets)
+        term_tel = [all_terminating_tl[n] for n in current_clust_inds]
+        term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
+        nt_end = [all_nontel_end[n] for n in current_clust_inds]
+        nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
+        passed_termtel = True
+        if term_zero_frac > TERM_TEL_ZERO_FRAC or nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
+            passed_termtel = False
         # cluster filter: not enough reads
+        # - if the reads pass terminating-tel filters, lets add them to blank_inds
         if len(current_clust_inds) < MIN_READS_PER_PHASE:
+            if passed_termtel:
+                blank_inds.extend(current_clust_inds)
+                n_rescued[0] += len(current_clust_inds)
             continue
-        # cluster filter: blank tvr, add to blank_inds and move on
-        # - also copying the terminating-tel filters from below to avoid interstitial tel repeats
+        # cluster filter: blank tvr, add to blank_inds
         if read_clust_dat[7][clust_i] <= 0:
-            clust_failed = False
-            term_tel = [all_terminating_tl[n] for n in current_clust_inds]
-            term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
-            if term_zero_frac > TERM_TEL_ZERO_FRAC:
-                clust_failed = True
-            nt_end = [all_nontel_end[n] for n in current_clust_inds]
-            nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
-            if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
-                clust_failed = True
-            if clust_failed:
+            if passed_termtel:
+                blank_inds.extend(current_clust_inds)
+                n_rescued[1] += len(current_clust_inds)
+            else:
                 fail_blank.append((term_zero_frac, nontel_long_frac, [n for n in current_clust_inds]))
-                continue
-            blank_inds.extend(current_clust_inds)
             continue
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         zfcn = str(clust_num).zfill(3)
@@ -620,9 +624,11 @@ def main(raw_args=None):
         clusters_with_tvrs.append([n for n in blank_inds])
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
-    print(f' - {len(clusters_with_tvrs)} clusters with tvrs (does not yet include blanks)')
-    print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not ending in tel)')
-    print(f' - ({n_reads} reads)')
+    print(f' - {len(clusters_with_tvrs)} clusters with tvrs ({n_reads} reads)')
+    print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not ending in tel')
+    print(f' - {len(blank_inds)} tel reads without tvrs:')
+    print(f' --- {n_rescued[0]} ungrouped in initial clustering')
+    print(f' --- {n_rescued[1]} clustered but had no tvr')
     #
     # [3] SUBTEL CLUSTERING
     #
@@ -682,8 +688,7 @@ def main(raw_args=None):
                 final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
-        print(f' - {len(final_clustered_read_inds)} clusters')
-        print(f' - ({n_reads} reads)')
+        print(f' - {len(final_clustered_read_inds)} clusters ({n_reads} reads)')
     #
     #
     #
