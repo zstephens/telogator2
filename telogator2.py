@@ -626,7 +626,7 @@ def main(raw_args=None):
     sys.stdout.flush()
     print(f' - {len(clusters_with_tvrs)} clusters with tvrs ({n_reads} reads)')
     print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not ending in tel')
-    print(f' - {len(blank_inds)} tel reads without tvrs:')
+    print(f' - ({len(blank_inds)} tel reads without tvrs):')
     print(f' --- {n_rescued[0]} ungrouped in initial clustering')
     print(f' --- {n_rescued[1]} clustered but had no tvr')
     #
