@@ -224,9 +224,9 @@ def filter_by_denoise_frac(kmer_dat, repeats_metadata, my_chr):
         my_cvec = ''.join(my_letters)
         #
         if pq == 'p':
-            (seq_left, seq_right) = find_density_boundary(my_cvec[::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+            (seq_left, seq_right) = find_density_boundary(my_cvec[::-1], [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
         elif pq == 'q':
-            (seq_left, seq_right) = find_density_boundary(my_cvec, UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+            (seq_left, seq_right) = find_density_boundary(my_cvec, [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
         #
         my_count_unknown = seq_right.count(UNKNOWN_LETTER)
         my_count_denoise = 0
@@ -275,6 +275,7 @@ def cluster_tvrs(kmer_dat,
     tvr_letters      = []
     nofilt_letters   = []
     dubious_letters  = [UNKNOWN_LETTER]
+    subfilt_letters  = []
     for i in range(len(kmer_list)):
         if 'canonical' in kmer_flags[i]:
             canonical_letter = kmer_letters[i]
@@ -286,6 +287,8 @@ def cluster_tvrs(kmer_dat,
             nofilt_letters.append(kmer_letters[i])
         if 'dubious' in kmer_flags[i]:
             dubious_letters.append(kmer_letters[i])
+        if 'subtel-filt' in kmer_flags[i]:
+            subfilt_letters.append(kmer_letters[i])
         if kmer_letters[i] == UNKNOWN_LETTER:
             print(f'Error: character {UNKNOWN_LETTER} is reserved for unknown sequence')
             exit(1)
@@ -296,6 +299,7 @@ def cluster_tvrs(kmer_dat,
     tvr_letters     = list(set(tvr_letters))
     nofilt_letters  = list(set(nofilt_letters))
     dubious_letters = list(set(dubious_letters))
+    subfilt_letters = list(set(subfilt_letters))
     letters_worth_chasing = [n for n in tvr_letters if n not in dubious_letters]
 
     #
@@ -329,11 +333,11 @@ def cluster_tvrs(kmer_dat,
         #
         if pq == 'p':
             # identify subtel/tvr boundary based on density of unknown characters
-            (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+            (seq_left, seq_right) = find_density_boundary(all_colorvecs[i][::-1], [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
             # denoise tvr+tel section
             seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter]+tvr_letters)
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
-            (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], canonical_letter, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
+            (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], [canonical_letter], CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
             #
             cleaned_colorvecs.append(err_right + seq_left[::-1])    # the entire denoised read (for plotting)
             err_end_lens.append(len(err_left))                      # needed for adjusting offsets in plots
@@ -346,9 +350,9 @@ def cluster_tvrs(kmer_dat,
         #
         elif pq == 'q':
             # identify subtel/tvr boundary based on density of unknown characters
-            (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
+            (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], [UNKNOWN_LETTER]+subfilt_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
             # lets walk backwards with a smaller window to see if there are some tvrs we missed
-            (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
+            (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], [UNKNOWN_LETTER]+subfilt_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
             seq_right = recovered_tvr[::-1] + seq_right
             seq_left = rest_is_subtel[::-1]
             # adjust subtel boundary so that tvr does not begin with an unknown character
@@ -360,7 +364,7 @@ def cluster_tvrs(kmer_dat,
             # denoise tvr+tel section
             seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter]+tvr_letters)
             # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
-            (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], canonical_letter, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
+            (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], [canonical_letter], CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
             #
             cleaned_colorvecs.append(seq_left + err_right[::-1])    # the entire denoised read (for plotting)
             err_end_lens.append(len(err_left))                      # needed for adjusting offsets in plots
@@ -545,11 +549,11 @@ def cluster_tvrs(kmer_dat,
     ####subtel_recovery = []
     ####for i in range(len(out_consensus)):
     ####    if pq == 'p':
-    ####        (scons_left, scons_right) = find_density_boundary(subtel_consensus[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE_CONS, UNKNOWN_END_DENS_CONS, thresh_dir='above', debug_plot=False)
+    ####        (scons_left, scons_right) = find_density_boundary(subtel_consensus[i], [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE_CONS, UNKNOWN_END_DENS_CONS, thresh_dir='above', debug_plot=False)
     ####        out_consensus[i] = out_consensus[i] + scons_left
     ####        subtel_recovery.append(scons_left)
     ####    elif pq == 'q':
-    ####        (scons_left, scons_right) = find_density_boundary(subtel_consensus[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE_CONS, UNKNOWN_END_DENS_CONS, thresh_dir='above', debug_plot=False)
+    ####        (scons_left, scons_right) = find_density_boundary(subtel_consensus[i][::-1], [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE_CONS, UNKNOWN_END_DENS_CONS, thresh_dir='above', debug_plot=False)
     ####        out_consensus[i] = scons_left[::-1] + out_consensus[i]
     ####        subtel_recovery.append(scons_left[::-1])
     subtel_recovery = ['' for n in out_consensus] # skipping this entire step
@@ -559,10 +563,10 @@ def cluster_tvrs(kmer_dat,
     #####
     ####for i in range(len(out_consensus)):
     ####    if pq == 'p':
-    ####        (cons_left, cons_right) = find_density_boundary(out_consensus[i][::-1], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+    ####        (cons_left, cons_right) = find_density_boundary(out_consensus[i][::-1], [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
     ####        out_consensus[i] = cons_right[::-1]
     ####    elif pq == 'q':
-    ####        (cons_left, cons_right) = find_density_boundary(out_consensus[i], UNKNOWN_LETTER, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
+    ####        (cons_left, cons_right) = find_density_boundary(out_consensus[i], [UNKNOWN_LETTER], UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below')
     ####        out_consensus[i] = cons_right
 
     #
@@ -785,7 +789,7 @@ def cluster_tvrs(kmer_dat,
 def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', starting_coord=0, use_lowest_dens=False, debug_plot=False, readname=''):
     my_unknown = np.zeros(len(sequence))
     for j in range(starting_coord, len(sequence)):
-        if sequence[j] == which_letter:
+        if sequence[j] in which_letter:
             my_unknown[j] = 1
     my_unknown_cum  = np.cumsum(my_unknown)
     my_unknown_dens = []
@@ -796,7 +800,7 @@ def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_
     elif thresh_dir == 'above':
         lowest_dens_thus_far = 0.0
     else:
-        print('Error: find_density_boundary thresh_dir must be above or below')
+        print('Error: find_density_boundary() thresh_dir must be above or below')
         exit(1)
     for j in range(starting_coord, len(sequence) - win_size):
         my_unknown_dens.append(float(my_unknown_cum[j+win_size] - my_unknown_cum[j]) / win_size)

@@ -44,8 +44,8 @@ CCGTAA	cyan	S	tvr,nofilt
 CCTGAA	cyan	S	tvr,nofilt
 CCCAGT	cyan	S	tvr,nofilt
 CCCGTA	cyan	S	tvr,nofilt
-CCCCCG	pink	Q	tvr
-CCCTGG	pink	Q	tvr
+CCCCCG	pink	Q	tvr,subtel-filt
+CCCTGG	pink	Q	tvr,subtel-filt
 
 # canonical indel variations
 CCCTTA	darkcyan	T	tvr

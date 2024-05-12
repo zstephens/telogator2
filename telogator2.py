@@ -20,13 +20,9 @@ from source.tg_util   import annotate_interstitial_tel, exists_and_is_nonzero, g
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
-#
 DUMMY_TEL_MAPQ = 60
 # how much subtel should we use for de-clustering alleles? [min_size, max_size]
 SUBTEL_CLUSTER_SIZE = [1500, 3000]
-#
-MIN_TEL_UNANCHORED = 500
-NONTEL_EDGE_UNANCHORED = 200
 # if >30% this fraction of reads have no terminating tel, skip the cluster
 TERM_TEL_ZERO_FRAC = 0.30
 # if the nontel content of reads exceeds 190 for >49% of reads, skip this cluster
@@ -74,7 +70,8 @@ def main(raw_args=None):
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip cluster refinement step that uses subtels")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
-    parser.add_argument('--fast-filt',      required=False, action='store_true', default=False, help="Remove interstitial telomere reads earlier")
+    #
+    parser.add_argument('--init-filt', type=int, required=False, metavar='(-1, -1)', nargs=2, default=(-1,-1), help="Apply terminating-tel filters to input reads")
     #
     parser.add_argument('--muscle',    type=str, required=False, metavar='exe',    default='', help="/path/to/muscle")
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
@@ -98,6 +95,7 @@ def main(raw_args=None):
     ALLELE_TL_METHOD    = args.m
     DOWNSAMPLE_READS    = args.d
     NUM_PROCESSES       = args.p
+    CRAM_REF_FILE       = args.ref
     #
     TREECUT_INITIAL       = args.ti
     TREECUT_PREFIXMERGE   = args.tp
@@ -131,9 +129,15 @@ def main(raw_args=None):
     PLOT_TEL_SIGNALS     = args.plot_signals
     PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
-    FAST_FILTERING       = args.fast_filt
+    INIT_FILTERING_TUPLE = args.init_filt
     #
-    CRAM_REF_FILE = args.ref
+    INIT_FILTERING = False
+    MIN_TEL_UNANCHORED = 500
+    NONTEL_EDGE_UNANCHORED = 200
+    if INIT_FILTERING_TUPLE[0] >= 0 and INIT_FILTERING_TUPLE[1] >= 0:
+        INIT_FILTERING = True
+        MIN_TEL_UNANCHORED = INIT_FILTERING_TUPLE[0]
+        NONTEL_EDGE_UNANCHORED = INIT_FILTERING_TUPLE[1]
 
     # check input
     #
@@ -380,9 +384,9 @@ def main(raw_args=None):
             my_terminating_tel = min(my_terminating_tel, len(my_rdat))
             my_nontel_end = min(my_nontel_end, len(my_rdat))
             #
-            if FAST_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
+            if INIT_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
                 continue
-            if FAST_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
+            if INIT_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
                 continue
             # too little subtel sequence?
             if MIN_SUBTEL_BUFF > 0 and len(my_rdat) < my_terminating_tel + MIN_SUBTEL_BUFF:
@@ -412,8 +416,8 @@ def main(raw_args=None):
             all_terminating_tl.append(my_terminating_tel)
             all_nontel_end.append(my_nontel_end)
         fast_filt_str = ''
-        if FAST_FILTERING:
-            fast_filt_str = ' [fast-filt applied]'
+        if INIT_FILTERING:
+            fast_filt_str = ' [init-filt applied]'
         num_ending_reads = len(kmer_hit_dat)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads' + fast_filt_str + '\n')
