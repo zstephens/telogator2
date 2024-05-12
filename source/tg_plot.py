@@ -307,7 +307,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             reads_plotted_thus_far += 1
     #
     if stock_params['custom_xlabel'] is None:
-        mpl.xlabel('distance from subtelomere/telomere boundary (bp)')
+        mpl.xlabel('distance from subtelomere boundary (bp)')
     else:
         mpl.xlabel(stock_params['custom_xlabel'])
     mpl.tight_layout()

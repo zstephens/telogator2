@@ -185,14 +185,14 @@ def parallel_msa_job(my_inds, out_clust, buffered_tvrs, buffered_subs, muscle_pa
             results_dict[('sub',i)] = buffered_subs[out_clust[i][0]]
         else:
             clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
-            my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'tvr' + str(i).zfill(5)
+            my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0 and muscle_prefix[-1] != '/') + 'tvr' + str(i).zfill(5)
             [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
             results_dict[('tvr',i)] = consensus_seq
             clust_seq = [buffered_subs[n] for n in out_clust[i]]
             if clust_seq[0] == '':
                 results_dict[('sub',i)] = ''
             else:
-                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0) + 'sub' + str(i).zfill(5)
+                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0 and muscle_prefix[-1] != '/') + 'sub' + str(i).zfill(5)
                 [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
                 results_dict[('sub',i)] = consensus_seq
 
@@ -258,11 +258,12 @@ def cluster_tvrs(kmer_dat,
                  tvr_truncate=3000,
                  alignment_processes=4,
                  muscle_exe='muscle',
+                 muscle_dir='',
                  PRINT_DEBUG=False):
     #
     [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
     #
-    muscle_prefix = ''
+    muscle_prefix = muscle_dir
     if save_msa is not None and '.' in save_msa:
         muscle_prefix = '.'.join(save_msa.split('.')[:-1])
     #

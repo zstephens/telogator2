@@ -476,6 +476,7 @@ def main(raw_args=None):
                                   fig_prefix_name=init_dend_prefix_fn,
                                   save_msa=init_consensus_fn,
                                   muscle_exe=MUSCLE_EXE,
+                                  muscle_dir=OUT_CDIR_INIT + 'fa/',
                                   PRINT_DEBUG=PRINT_DEBUG)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
@@ -581,6 +582,7 @@ def main(raw_args=None):
                                        fig_prefix_name=dend_prefix_fn,
                                        save_msa=consensus_fn,
                                        muscle_exe=MUSCLE_EXE,
+                                       muscle_dir=OUT_CDIR_TVR + 'fa/',
                                        PRINT_DEBUG=PRINT_DEBUG)
         #
         make_tvr_plots(khd_subset, subset_clustdat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
@@ -727,6 +729,7 @@ def main(raw_args=None):
                                      fig_prefix_name=dend_prefix_fn,
                                      save_msa=consensus_fn,
                                      muscle_exe=MUSCLE_EXE,
+                                     muscle_dir=OUT_CDIR_FIN + 'fa/',
                                      PRINT_DEBUG=PRINT_DEBUG)
         #
         my_subtels = []
