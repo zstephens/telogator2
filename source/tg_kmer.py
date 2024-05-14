@@ -48,15 +48,6 @@ def read_kmer_tsv(fn, READ_TYPE):
     KMER_COLORS      = [n[2] for n in sorted_kmer_dat]
     KMER_LETTER      = [n[3] for n in sorted_kmer_dat]
     KMER_FLAGS       = [n[4] for n in sorted_kmer_dat]
-    #
-    # for nanopore reads we use both forward and reverse kmers
-    #
-    if READ_TYPE in ['ont']:
-        KMER_LIST   = KMER_LIST + [RC(n) for n in KMER_LIST]
-        KMER_COLORS = KMER_COLORS + KMER_COLORS
-        KMER_LETTER = KMER_LETTER + KMER_LETTER
-        KMER_FLAGS  = KMER_FLAGS + KMER_FLAGS
-        CANONICAL_STRINGS = CANONICAL_STRINGS + [RC(n) for n in CANONICAL_STRINGS]
     KMER_METADATA    = [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS]
     KMER_ISSUBSTRING = []
     for i in range(len(KMER_LIST)):
@@ -70,9 +61,9 @@ def read_kmer_tsv(fn, READ_TYPE):
 def get_telomere_kmer_density(read_dat, kmer_list, tel_window, mode='hifi', smoothing=False):
     re_hits = [[], []]
     for i in range(len(kmer_list)):
-        if mode in ['hifi']:
+        if mode in ['hifi', 'ont']:
             re_hits[0].extend([(n.start(0), n.end(0), i, 0) for n in re.finditer(kmer_list[i], read_dat)])
-        elif mode in ['clr', 'ont']:
+        elif mode in ['clr']:
             re_hits[1].extend([(n.start(0), n.end(0), i, 1) for n in regex.finditer("("+kmer_list[i]+"){e<=1}", read_dat, overlapped=True)])
         else:
             print('Error: read mode must be hifi / clr / ont')
@@ -106,7 +97,7 @@ def get_telomere_base_count(read_dat, kmer_list, mode='hifi'):
     re_hits = []
     for i in range(len(kmer_list)):
         re_hits.extend([(n.start(0), n.end(0), i, 0) for n in re.finditer(kmer_list[i], read_dat)])
-        if mode in ['clr', 'ont']:
+        if mode in ['clr']:
             re_hits.extend([(n.start(0), n.end(0), i, 1) for n in regex.finditer("("+kmer_list[i]+"){e<=1}", read_dat, overlapped=True)])
     #
     tel_hit = np.zeros(len(read_dat),dtype='<i4')
@@ -130,9 +121,9 @@ def get_telomere_regions(td_p_e0, td_p_e1, td_q_e0, td_q_e1, tel_window, pthresh
     for i in range(min_win_pos):
         c0 = td_p_e0[i] - td_q_e0[i]
         c1 = td_p_e1[i] - td_q_e1[i]
-        if mode in ['hifi']:
+        if mode in ['hifi', 'ont']:
             p_vs_q_power[i] = (COEF_EDIT_0*(c0)) / float(COEF_EDIT_0)
-        elif mode in ['clr', 'ont']:
+        elif mode in ['clr']:
             p_vs_q_power[i] = (COEF_EDIT_0*(c0) + COEF_EDIT_1*(c1)) / float(COEF_EDIT_0 + COEF_EDIT_1)
         else:
             print('Error: read mode must be hifi / clr / ont')
