@@ -1,5 +1,7 @@
 # canonical
 CCCTAA	blue	C	canonical
+CCTGG	blue	C	canonical,nanopore_only
+TTTTAA	blue	C	canonical,nanopore_only
 
 # C-type + variations
 CCCTGA	red	D	tvr,nofilt
