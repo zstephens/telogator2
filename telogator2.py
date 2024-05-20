@@ -11,7 +11,7 @@ import sys
 import time
 
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
-from source.tg_muscle import check_muscle_version
+from source.tg_muscle import check_muscle_version, get_muscle_msa
 from source.tg_plot   import plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
@@ -665,6 +665,7 @@ def main(raw_args=None):
             zfcn = str(sci).zfill(3)
             subtel_dendro_fn = OUT_CDIR_SUB + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
             subtel_dist_fn   = OUT_CDIR_SUB + 'npy/'    + 'dist-matrix_' + zfcn + '.npy'
+            subtel_muscle_fn = OUT_CDIR_SUB + 'fa/'     + 'consensus_'   + zfcn
             my_dendro_title  = zfcn
             subtel_labels    = None
             #
@@ -686,7 +687,19 @@ def main(raw_args=None):
                                                      dendrogram_title=my_dendro_title,
                                                      dendrogram_height=8)
             #
-            for sci,subclust_inds in enumerate(subtel_clustdat):
+            if ALWAYS_REPROCESS or exists_and_is_nonzero(subtel_muscle_fn + '.fa') is False:
+                with open(subtel_muscle_fn + '.fa', 'w') as f:
+                    for sci_s,subclust_inds in enumerate(subtel_clustdat):
+                        subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
+                        if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
+                            continue
+                        zfcn_s = str(sci_s).zfill(3)
+                        clustered_subtels = [my_subtels[n] for n in subclust_inds]
+                        [subtel_out_seq, subtel_consensus_seq] = get_muscle_msa(clustered_subtels, MUSCLE_EXE, tempfile_prefix=subtel_muscle_fn+f'_{zfcn_s}', mode='nucl')
+                        f.write(f'>subtel-consensus_{zfcn}_{zfcn_s}\n')
+                        f.write(f'{subtel_consensus_seq}\n')
+            #
+            for sci_s,subclust_inds in enumerate(subtel_clustdat):
                 subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
                 if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
                     continue

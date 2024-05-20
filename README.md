@@ -3,12 +3,9 @@ A method for measuring allele-specific TL and characterizing telomere variant re
 
 If this software has been useful for your work, please cite us at:
 
-(Publication currently in submission)
+Stephens, Z., & Kocher, J. P. (2024). Characterization of telomere variant repeats using long reads enables allele-specific telomere length estimation. *BMC bioinformatics*, 25(1), 194.
 
-In the mean time, see our preprint:
-
-https://www.researchsquare.com/article/rs-3673861/v1
-
+https://link.springer.com/article/10.1186/s12859-024-05807-5
 
 ## Dependencies:
 
