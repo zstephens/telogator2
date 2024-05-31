@@ -16,7 +16,7 @@ from source.tg_plot   import plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
-from source.tg_util   import annotate_interstitial_tel, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
+from source.tg_util   import annotate_interstitial_tel, exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -34,7 +34,7 @@ ANCHORING_ASSIGNMENT_FRAC = 0.20
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description='Telogator2', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-    parser.add_argument('-i', type=str, required=True,  metavar='input.fa',     nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
+    parser.add_argument('-i', type=str, required=True,  metavar='',             nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
     parser.add_argument('-o', type=str, required=True,  metavar='output/',                      help="* Path to output directory")
     parser.add_argument('-k', type=str, required=False, metavar='kmers.tsv',    default='',     help="Telomere kmers file")
     parser.add_argument('-t', type=str, required=False, metavar='telogator.fa', default='',     help="Telogator reference fasta")
@@ -71,7 +71,7 @@ def main(raw_args=None):
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
     #
-    parser.add_argument('--init-filt', type=int, required=False, metavar='(-1, -1)', nargs=2, default=(-1,-1), help="Apply terminating-tel filters to input reads")
+    parser.add_argument('--init-filt', type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="Apply terminating-tel filters to input reads")
     #
     parser.add_argument('--muscle',    type=str, required=False, metavar='exe',    default='', help="/path/to/muscle")
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
@@ -228,6 +228,9 @@ def main(raw_args=None):
     elif len(PBMM2_EXE):
         ALIGNER_EXE = PBMM2_EXE
         WHICH_ALIGNER = 'pbmm2'
+    if exists(ALIGNER_EXE) is False:
+        print(f'Error: {WHICH_ALIGNER} executable not found.')
+        exit(1)
 
     #
     # reference seq

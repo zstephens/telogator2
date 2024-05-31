@@ -63,6 +63,20 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 
 
 
+## Recommended settings
+
+Sequencing platforms have different sequencing error rates (and error types), as such we recommend running Telogator2 with different options based on your input data type:
+
+**PacBio Revio HiFi reads (30x)** - `-r hifi -tt 0.400 -ts 0.250 -n 4`  
+**PacBio Sequel II reads (10x)** - `-r hifi -tt 0.250 -ts 0.250 -n 3`  
+**Nanopore R10 (30x)** - `-r ont -tt 0.300 -ts 0.300 -n 5`  
+
+Older Nanopore data might not be usable, as reads basecalled with Guppy have extremely high rates of sequencing errors in telomere regions. Additionally, Revio data generated prior to SMRTLink13 will likely not have sufficient telomere reads. For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
+
+For very low coverage data, consider lowering the minimum number of reads per allele down to `-n 2` or even `-n 1`, but expect that this will also lead to false positives.
+
+
+
 ## Test data
 
 Telomere reads for HG002 can be found in the `test_data/` directory.

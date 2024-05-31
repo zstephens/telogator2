@@ -364,6 +364,10 @@ INTERSTITIAL_TEL_REGIONS = [('t2t-chm13_chr1p',       304961, 305976, 'p-1015'),
                             ('t2t-i002c-mat_chrXq',   485129, 485479, 'q-350')]
 
 
+def exists(fn):
+    return os.path.isfile(fn)
+
+
 def exists_and_is_nonzero(fn):
     if os.path.isfile(fn):
         if os.path.getsize(fn) > 0:
