@@ -1,7 +1,8 @@
+import copy
+import os
 import random
 import re
-import os
-import copy
+import shutil
 
 LEXICO_2_IND = {'chr1':1, 'chr2':2, 'chr3':3, 'chr10':10, 'chr11':11, 'chr12':12, 'chr19':19, 'chr20':20,
                 'chr4':4, 'chr5':5, 'chr6':6, 'chr13':13, 'chr14':14, 'chr15':15, 'chr21':21, 'chr22':22,
@@ -364,8 +365,12 @@ INTERSTITIAL_TEL_REGIONS = [('t2t-chm13_chr1p',       304961, 305976, 'p-1015'),
                             ('t2t-i002c-mat_chrXq',   485129, 485479, 'q-350')]
 
 
-def exists(fn):
-    return os.path.isfile(fn)
+def check_aligner_exe(fn):
+    file_exists = os.path.isfile(fn)
+    exe_exists = shutil.which(fn)
+    if file_exists or exe_exists:
+        return True
+    return False
 
 
 def exists_and_is_nonzero(fn):
