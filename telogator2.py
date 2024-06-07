@@ -163,6 +163,12 @@ def main(raw_args=None):
         print('Error: cram input requires reference fasta via --ref')
         exit(1)
 
+    # check parameters (TODO: make this more comprehensive)
+    #
+    if MIN_READS_PER_PHASE < 1:
+        print('Error: -n must be >= 1')
+        exit(1)
+
     # prep output directory
     #
     if OUT_DIR[-1] != '/':

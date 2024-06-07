@@ -425,34 +425,36 @@ def cluster_tvrs(kmer_dat,
     #
     # hierarchal clustering + dendrogram plotting
     #
-    dist_array = squareform(dist_matrix)
-    Zread      = linkage(dist_array, method='ward')
-    #
-    if fig_name is not None:
-        dendrogram_width = max(8, 0.12 * n_reads)
-        dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
-        mpl.rcParams.update({'font.size': 20, 'lines.linewidth':2.0})
-        fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
-        dendrogram(Zread, color_threshold=tree_cut)
-        mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
-        mpl.xlabel('read #')
-        mpl.ylabel('distance')
-        mpl.title(my_chr + ' : ' + str(my_pos))
-        #mpl.tight_layout() # for some reason this was using 200 dpi instead of 100 and was returning ValueErrors for figures being too large
-        mpl.savefig(fig_name)
-        mpl.close(fig)
-    #
-    assignments = fcluster(Zread, tree_cut, 'distance').tolist()
-    by_class = {}
-    for i in range(len(assignments)):
-        if assignments[i] not in by_class:
-            by_class[assignments[i]] = []
-        by_class[assignments[i]].append(i)
-    out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
-    out_clust = [n[1] for n in out_clust]
-    for i in range(len(out_clust)): # sort by length
-        out_clust[i] = sorted([(kmer_dat[n][1],n) for n in out_clust[i]], reverse=True)
-        out_clust[i] = [n[1] for n in out_clust[i]]
+    out_clust = [list(range(len(tvrtel_regions)))]
+    if len(tvrtel_regions) > 1:
+        dist_array = squareform(dist_matrix)
+        Zread = linkage(dist_array, method='ward')
+        #
+        if fig_name is not None:
+            dendrogram_width = max(8, 0.12 * n_reads)
+            dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
+            mpl.rcParams.update({'font.size': 20, 'lines.linewidth':2.0})
+            fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
+            dendrogram(Zread, color_threshold=tree_cut)
+            mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
+            mpl.xlabel('read #')
+            mpl.ylabel('distance')
+            mpl.title(my_chr + ' : ' + str(my_pos))
+            #mpl.tight_layout() # for some reason this was using 200 dpi instead of 100 and was returning ValueErrors for figures being too large
+            mpl.savefig(fig_name)
+            mpl.close(fig)
+        #
+        assignments = fcluster(Zread, tree_cut, 'distance').tolist()
+        by_class = {}
+        for i in range(len(assignments)):
+            if assignments[i] not in by_class:
+                by_class[assignments[i]] = []
+            by_class[assignments[i]].append(i)
+        out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
+        out_clust = [n[1] for n in out_clust]
+        for i in range(len(out_clust)): # sort by length
+            out_clust[i] = sorted([(kmer_dat[n][1],n) for n in out_clust[i]], reverse=True)
+            out_clust[i] = [n[1] for n in out_clust[i]]
 
     #
     # do MSA of TVRs (and also subtels) to get a consensus sequences
@@ -1043,45 +1045,48 @@ def cluster_consensus_tvrs(sequences,
         samp_labels = [str(n) for n in range(len(sequences))]
     #
     if job[1] == 1 or job[0] == 0:
-        d_arr = squareform(dist_matrix)
-        Zread = linkage(d_arr, method=linkage_method)
         #
-        mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
-        fig = mpl.figure(figsize=(8,dendrogram_height))
-        dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
-        labels_fromtop = dendro_dat['ivl'][::-1]
-        # ugliness to keep dendrogram ordering consistent with other figures
-        reorder_map = {n:samp_labels.index(m) for n,m in enumerate(labels_fromtop)}
-        replot_labels = [f'({labels_fromtop.index(n)}) {n}' for n in samp_labels]
-        mpl.close(fig)
-        fig = mpl.figure(figsize=(8,dendrogram_height))
-        if dendrogram_allblack:
-            dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut, above_threshold_color='black', link_color_func=lambda k:'black')
-        else:
-            dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
-        #
-        mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
-        mpl.xlabel('distance')
-        if dendrogram_title is not None:
-            mpl.title(dendrogram_title)
-        mpl.tight_layout()
-        if dendro_name is not None:
-            mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
-        mpl.close(fig)
-        #
-        if fig_name is not None:
-            if exists_and_is_nonzero(fig_name) is False or overwrite_figures is True:
-                reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
-                plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params=fig_plot_params)
-        #
-        assignments = fcluster(Zread, tree_cut, 'distance').tolist()
-        by_class = {}
-        for i in range(len(assignments)):
-            if assignments[i] not in by_class:
-                by_class[assignments[i]] = []
-            by_class[assignments[i]].append(i)
-        out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
-        out_clust = [n[1] for n in out_clust]
+        out_clust = [list(range(n_seq))]
+        if n_seq > 1:
+            d_arr = squareform(dist_matrix)
+            Zread = linkage(d_arr, method=linkage_method)
+            #
+            mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
+            fig = mpl.figure(figsize=(8,dendrogram_height))
+            dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
+            labels_fromtop = dendro_dat['ivl'][::-1]
+            # ugliness to keep dendrogram ordering consistent with other figures
+            reorder_map = {n:samp_labels.index(m) for n,m in enumerate(labels_fromtop)}
+            replot_labels = [f'({labels_fromtop.index(n)}) {n}' for n in samp_labels]
+            mpl.close(fig)
+            fig = mpl.figure(figsize=(8,dendrogram_height))
+            if dendrogram_allblack:
+                dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut, above_threshold_color='black', link_color_func=lambda k:'black')
+            else:
+                dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
+            #
+            mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
+            mpl.xlabel('distance')
+            if dendrogram_title is not None:
+                mpl.title(dendrogram_title)
+            mpl.tight_layout()
+            if dendro_name is not None:
+                mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
+            mpl.close(fig)
+            #
+            if fig_name is not None:
+                if exists_and_is_nonzero(fig_name) is False or overwrite_figures is True:
+                    reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
+                    plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params=fig_plot_params)
+            #
+            assignments = fcluster(Zread, tree_cut, 'distance').tolist()
+            by_class = {}
+            for i in range(len(assignments)):
+                if assignments[i] not in by_class:
+                    by_class[assignments[i]] = []
+                by_class[assignments[i]].append(i)
+            out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
+            out_clust = [n[1] for n in out_clust]
         #
         return out_clust
     #
