@@ -47,8 +47,8 @@ def main(raw_args=None):
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.180', default=0.180, help="[Treecut value]: initial TVR clustering")
-    parser.add_argument('-tp', type=float, required=False, metavar='0.120', default=0.120, help="[Treecut value]: merging TVRs with similar prefixes")
+    parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[Treecut value]: initial TVR clustering")
+    parser.add_argument('-tp', type=float, required=False, metavar='0.125', default=0.125, help="[Treecut value]: merging TVRs with similar prefixes")
     parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [TVR]")
     parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [SUBTEL]")
     #
@@ -191,6 +191,7 @@ def main(raw_args=None):
     TEL_SIGNAL_DIR = OUT_DIR + 'tel_signal/'
     if PLOT_TEL_SIGNALS:
         makedir(TEL_SIGNAL_DIR)
+    UNCOMPRESSED_TELOGATOR_REF = OUT_CLUST_DIR + 'telogator-ref.fa'
 
     TELOMERE_READS = OUT_CLUST_DIR + 'tel_reads.fa.gz'
     OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
@@ -833,14 +834,25 @@ def main(raw_args=None):
                 cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
             #
             elif WHICH_ALIGNER == 'pbmm2':
-                cmd = ALIGNER_EXE + ' align ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
+                with gzip.open(TELOGATOR_REF,'rt') as f_tr: # pbmm2 wants an uncompressed reference
+                    with open(UNCOMPRESSED_TELOGATOR_REF,'w') as f_utr:
+                        for line in f_tr:
+                            f_utr.write(line)
+                pysam.faidx(UNCOMPRESSED_TELOGATOR_REF)
+                cmd = ALIGNER_EXE + ' align ' + UNCOMPRESSED_TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
             if len(cmd):
                 with open(aln_log, 'w') as f:
                     try:
                         subprocess.check_output(cmd.split(' '), stderr=f, text=True)
                     except subprocess.CalledProcessError as exc:
                         print('Error: alignment command returned an error:', exc.returncode)
+                        print()
                         print(exc.output)
+                        print()
+                        print('Here is the command we tried to run:')
+                        print()
+                        print(cmd)
+                        print()
                         exit(1)
             if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
                 print()
@@ -848,7 +860,10 @@ def main(raw_args=None):
                 print(f'{aln_log}')
                 exit(1)
             #
-            if WHICH_ALIGNER != 'pbmm2':
+            if WHICH_ALIGNER == 'pbmm2':
+                rm(UNCOMPRESSED_TELOGATOR_REF)
+                rm(UNCOMPRESSED_TELOGATOR_REF+'.fai')
+            else:
                 pysam.sort("-o", aln_bam, aln_sam)
                 pysam.index(aln_bam)
                 rm(aln_sam)
