@@ -382,13 +382,13 @@ def main(raw_args=None):
                 my_rdat = RC(my_rdat)
                 if my_qdat is not None:
                     my_qdat = my_qdat[::-1]
-            # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
-            # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
             if PLOT_TEL_SIGNALS:
                 tel_signal_plot_dat = (my_rnm, TEL_SIGNAL_DIR + 'signal_' + str(tel_signal_plot_num).zfill(5) + '.png')
                 tel_signal_plot_num += 1
             else:
                 tel_signal_plot_dat = None
+            # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
+            # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
             (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
             # some paranoid bounds checking
             my_terminating_tel = min(my_terminating_tel, len(my_rdat))
