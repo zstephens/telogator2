@@ -2,6 +2,7 @@
 import argparse
 import numpy as np
 import pathlib
+import pysam
 
 from source.tg_kmer import get_telomere_kmer_density, get_telomere_regions, read_kmer_tsv
 from source.tg_plot import plot_tel_signal
@@ -148,6 +149,7 @@ def main(raw_args=None):
                 f.write(f'>{n[0]}\n')
                 for j in range(0, len(n[1]), FASTA_WIDTH):
                     f.write(f'{n[1][j:j+FASTA_WIDTH]}\n')
+    pysam.faidx(OUT_REF)
 
 
 if __name__ == '__main__':
