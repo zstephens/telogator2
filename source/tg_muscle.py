@@ -56,7 +56,7 @@ def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_a
         score_param = '-seqtype protein -gapopen -12.0 -gapextend -4.0 -center 0.0 -matrix ' + matrix
     elif mode == 'nucl':
         write_nucl_scoring_matrix(matrix)
-        score_param = '-seqtype dna -gapopen -12.0 -gapextend -4.0 -center 0.0 -matrix ' + matrix
+        score_param = '-seqtype dna -gapopen -16.0 -gapextend -6.0 -center 0.0 -matrix ' + matrix
     else:
         print('Error: get_muscle_msa mode must be amino or nucl')
         exit(1)
