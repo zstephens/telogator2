@@ -853,6 +853,7 @@ def main(raw_args=None):
     sys.stdout.flush()
     tt = time.perf_counter()
     clust_num = 0
+    plot_num = 0
     subtels_out = []
     allele_outdat = []
     allele_consensus = []
@@ -861,7 +862,7 @@ def main(raw_args=None):
     for (my_chr, current_clust_inds) in final_clustered_read_inds:
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         rlens_subset = [my_rlens[n] for n in current_clust_inds]
-        zfcn = str(clust_num).zfill(3)
+        zfcn = str(plot_num).zfill(3)
         telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'                   + zfcn + '.png'
         telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'               + zfcn + '.png'
         dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
@@ -917,7 +918,7 @@ def main(raw_args=None):
                 else:
                     my_subtels.append(all_subtel_seq[read_i])
             for i,subtel_seq in enumerate(my_subtels):
-                subtels_out.append((f'cluster-{clust_num}_read-{i}_{my_rnames[read_i]}', subtel_seq))
+                subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[read_i]}', subtel_seq))
             allele_outdat.append(my_tsvdat[sci])
             allele_consensus.append(solo_clustdat[4][sci])
             clust_num += 1
@@ -927,6 +928,7 @@ def main(raw_args=None):
             n_final_clusters_added += clust_num - prior_clustnum - 1
         #
         make_tvr_plots(khd_subset, solo_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+        plot_num += 1
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
 
@@ -938,7 +940,7 @@ def main(raw_args=None):
         ALLELE_TEL_DAT.append([n for n in atdat])
         ALLELE_TEL_DAT[-1][3] = str(i)
     num_unique_alleles = len(set([n[3] for n in ALLELE_TEL_DAT]))
-    num_blank_alleles  = len([n[0] for n in ALLELE_TEL_DAT if n[0] == blank_chr])
+    #num_blank_alleles  = len([n[0] for n in ALLELE_TEL_DAT if n[0] == blank_chr])
     print(f' - {num_unique_alleles} unique alleles')
     #print(f' - {num_blank_alleles} / {num_unique_alleles} alleles with blank tvrs')
     print(f' - ({n_final_clusters_removed} clusters removed during tvr reanalysis)')
