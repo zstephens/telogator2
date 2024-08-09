@@ -28,7 +28,8 @@ TERM_TEL_ZERO_FRAC = 0.30
 # if the nontel content of reads exceeds 190 for >49% of reads, skip this cluster
 NONTEL_END_FILT_PARAMS = (190, 0.49)
 # treecut values for collapsing multiple (presumably false positive) clusters together
-COLLAPSE_TVR_THRESH = 0.050
+# - note that these are scaled to apply to non-normalized distance matrices
+COLLAPSE_TVR_THRESH = 0.500
 COLLAPSE_SUB_THRESH = 0.050
 #
 MAX_QUAL_SCORE = 60
@@ -133,6 +134,8 @@ def main(raw_args=None):
     PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
     INIT_FILTERING_TUPLE = args.init_filt
+    #
+    PLOT_SEPARATE_INITIAL = False # turn on for debugging, otherwise is mostly a waste of time
     #
     INIT_FILTERING = False
     MIN_TEL_UNANCHORED = 500
@@ -516,7 +519,7 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
     #
-    if True:
+    if PLOT_SEPARATE_INITIAL:
         sys.stdout.write('plotting initial clusters...')
         sys.stdout.flush()
         tt = time.perf_counter()
@@ -542,20 +545,17 @@ def main(raw_args=None):
         sys.stdout.flush()
 
     #
-    # [2] TVR CLUSTERING
+    # [1.5] INTERSTITIAL TEL FILTER
     #
 
-    sys.stdout.write('refining clusters [TVR]...')
+    sys.stdout.write('removing interstitial telomeres...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    clust_num = 0
     blank_inds = []
+    fail_blank_dat = []
     unclustered_inds = []
-    fail_clusters = []
-    fail_blank = []
-    clusters_with_tvrs = []
-    all_consensus_tvrs = []
-    n_reads = 0
+    pass_clust_inds_list = []
+    fail_clust_inds_list = []
     for clust_i in range(len(read_clust_dat[0])):
         current_clust_inds = read_clust_dat[0][clust_i]
         # terminating-tel filters (to prevent interstitial tels from getting into fail/blank sets)
@@ -571,7 +571,7 @@ def main(raw_args=None):
             if passed_termtel:
                 blank_inds.extend(current_clust_inds)
             else:
-                fail_blank.append((term_zero_frac, nontel_long_frac, [n for n in current_clust_inds]))
+                fail_blank_dat.append((term_zero_frac, nontel_long_frac, [n for n in current_clust_inds]))
             continue
         # cluster filter: not enough reads
         # - if the reads pass terminating-tel filters, lets add them to unclustered_inds
@@ -579,6 +579,35 @@ def main(raw_args=None):
             if passed_termtel:
                 unclustered_inds.extend(current_clust_inds)
             continue
+        # cluster filter: normal vs. interstitial
+        if passed_termtel:
+            pass_clust_inds_list.append(read_clust_dat[0][clust_i])
+        else:
+            fail_clust_inds_list.append(read_clust_dat[0][clust_i])
+    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+    sys.stdout.flush()
+    print(f' - {len(fail_clust_inds_list) + len(fail_blank_dat)} clusters removed for not ending in enough tel sequence')
+    print(f' - ({len(blank_inds)} tel reads with blank tvr)')
+    print(f' - ({len(unclustered_inds)} tel reads unclustered)')
+
+    #
+    # [2] TVR CLUSTERING
+    #
+
+    sys.stdout.write('refining clusters [TVR]...')
+    sys.stdout.flush()
+    tt = time.perf_counter()
+    clust_num = 0
+    fail_tvr_clust = []
+    clusters_with_tvrs = []
+    all_consensus_tvrs = []
+    n_reads = 0
+    if len(unclustered_inds) >= MIN_READS_PER_PHASE:
+        pass_clust_inds_list += [unclustered_inds]
+    for current_clust_inds in pass_clust_inds_list:
+        my_chr = fake_chr
+        if current_clust_inds == unclustered_inds:
+            my_chr = unclust_chr
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         zfcn = str(clust_num).zfill(3)
         telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'                   + zfcn + '.png'
@@ -593,7 +622,7 @@ def main(raw_args=None):
             dist_prefix_fn = None
             consensus_fn = None
         #
-        subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, fake_chr, fake_pos, TREECUT_REFINE_TVR, TREECUT_PREFIXMERGE,
+        subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR, TREECUT_PREFIXMERGE,
                                        aln_mode='ds',
                                        alignment_processes=NUM_PROCESSES,
                                        rand_shuffle_count=RAND_SHUFFLE,
@@ -606,7 +635,7 @@ def main(raw_args=None):
                                        muscle_dir=OUT_CDIR_TVR + 'fa/',
                                        PRINT_DEBUG=PRINT_DEBUG)
         #
-        make_tvr_plots(khd_subset, subset_clustdat, fake_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+        make_tvr_plots(khd_subset, subset_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
         for sci,subclust_inds in enumerate(subset_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
@@ -626,7 +655,7 @@ def main(raw_args=None):
             if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
                 clust_failed = True
             if clust_failed:
-                fail_clusters.append((term_zero_frac, nontel_long_frac, [n for n in subclust_read_inds]))
+                fail_tvr_clust.append((term_zero_frac, nontel_long_frac, [n for n in subclust_read_inds]))
                 continue
             #
             # are any of the subclusters blank? --> add to blank inds
@@ -638,7 +667,7 @@ def main(raw_args=None):
             #
             # pass all checks? --> add to list for subsequent subtel clustering
             #
-            clusters_with_tvrs.append((fake_chr, [n for n in subclust_read_inds]))
+            clusters_with_tvrs.append((my_chr, [n for n in subclust_read_inds]))
             all_consensus_tvrs.append(subset_clustdat[4][sci])
         #
         clust_num += 1
@@ -646,15 +675,10 @@ def main(raw_args=None):
     if len(blank_inds) >= MIN_READS_PER_PHASE:
         clusters_with_tvrs.append((blank_chr, [n for n in blank_inds]))
     #
-    if len(unclustered_inds) >= MIN_READS_PER_PHASE:
-        clusters_with_tvrs.append((unclust_chr, [n for n in unclustered_inds]))
-    #
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     print(f' - {len(clusters_with_tvrs)} clusters with tvrs ({n_reads} reads)')
-    print(f' - {len(fail_clusters) + len(fail_blank)} clusters removed for not ending in tel')
-    print(f' - ({len(blank_inds)} tel reads with blank tvr)')
-    print(f' - ({len(unclustered_inds)} tel reads unclustered)')
+    print(f' - {len(fail_tvr_clust)} clusters removed for not ending in enough tel sequence')
 
     #
     # [3] SUBTEL CLUSTERING
@@ -714,7 +738,7 @@ def main(raw_args=None):
                         f.write(f'{subtel_consensus_seq}\n')
             my_cons_subtels = [n[1] for n in quick_grab_all_reads(subtel_muscle_fn + '.fa')]
             for cons_subtel in my_cons_subtels:
-                if my_chr == fake_chr:
+                if my_chr != blank_chr:
                     all_consensus_tvr_subtel_pairs.append((all_consensus_tvrs[sci], cons_subtel))
                 else:
                     all_consensus_tvr_subtel_pairs.append((None, cons_subtel))
@@ -758,7 +782,7 @@ def main(raw_args=None):
                                         adjust_lens=True,
                                         rand_shuffle_count=3,
                                         linkage_method='single',
-                                        normalize_dist_matrix=True,
+                                        normalize_dist_matrix=False,
                                         alignment_processes=NUM_PROCESSES,
                                         job=(1,1))
     # [4b]: subtels in clusters with TVRs
@@ -781,7 +805,7 @@ def main(raw_args=None):
                                         adjust_lens=True,
                                         rand_shuffle_count=3,
                                         linkage_method='single',
-                                        normalize_dist_matrix=True,
+                                        normalize_dist_matrix=False,
                                         alignment_processes=NUM_PROCESSES,
                                         job=(1,1))
     # [4c]: subtels in clusters without TVRs
@@ -804,7 +828,7 @@ def main(raw_args=None):
                                         adjust_lens=True,
                                         rand_shuffle_count=3,
                                         linkage_method='single',
-                                        normalize_dist_matrix=True,
+                                        normalize_dist_matrix=False,
                                         alignment_processes=NUM_PROCESSES,
                                         job=(1,1))
         clust3 = [[n + len(tvrs_to_compare) for n in l3] for l3 in clust3]

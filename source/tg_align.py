@@ -126,4 +126,5 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     else:
         my_dist_out = min(-np.log((aln_score - rand_score_shuffle) / (iden_score - rand_score_shuffle)), MAX_SEQ_DIST)
     my_dist_out = max(my_dist_out, MIN_SEQ_DIST)
+    #print(aln_score, iden_score, rand_score_shuffle, my_dist_out)
     return my_dist_out
