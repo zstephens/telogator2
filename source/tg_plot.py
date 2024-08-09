@@ -6,6 +6,9 @@ import matplotlib.lines as lines
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
+from source.tg_align import UNKNOWN_LETTER
+from source.tg_util  import exists_and_is_nonzero
+
 MAX_PLOT_SIZE = 65000 # the actual max is 65535 but it's risky
 DEFAULT_DPI   = 100
 KMER_HITS_DPI = 200
@@ -721,6 +724,109 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
     mpl.tight_layout()
     mpl.savefig(out_fn)
     mpl.close(fig)
+
+#
+#
+#
+def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params, dpi=None):
+    #
+    [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DO_NOT_OVERWRITE] = mtp_params
+    #
+    # adjust kmer_hit_dat based on the filters and etc that were applied during clustering
+    #
+    my_consensus_vecs = read_clust_dat[4]
+    my_color_vectors  = read_clust_dat[5]
+    my_end_err_lens   = read_clust_dat[6]
+    my_tvr_tel_bounds = read_clust_dat[7]
+    redrawn_consensus = convert_colorvec_to_kmerhits(my_consensus_vecs, KMER_METADATA)
+    # do we want to plot denoised tvrs of individual reads?
+    if PLOT_FILT_CVECS:
+        redrawn_kmerhits = convert_colorvec_to_kmerhits(my_color_vectors, KMER_METADATA)
+        for rdki in range(len(redrawn_kmerhits)):
+            kmer_hit_dat[rdki][0]  = redrawn_kmerhits[rdki] # replace kmer hit tuples for plotting
+            kmer_hit_dat[rdki][1] -= my_end_err_lens[rdki]  # subtract size of artifacts at end of reads
+    #
+    consensus_kmer_hit_dat = []
+    consensus_clust_dat    = [[],[],[],[0]] # fake data so that plot_kmer_hits doesn't complain
+    consensus_tvr_tel_pos  = []
+    for rdki in range(len(redrawn_consensus)):
+        cons_readcount = len(read_clust_dat[0][rdki])
+        cons_readname  = 'consensus-' + str(rdki) + ' [' + str(cons_readcount)
+        cons_tvrlen    = my_tvr_tel_bounds[rdki]
+        if cons_readcount == 1:
+            cons_readname += ' read]'
+        else:
+            cons_readname += ' reads]'
+        if cons_readcount >= MIN_READS_PER_PHASE:
+            consensus_kmer_hit_dat.append([redrawn_consensus[rdki], len(my_consensus_vecs[rdki]), 0, 'FWD', cons_readname, DUMMY_TEL_MAPQ, None])
+            consensus_clust_dat[0].append([rdki])
+            consensus_clust_dat[1].append([DUMMY_TEL_MAPQ])
+            consensus_clust_dat[2].append([0])
+            consensus_tvr_tel_pos.append(cons_tvrlen)
+    #
+    # TVR plotting (clustered reads + consensus for each allele)
+    #
+    custom_plot_params = {'xlim':[-1000,15000]}
+    if dpi is not None:
+        custom_plot_params['dpi'] = dpi
+    if telcompplot_fn is not None:
+        if DO_NOT_OVERWRITE is False or exists_and_is_nonzero(telcompplot_fn) is False:
+            plot_kmer_hits(kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompplot_fn,
+                           clust_dat=read_clust_dat,
+                           plot_params=custom_plot_params)
+    if telcompcons_fn is not None and len(consensus_clust_dat[0]):
+        if DO_NOT_OVERWRITE is False or exists_and_is_nonzero(telcompcons_fn) is False:
+            plot_kmer_hits(consensus_kmer_hit_dat, KMER_COLORS, my_chr, my_pos, telcompcons_fn,
+                           clust_dat=consensus_clust_dat,
+                           draw_boundaries=consensus_tvr_tel_pos,
+                           plot_params=custom_plot_params)
+
+#
+#
+#
+def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
+    #
+    [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
+    #
+    amino_2_kmer_ind = {}
+    for i in range(len(kmer_colors)):
+        amino_2_kmer_ind[kmer_letters[i]] = i
+    #
+    out_kmerhits = []
+    for i in range(len(colorvecs)):
+        out_kmerhits.append([[] for n in range(len(kmer_colors))])
+        if len(colorvecs[i]) == 0:
+            continue
+        current_block = colorvecs[i][0]
+        current_start = 0
+        colorvecs[i] += UNKNOWN_LETTER
+        for j in range(1,len(colorvecs[i])):
+            if colorvecs[i][j] != current_block:
+                if current_block != UNKNOWN_LETTER:
+                    my_ind = amino_2_kmer_ind[current_block]
+                    out_kmerhits[-1][my_ind].append((current_start, j))
+                current_block = colorvecs[i][j]
+                current_start = j
+    return out_kmerhits
+
+#
+#
+#
+def plot_some_tvrs(tvrs, labels, repeats_metadata, plot_fn, custom_plot_params={}):
+    #
+    # helper function for quickly plotting a set of tvrs (assumes Q orientation)
+    #
+    [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = repeats_metadata
+    redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs, repeats_metadata)
+    clust_khd = []
+    for i in range(len(redrawn_tvrs)):
+        clust_khd.append([redrawn_tvrs[i], len(tvrs[i]), 0, 'FWD', labels[i], 60, None])
+    clust_dat = []
+    clust_dat.append([list(range(len(clust_khd)))])
+    clust_dat.append([[60]*len(clust_dat[0][0])])
+    clust_dat.append([[0]*len(clust_dat[0][0])])
+    clust_dat.append([0])
+    plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, plot_fn, clust_dat=clust_dat, plot_params=custom_plot_params)
 
 #
 #

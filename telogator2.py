@@ -12,10 +12,10 @@ import time
 
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_muscle import check_muscle_version, get_muscle_msa
-from source.tg_plot   import plot_kmer_hits, readlen_plot, tel_len_violin_plot
+from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
-from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, convert_colorvec_to_kmerhits, make_tvr_plots
+from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100

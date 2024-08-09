@@ -5,7 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.9
-  - biopython=1.81
+  - biopython>=1.82
   - muscle=3.8
   - matplotlib
   - numpy

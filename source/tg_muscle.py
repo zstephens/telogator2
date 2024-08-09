@@ -64,7 +64,7 @@ def get_muscle_msa(input_sequences, muscle_exe, tempfile_prefix='', char_score_a
     cmd = muscle_exe + ' -in ' + temp_fasta + ' -out ' + aln_fasta + ' ' + score_param
     #
     try:
-        output = subprocess.check_output(cmd.split(' '), stderr=subprocess.STDOUT, text=True)
+        _ = subprocess.check_output(cmd.split(' '), stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as exc:
         print('Error: MUSCLE returned an error:', exc.returncode)
         print(exc.output)
