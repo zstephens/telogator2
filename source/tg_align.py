@@ -90,17 +90,13 @@ def get_aligner_object(scoring_matrix=None, gap_bool=(True,True)):
     return aligner
 
 
-def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, randshuffle=3, pq='q'):
+def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, randshuffle=3):
     if adjust_lens:
         min_len = min(len(tvr_i), len(tvr_j))
         if min_viable:
             min_len = max(min_len, MIN_VIABLE_SEQ_LEN)
-        if pq == 'p':
-            seq_i = tvr_i[-min_len:]
-            seq_j = tvr_j[-min_len:]
-        elif pq == 'q':
-            seq_i = tvr_i[:min_len]
-            seq_j = tvr_j[:min_len]
+        seq_i = tvr_i[:min_len]
+        seq_j = tvr_j[:min_len]
     else:
         seq_i = tvr_i
         seq_j = tvr_j

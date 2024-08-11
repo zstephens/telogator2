@@ -148,23 +148,17 @@ def main(raw_args=None):
     # check input
     #
     any_cram = False
-    any_pickle = False
     for ifn in INPUT_ALN:
         if exists_and_is_nonzero(ifn) is False:
             print('Error: input not found:')
             print(ifn)
             exit(1)
         input_type = get_file_type(ifn)[0]
-        if input_type not in ['fasta', 'fastq', 'bam', 'cram', 'pickle']:
-            print('Error: input must be fasta, fastq, bam, cram, or pickle')
+        if input_type not in ['fasta', 'fastq', 'bam', 'cram']:
+            print('Error: input must be fasta, fastq, bam, or cram')
             exit(1)
         if input_type == 'cram':
             any_cram = True
-        elif input_type == 'pickle':
-            any_pickle = True
-    if len(INPUT_ALN) >= 2 and any_pickle:
-        print('Error: if multiple inputs are specified, none can be pickle')
-        exit(1)
     if any_cram and CRAM_REF_FILE == '':
         print('Error: cram input requires reference fasta via --ref')
         exit(1)
@@ -299,177 +293,155 @@ def main(raw_args=None):
     #
     ALLELE_TEL_DAT = []
     #
-    print('beginning telogator2...')
+    all_readcount = 0
+    tel_readcount = 0
+    sup_readcount = 0
+    sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
+    sys.stdout.flush()
+    tt = time.perf_counter()
+    total_bp_all = 0
+    total_bp_tel = 0
+    readlens_all = []
+    readlens_tel = []
+    with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
+        for ifn in INPUT_ALN:
+            my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
+            while True:
+                (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
+                if not my_name:
+                    break
+                if my_issup:
+                    sup_readcount += 1
+                    continue
+                count_fwd = my_rdat.count(KMER_INITIAL)
+                count_rev = my_rdat.count(KMER_INITIAL_RC)
+                all_readcount += 1
+                my_rlen = len(my_rdat)
+                total_bp_all += my_rlen
+                readlens_all.append(my_rlen)
+                if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
+                    f.write(f'>{my_name}\n{my_rdat}\n')
+                    tel_readcount += 1
+                    total_bp_tel += my_rlen
+                    readlens_tel.append(my_rlen)
+            my_reader.close()
+    mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
     #
-    if any_pickle:
-        print('getting unanchored read dat from pickle file...')
-        with open(INPUT_ALN[0], 'rb') as f:
-            my_pickle = pickle.load(f)
-        kmer_hit_dat = my_pickle['kmer-hit-dat']
-        all_tvrtel_seq = my_pickle['all-tvrtel-seq']
-        all_subtel_seq = my_pickle['all-subtel-seq']
-        all_terminating_tl = my_pickle['all-terminating-tl']
-        all_nontel_end = my_pickle['all-nontel-end']
-        print(' -', len(kmer_hit_dat), 'reads')
+    np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
+    del readlens_all
+    del readlens_tel
     #
-    else:
-        all_readcount = 0
-        tel_readcount = 0
-        sup_readcount = 0
-        sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
+    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+    sys.stdout.flush()
+    if sup_readcount:
+        print(f' - skipped {sup_readcount} supplementary alignments')
+    print(f' - {all_readcount} --> {tel_readcount} reads')
+    print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
+    if tel_readcount <= 0:
+        print('Error: No telomere reads found, stopping here...')
+        exit(1)
+    #
+    sys.stdout.write(f'filtering by read length (>{MINIMUM_READ_LEN}bp)...')
+    sys.stdout.flush()
+    tt = time.perf_counter()
+    (all_read_dat, readcount_len_filtered) = quick_grab_all_reads_nodup(TELOMERE_READS, min_len=MINIMUM_READ_LEN)
+    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+    sys.stdout.flush()
+    print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
+    if len(all_read_dat) <= 0:
+        print('Error: No telomere reads remaining, stopping here...')
+        exit(1)
+    #
+    sys.stdout.write('getting telomere repeat composition...')
+    sys.stdout.flush()
+    tt = time.perf_counter()
+    kmer_hit_dat = []
+    all_tvrtel_seq = []
+    all_subtel_seq = []
+    all_terminating_tl = []
+    all_nontel_end = []
+    gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
+    num_starting_reads = len(all_read_dat)
+    tel_signal_plot_num = 0
+    for (my_rnm, my_rdat, my_qdat) in all_read_dat:
+        tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
+        tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
+        # put everything into q orientation
+        if tel_bc_fwd > tel_bc_rev:
+            my_rdat = RC(my_rdat)
+            if my_qdat is not None:
+                my_qdat = my_qdat[::-1]
+        if PLOT_TEL_SIGNALS:
+            tel_signal_plot_dat = (my_rnm, TEL_SIGNAL_DIR + 'signal_' + str(tel_signal_plot_num).zfill(5) + '.png')
+            tel_signal_plot_num += 1
+        else:
+            tel_signal_plot_dat = None
+        # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
+        # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
+        (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
+        # some paranoid bounds checking
+        my_terminating_tel = min(my_terminating_tel, len(my_rdat))
+        my_nontel_end = min(my_nontel_end, len(my_rdat))
+        #
+        if INIT_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
+            continue
+        if INIT_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
+            continue
+        # too little subtel sequence?
+        if MIN_SUBTEL_BUFF > 0 and len(my_rdat) < my_terminating_tel + MIN_SUBTEL_BUFF:
+            continue
+        my_subtel_end = max(len(my_rdat)-my_terminating_tel-MIN_SUBTEL_BUFF, 0)
+        my_teltvr_seq = my_rdat[my_subtel_end:]
+        # if there's no terminating tel at all (and no fast-filt), then lets pretend entire read is tvr+tel then
+        # - so that we can use this read for removing interstitial tel regions later
+        # - though we're probably just as well off removing them entirely at this point, I don't know for sure.
+        if len(my_teltvr_seq) == 0:
+            my_teltvr_seq = my_rdat
+            out_tvrtel_seq = my_rdat
+            out_subtel_seq = ''
+        else:
+            out_tvrtel_seq = my_rdat[len(my_rdat)-my_terminating_tel:]
+            out_subtel_seq = my_rdat[:len(my_rdat)-my_terminating_tel]
+        #
+        kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
+                             len(my_teltvr_seq),   # atb, lets pretend entire read is tel
+                             0,                    # my_dbta
+                             'q',                  # my_type
+                             my_rnm.split(' ')[0], # my_rnm
+                             DUMMY_TEL_MAPQ,       # my_mapq
+                             None])                # out_fasta_dat
+        all_tvrtel_seq.append(out_tvrtel_seq)
+        all_subtel_seq.append(out_subtel_seq)
+        all_terminating_tl.append(my_terminating_tel)
+        all_nontel_end.append(my_nontel_end)
+    fast_filt_str = ''
+    if INIT_FILTERING:
+        fast_filt_str = ' [init-filt applied]'
+    num_ending_reads = len(kmer_hit_dat)
+    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+    sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads' + fast_filt_str + '\n')
+    sys.stdout.flush()
+    if num_ending_reads <= 0:
+        print('Error: No telomere reads remaining, stopping here...')
+        exit(1)
+    #
+    if DOWNSAMPLE_READS > 0 and len(kmer_hit_dat) > DOWNSAMPLE_READS:
+        sys.stdout.write('downsampling reads...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        total_bp_all = 0
-        total_bp_tel = 0
-        readlens_all = []
-        readlens_tel = []
-        with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
-            for ifn in INPUT_ALN:
-                my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
-                while True:
-                    (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
-                    if not my_name:
-                        break
-                    if my_issup:
-                        sup_readcount += 1
-                        continue
-                    count_fwd = my_rdat.count(KMER_INITIAL)
-                    count_rev = my_rdat.count(KMER_INITIAL_RC)
-                    all_readcount += 1
-                    my_rlen = len(my_rdat)
-                    total_bp_all += my_rlen
-                    readlens_all.append(my_rlen)
-                    if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
-                        f.write(f'>{my_name}\n{my_rdat}\n')
-                        tel_readcount += 1
-                        total_bp_tel += my_rlen
-                        readlens_tel.append(my_rlen)
-                my_reader.close()
-        mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
-        #
-        np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
-        del readlens_all
-        del readlens_tel
-        #
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
-        if sup_readcount:
-            print(f' - skipped {sup_readcount} supplementary alignments')
-        print(f' - {all_readcount} --> {tel_readcount} reads')
-        print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
-        if tel_readcount <= 0:
-            print('Error: No telomere reads found, stopping here...')
-            exit(1)
-        #
-        sys.stdout.write(f'filtering by read length (>{MINIMUM_READ_LEN}bp)...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        (all_read_dat, readcount_len_filtered) = quick_grab_all_reads_nodup(TELOMERE_READS, min_len=MINIMUM_READ_LEN)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
-        print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
-        if len(all_read_dat) <= 0:
-            print('Error: No telomere reads remaining, stopping here...')
-            exit(1)
-        #
-        sys.stdout.write('getting telomere repeat composition...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        kmer_hit_dat = []
-        all_tvrtel_seq = []
-        all_subtel_seq = []
-        all_terminating_tl = []
-        all_nontel_end = []
-        gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
-        num_starting_reads = len(all_read_dat)
-        tel_signal_plot_num = 0
-        for (my_rnm, my_rdat, my_qdat) in all_read_dat:
-            tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
-            tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
-            # put everything into q orientation
-            if tel_bc_fwd > tel_bc_rev:
-                my_rdat = RC(my_rdat)
-                if my_qdat is not None:
-                    my_qdat = my_qdat[::-1]
-            if PLOT_TEL_SIGNALS:
-                tel_signal_plot_dat = (my_rnm, TEL_SIGNAL_DIR + 'signal_' + str(tel_signal_plot_num).zfill(5) + '.png')
-                tel_signal_plot_num += 1
-            else:
-                tel_signal_plot_dat = None
-            # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
-            # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
-            (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
-            # some paranoid bounds checking
-            my_terminating_tel = min(my_terminating_tel, len(my_rdat))
-            my_nontel_end = min(my_nontel_end, len(my_rdat))
-            #
-            if INIT_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
-                continue
-            if INIT_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
-                continue
-            # too little subtel sequence?
-            if MIN_SUBTEL_BUFF > 0 and len(my_rdat) < my_terminating_tel + MIN_SUBTEL_BUFF:
-                continue
-            my_subtel_end = max(len(my_rdat)-my_terminating_tel-MIN_SUBTEL_BUFF, 0)
-            my_teltvr_seq = my_rdat[my_subtel_end:]
-            # if there's no terminating tel at all (and no fast-filt), then lets pretend entire read is tvr+tel then
-            # - so that we can use this read for removing interstitial tel regions later
-            # - though we're probably just as well off removing them entirely at this point, I don't know for sure.
-            if len(my_teltvr_seq) == 0:
-                my_teltvr_seq = my_rdat
-                out_tvrtel_seq = my_rdat
-                out_subtel_seq = ''
-            else:
-                out_tvrtel_seq = my_rdat[len(my_rdat)-my_terminating_tel:]
-                out_subtel_seq = my_rdat[:len(my_rdat)-my_terminating_tel]
-            #
-            kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
-                                 len(my_teltvr_seq),   # atb, lets pretend entire read is tel
-                                 0,                    # my_dbta
-                                 'q',                  # my_type
-                                 my_rnm.split(' ')[0], # my_rnm
-                                 DUMMY_TEL_MAPQ,       # my_mapq
-                                 None])                # out_fasta_dat
-            all_tvrtel_seq.append(out_tvrtel_seq)
-            all_subtel_seq.append(out_subtel_seq)
-            all_terminating_tl.append(my_terminating_tel)
-            all_nontel_end.append(my_nontel_end)
-        fast_filt_str = ''
-        if INIT_FILTERING:
-            fast_filt_str = ' [init-filt applied]'
+        num_starting_reads = len(kmer_hit_dat)
+        del_keys = get_downsample_inds(len(kmer_hit_dat), len(kmer_hit_dat) - DOWNSAMPLE_READS)
+        for di in del_keys:
+            del kmer_hit_dat[di]
+            del all_tvrtel_seq[di]
+            del all_subtel_seq[di]
+            del all_terminating_tl[di]
+            del all_nontel_end[di]
         num_ending_reads = len(kmer_hit_dat)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads' + fast_filt_str + '\n')
+        sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
         sys.stdout.flush()
-        if num_ending_reads <= 0:
-            print('Error: No telomere reads remaining, stopping here...')
-            exit(1)
-        #
-        if DOWNSAMPLE_READS > 0 and len(kmer_hit_dat) > DOWNSAMPLE_READS:
-            sys.stdout.write('downsampling reads...')
-            sys.stdout.flush()
-            tt = time.perf_counter()
-            num_starting_reads = len(kmer_hit_dat)
-            del_keys = get_downsample_inds(len(kmer_hit_dat), len(kmer_hit_dat) - DOWNSAMPLE_READS)
-            for di in del_keys:
-                del kmer_hit_dat[di]
-                del all_tvrtel_seq[di]
-                del all_subtel_seq[di]
-                del all_terminating_tl[di]
-                del all_nontel_end[di]
-            num_ending_reads = len(kmer_hit_dat)
-            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-            sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
-            sys.stdout.flush()
-        #
-        ####f = open(OUT_PICKLE_UNANCHORED, 'wb')
-        ####pickle.dump({'kmer-hit-dat':kmer_hit_dat,
-        ####             'all-tvrtel-seq':all_tvrtel_seq,
-        ####             'all-subtel-seq':all_subtel_seq,
-        ####             'all-terminating-tl':all_terminating_tl,
-        ####             'all-nontel-end':all_nontel_end}, f)
-        ####f.close()
-        #
+    #
     my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
     my_rnames = [n[4] for n in kmer_hit_dat]
 
@@ -481,27 +453,23 @@ def main(raw_args=None):
     sys.stdout.flush()
     tt = time.perf_counter()
     init_dendrogram_fn  = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
-    init_dend_prefix_fn = OUT_CDIR_INIT + 'dendro/' + 'dendrogram-prefixmerge.png'
     init_dist_matrix_fn = OUT_CDIR_INIT + 'npy/'    + 'dist-matrix.npy'
-    init_dist_prefix_fn = OUT_CDIR_INIT + 'npy/'    + 'dist-matrix-prefixmerge.npy'
-    init_consensus_fn   = OUT_CDIR_INIT + 'fa/'     + 'consensus.fa'
     if ALWAYS_REPROCESS:
-        init_dist_matrix_fn = None
-        init_dist_prefix_fn = None
-        init_consensus_fn = None
+        rm(init_dist_matrix_fn)
+    clustering_only = True
+    if PLOT_ALL_INITIAL or PLOT_SEPARATE_INITIAL:
+        clustering_only = False
     #
-    read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL, TREECUT_PREFIXMERGE,
+    read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL,
                                   aln_mode='ds',
                                   alignment_processes=NUM_PROCESSES,
                                   rand_shuffle_count=RAND_SHUFFLE,
                                   dist_in=init_dist_matrix_fn,
-                                  dist_in_prefix=init_dist_prefix_fn,
                                   fig_name=init_dendrogram_fn,
-                                  fig_prefix_name=init_dend_prefix_fn,
-                                  save_msa=init_consensus_fn,
                                   muscle_exe=MUSCLE_EXE,
                                   muscle_dir=OUT_CDIR_INIT + 'fa/',
-                                  PRINT_DEBUG=PRINT_DEBUG)
+                                  PRINT_DEBUG=PRINT_DEBUG,
+                                  clustering_only=clustering_only)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
@@ -543,6 +511,8 @@ def main(raw_args=None):
                 make_tvr_plots(khd_subset, clustdat_to_plot, fake_chr, fake_pos, plot_fn_reads, None, mtp_params)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
+    # we're going to use these distances for all the remaining steps instead of recomputing it each time
+    init_dist_matrix = np.load(init_dist_matrix_fn, allow_pickle=True)
 
     #
     # [1.5] INTERSTITIAL TEL FILTER
@@ -551,8 +521,6 @@ def main(raw_args=None):
     sys.stdout.write('removing interstitial telomeres...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    blank_inds = []
-    fail_blank_dat = []
     unclustered_inds = []
     pass_clust_inds_list = []
     fail_clust_inds_list = []
@@ -566,28 +534,17 @@ def main(raw_args=None):
         passed_termtel = True
         if term_zero_frac > TERM_TEL_ZERO_FRAC or nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
             passed_termtel = False
-        # cluster filter: blank tvr, add to blank_inds
-        if read_clust_dat[7][clust_i] <= 0:
-            if passed_termtel:
-                blank_inds.extend(current_clust_inds)
-            else:
-                fail_blank_dat.append((term_zero_frac, nontel_long_frac, [n for n in current_clust_inds]))
-            continue
-        # cluster filter: not enough reads
-        # - if the reads pass terminating-tel filters, lets add them to unclustered_inds
-        if len(current_clust_inds) < MIN_READS_PER_PHASE:
-            if passed_termtel:
-                unclustered_inds.extend(current_clust_inds)
-            continue
         # cluster filter: normal vs. interstitial
         if passed_termtel:
-            pass_clust_inds_list.append(read_clust_dat[0][clust_i])
+            if len(current_clust_inds) < MIN_READS_PER_PHASE:
+                unclustered_inds.extend(current_clust_inds)
+            else:
+                pass_clust_inds_list.append(read_clust_dat[0][clust_i])
         else:
             fail_clust_inds_list.append(read_clust_dat[0][clust_i])
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
-    print(f' - {len(fail_clust_inds_list) + len(fail_blank_dat)} clusters removed for not ending in enough tel sequence')
-    print(f' - ({len(blank_inds)} tel reads with blank tvr)')
+    print(f' - {len(fail_clust_inds_list)} clusters removed for not ending in enough tel sequence')
     print(f' - ({len(unclustered_inds)} tel reads unclustered)')
 
     #
@@ -601,6 +558,7 @@ def main(raw_args=None):
     fail_tvr_clust = []
     clusters_with_tvrs = []
     all_consensus_tvrs = []
+    blank_inds = []
     n_reads = 0
     if len(unclustered_inds) >= MIN_READS_PER_PHASE:
         pass_clust_inds_list += [unclustered_inds]
@@ -608,28 +566,26 @@ def main(raw_args=None):
         my_chr = fake_chr
         if current_clust_inds == unclustered_inds:
             my_chr = unclust_chr
+        current_clust_inds = sorted(current_clust_inds)
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         zfcn = str(clust_num).zfill(3)
         telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'                   + zfcn + '.png'
         telcompcons_fn = OUT_CDIR_TVR + 'results/' + 'consensus_'               + zfcn + '.png'
         dendrogram_fn  = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
-        dend_prefix_fn = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram-prefixmerge_'  + zfcn + '.png'
         dist_matrix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix_'             + zfcn + '.npy'
-        dist_prefix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix-prefixmerge_' + zfcn + '.npy'
         consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'               + zfcn + '.fa'
         if ALWAYS_REPROCESS:
-            dist_matrix_fn = None
-            dist_prefix_fn = None
-            consensus_fn = None
+            rm(consensus_fn)
+        my_dist_matrix = init_dist_matrix[:,current_clust_inds]
+        my_dist_matrix = my_dist_matrix[current_clust_inds,:]
+        np.save(dist_matrix_fn, my_dist_matrix)
         #
-        subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR, TREECUT_PREFIXMERGE,
+        subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                        aln_mode='ds',
                                        alignment_processes=NUM_PROCESSES,
                                        rand_shuffle_count=RAND_SHUFFLE,
                                        dist_in=dist_matrix_fn,
-                                       dist_in_prefix=dist_prefix_fn,
                                        fig_name=dendrogram_fn,
-                                       fig_prefix_name=dend_prefix_fn,
                                        save_msa=consensus_fn,
                                        muscle_exe=MUSCLE_EXE,
                                        muscle_dir=OUT_CDIR_TVR + 'fa/',
@@ -639,6 +595,11 @@ def main(raw_args=None):
         #
         for sci,subclust_inds in enumerate(subset_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
+            # blank tvr? --> add to blank inds
+            if len(subset_clustdat[4][sci]) <= 0:
+                blank_inds.extend(subclust_read_inds)
+                continue
+            # readcount filter
             if len(subclust_read_inds) < MIN_READS_PER_PHASE:
                 continue
             n_reads += len(subclust_read_inds)
@@ -658,13 +619,6 @@ def main(raw_args=None):
                 fail_tvr_clust.append((term_zero_frac, nontel_long_frac, [n for n in subclust_read_inds]))
                 continue
             #
-            # are any of the subclusters blank? --> add to blank inds
-            #
-            subclust_tvr_len = len(subset_clustdat[4][sci])
-            if subclust_tvr_len <= 0:
-                blank_inds.extend(subclust_read_inds)
-                continue
-            #
             # pass all checks? --> add to list for subsequent subtel clustering
             #
             clusters_with_tvrs.append((my_chr, [n for n in subclust_read_inds]))
@@ -679,6 +633,7 @@ def main(raw_args=None):
     sys.stdout.flush()
     print(f' - {len(clusters_with_tvrs)} clusters with tvrs ({n_reads} reads)')
     print(f' - {len(fail_tvr_clust)} clusters removed for not ending in enough tel sequence')
+    print(f' - ({len(blank_inds)} tel reads with blank tvr)')
 
     #
     # [3] SUBTEL CLUSTERING
@@ -708,7 +663,7 @@ def main(raw_args=None):
             my_dendro_title  = zfcn
             subtel_labels    = None
             if ALWAYS_REPROCESS:
-                subtel_dist_fn = None
+                rm(subtel_dist_fn)
             #
             subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_REFINE_SUBTEL,
                                                      alignment_processes=NUM_PROCESSES,
@@ -721,7 +676,6 @@ def main(raw_args=None):
                                                      samp_labels=subtel_labels,
                                                      linkage_method='ward',
                                                      normalize_dist_matrix=False,
-                                                     job=(1,1),
                                                      dendrogram_title=my_dendro_title,
                                                      dendrogram_height=8)
             #
@@ -784,7 +738,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=False,
                                         alignment_processes=NUM_PROCESSES,
-                                        job=(1,1))
+                                        dendrogram_xlim=[1,0])
     # [4b]: subtels in clusters with TVRs
     clust2 = []
     subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is not None]
@@ -807,7 +761,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=False,
                                         alignment_processes=NUM_PROCESSES,
-                                        job=(1,1))
+                                        dendrogram_xlim=[1,0])
     # [4c]: subtels in clusters without TVRs
     clust3 = []
     subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is None]
@@ -830,7 +784,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=False,
                                         alignment_processes=NUM_PROCESSES,
-                                        job=(1,1))
+                                        dendrogram_xlim=[1,0])
         clust3 = [[n + len(tvrs_to_compare) for n in l3] for l3 in clust3]
     #
     intersections = []
@@ -884,45 +838,41 @@ def main(raw_args=None):
     n_final_clusters_added = 0
     n_final_clusters_removed = 0
     for (my_chr, current_clust_inds) in final_clustered_read_inds:
+        current_clust_inds = sorted(current_clust_inds)
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         rlens_subset = [my_rlens[n] for n in current_clust_inds]
         zfcn = str(plot_num).zfill(3)
         telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'                   + zfcn + '.png'
         telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'               + zfcn + '.png'
         dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
-        dend_prefix_fn = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram-prefixmerge_'  + zfcn + '.png'
         dist_matrix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix_'             + zfcn + '.npy'
-        dist_prefix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix-prefixmerge_' + zfcn + '.npy'
         consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'               + zfcn + '.fa'
         if ALWAYS_REPROCESS:
-            dist_matrix_fn = None
-            dist_prefix_fn = None
-            consensus_fn = None
+            rm(consensus_fn)
+        my_dist_matrix = init_dist_matrix[:,current_clust_inds]
+        my_dist_matrix = my_dist_matrix[current_clust_inds,:]
+        np.save(dist_matrix_fn, my_dist_matrix)
         #
         if my_chr == unclust_chr:
             # if this cluster is from unclust_chr, we're allowed to scrutinize the TVRs
-            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR, TREECUT_PREFIXMERGE,
+            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                          aln_mode='ds',
                                          alignment_processes=NUM_PROCESSES,
                                          rand_shuffle_count=RAND_SHUFFLE,
                                          dist_in=dist_matrix_fn,
-                                         dist_in_prefix=dist_prefix_fn,
                                          fig_name=dendrogram_fn,
-                                         fig_prefix_name=dend_prefix_fn,
                                          save_msa=consensus_fn,
                                          muscle_exe=MUSCLE_EXE,
                                          muscle_dir=OUT_CDIR_FIN + 'fa/',
                                          PRINT_DEBUG=PRINT_DEBUG)
         else:
             # otherwise we're just reclustering to get tl boundaries so treecut can be set arbitrarily high
-            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, 100., TREECUT_PREFIXMERGE,
+            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, 100.,
                                          aln_mode='ms',
                                          alignment_processes=NUM_PROCESSES,
                                          rand_shuffle_count=1,
                                          dist_in=dist_matrix_fn,
-                                         dist_in_prefix=dist_prefix_fn,
                                          fig_name=dendrogram_fn,
-                                         fig_prefix_name=dend_prefix_fn,
                                          save_msa=consensus_fn,
                                          muscle_exe=MUSCLE_EXE,
                                          muscle_dir=OUT_CDIR_FIN + 'fa/',
