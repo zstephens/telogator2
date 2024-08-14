@@ -41,7 +41,7 @@ def main(raw_args=None):
     parser.add_argument('-o', type=str, required=True,  metavar='output/',                      help="* Path to output directory")
     parser.add_argument('-k', type=str, required=False, metavar='kmers.tsv',    default='',     help="Telomere kmers file")
     parser.add_argument('-t', type=str, required=False, metavar='telogator.fa', default='',     help="Telogator reference fasta")
-    parser.add_argument('-r', type=str, required=False, metavar='hifi',         default='hifi', help="Read type: hifi / clr / ont")
+    parser.add_argument('-r', type=str, required=False, metavar='hifi',         default='hifi', help="Read type: hifi / ont")
     parser.add_argument('-l', type=int, required=False, metavar='4000',         default=4000,   help="Minimum read length")
     parser.add_argument('-s', type=int, required=False, metavar='1000',         default=1000,   help="Minimum subtelomere anchor size")
     parser.add_argument('-c', type=int, required=False, metavar='8',            default=8,      help="Minimum hits to tandem canonical kmer")
@@ -158,6 +158,9 @@ def main(raw_args=None):
 
     # check parameters (TODO: make this more comprehensive)
     #
+    if READ_TYPE not in ['hifi', 'ont']:
+        print('Error: -r must be hifi or ont')
+        exit(1)
     if MIN_READS_PER_PHASE < 1:
         print('Error: -n must be >= 1')
         exit(1)
@@ -997,7 +1000,7 @@ def main(raw_args=None):
                 sam_line[2] = refseqs[-1]
             else:
                 sam_line[2] = my_ref_ind
-            [rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
+            [rnm, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
             if rnm not in ALIGNMENTS_BY_RNAME:
                 ALIGNMENTS_BY_RNAME[rnm] = []
             ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
