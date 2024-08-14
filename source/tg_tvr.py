@@ -5,8 +5,7 @@ import matplotlib.pyplot as mpl
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance  import squareform
 
-from source.tg_align  import get_aligner_object, get_scoring_matrix, MATCH_CANON_PREFIX, MAX_SEQ_DIST, tvr_distance, UNKNOWN_LETTER
-from source.tg_muscle import get_muscle_msa
+from source.tg_align  import get_aligner_object, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_SEQ_DIST, progressive_alignment, tvr_distance, UNKNOWN
 from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_some_tvrs
 from source.tg_reader import TG_Reader
 from source.tg_util   import exists_and_is_nonzero
@@ -37,26 +36,6 @@ def parallel_alignment_job(sequences, ij, results_dict, aligner, adjust_lens=Tru
         results_dict[(i,j)] = tvr_distance(sequences[i], sequences[j], aligner, adjust_lens=adjust_lens, min_viable=min_viable, randshuffle=randshuffle)
 
 
-def parallel_msa_job(my_inds, out_clust, buffered_tvrs, buffered_subs, muscle_params, results_dict):
-    [muscle_exe, muscle_prefix, char_score_adj, noncanon_cheat] = muscle_params
-    for i in my_inds:
-        if len(out_clust[i]) == 1:
-            results_dict[('tvr',i)] = buffered_tvrs[out_clust[i][0]]
-            results_dict[('sub',i)] = buffered_subs[out_clust[i][0]]
-        else:
-            clust_seq = [buffered_tvrs[n] for n in out_clust[i]]
-            my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0 and muscle_prefix[-1] != '/') + 'tvr' + str(i).zfill(5)
-            [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix, char_score_adj=char_score_adj, noncanon_cheat=noncanon_cheat)
-            results_dict[('tvr',i)] = consensus_seq
-            clust_seq = [buffered_subs[n] for n in out_clust[i]]
-            if clust_seq[0] == '':
-                results_dict[('sub',i)] = ''
-            else:
-                my_prefix = muscle_prefix + '_'*(len(muscle_prefix) > 0 and muscle_prefix[-1] != '/') + 'sub' + str(i).zfill(5)
-                [msa_seq, consensus_seq] = get_muscle_msa(clust_seq, muscle_exe, tempfile_prefix=my_prefix)
-                results_dict[('sub',i)] = consensus_seq
-
-
 def cluster_tvrs(kmer_dat,
                  repeats_metadata,
                  my_chr,
@@ -69,9 +48,6 @@ def cluster_tvrs(kmer_dat,
                  save_msa=None,
                  tvr_truncate=3000,
                  alignment_processes=4,
-                 muscle_exe='muscle',
-                 muscle_dir='',
-                 PRINT_DEBUG=False,
                  clustering_only=False):
     #
     #   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
@@ -79,10 +55,6 @@ def cluster_tvrs(kmer_dat,
     #   repeats_metadata = [kmer_list, kmer_colors, kmer_letters, kmer_flags]
     #
     [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
-    #
-    muscle_prefix = muscle_dir
-    if save_msa is not None and '.' in save_msa:
-        muscle_prefix = '.'.join(save_msa.split('.')[:-1])
     #
     n_reads = len(kmer_dat)
     pq = my_chr[-1]
@@ -94,7 +66,7 @@ def cluster_tvrs(kmer_dat,
     denoise_letters  = []
     tvr_letters      = []
     nofilt_letters   = []
-    dubious_letters  = [UNKNOWN_LETTER]
+    dubious_letters  = [UNKNOWN]
     subfilt_letters  = []
     for i in range(len(kmer_list)):
         if 'canonical' in kmer_flags[i]:
@@ -109,8 +81,8 @@ def cluster_tvrs(kmer_dat,
             dubious_letters.append(kmer_letters[i])
         if 'subtel-filt' in kmer_flags[i]:
             subfilt_letters.append(kmer_letters[i])
-        if kmer_letters[i] == UNKNOWN_LETTER:
-            print(f'Error: character {UNKNOWN_LETTER} is reserved for unknown sequence')
+        if kmer_letters[i] == UNKNOWN:
+            print(f'Error: character {UNKNOWN} is reserved for unknown sequence')
             exit(1)
     if canonical_letter is None:
         print('Error: cluster_tvrs() received a kmer list that does not have any kmers marked as canonical')
@@ -123,17 +95,12 @@ def cluster_tvrs(kmer_dat,
     letters_worth_chasing = [n for n in tvr_letters if n not in dubious_letters]
 
     #
-    # when generating consensus sequence for cluster: in ties, prioritize canonical, deprioritize unknown
-    #
-    char_score_adj = {canonical_letter:1, UNKNOWN_LETTER:-1}
-    noncanon_cheat = ([canonical_letter]+dubious_letters, 3)
-    #
     # create color vector
     #
     all_colorvecs = []
     for i in range(n_reads):
         [my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[i]
-        my_letters = [UNKNOWN_LETTER for n in range(my_tlen)]
+        my_letters = [UNKNOWN for n in range(my_tlen)]
         for ki in range(len(my_kmer_hits)):
             if len(my_kmer_hits[ki]):
                 for kmer_span in my_kmer_hits[ki]:
@@ -151,14 +118,14 @@ def cluster_tvrs(kmer_dat,
     err_end_lens      = []
     for i in range(len(all_colorvecs)):
         # identify subtel/tvr boundary based on density of unknown characters
-        (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], [UNKNOWN_LETTER]+subfilt_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
+        (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
         # lets walk backwards with a smaller window to see if there are some tvrs we missed
-        (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], [UNKNOWN_LETTER]+subfilt_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
+        (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
         seq_right = recovered_tvr[::-1] + seq_right
         seq_left = rest_is_subtel[::-1]
         # adjust subtel boundary so that tvr does not begin with an unknown character
         adj = 0
-        while seq_right[adj] == UNKNOWN_LETTER and adj < len(seq_right)-1:
+        while seq_right[adj] == UNKNOWN and adj < len(seq_right)-1:
             adj += 1
         seq_left = seq_left + seq_right[:adj]
         seq_right = seq_right[adj:]
@@ -188,10 +155,11 @@ def cluster_tvrs(kmer_dat,
                 k += 1
         # get pairwise distance for all tvr + tel colorvecs
         if aln_mode == 'ms':
-            aligner = get_aligner_object(scoring_matrix=None, gap_bool=(True, True))
+            scoring_matrix = None
         elif aln_mode == 'ds':
-            scoring_matrix = get_scoring_matrix(canonical_letter)
-            aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True))
+            scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
+        aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
+        #
         manager     = multiprocessing.Manager()
         tvrtel_dist = manager.dict()
         processes   = []
@@ -274,45 +242,36 @@ def cluster_tvrs(kmer_dat,
                 subtel_consensus.append(read_dat[1])
         my_reader.close()
         if len(out_consensus) != len(out_clust):    # msa we read from file has different number of clusters than we currently have, abort!
-            if PRINT_DEBUG:
-                print('mismatch #clusters from input consensus:', len(out_consensus), '!=', len(out_clust))
             out_consensus = []
     #
-    buffered_tvrs = {}
-    buffered_subs = {}
-    #
     if save_msa is None or len(out_consensus) == 0:
+        msa_matrix = get_scoring_matrix(canonical_letter, which_type='msa')
+        refine_matrix = get_scoring_matrix(canonical_letter, which_type='msa_refinement')
+        msa_aligner = get_aligner_object(scoring_matrix=msa_matrix, gap_bool=(True,False), which_type='msa')
+        refinement_aligner = get_aligner_object(scoring_matrix=refine_matrix, gap_bool=(True,False), which_type='msa')
         for i in range(len(out_clust)):
-            max_tvr_len = max([len(colorvecs_for_msa[n]) for n in out_clust[i]])
-            max_sub_len = max([len(subtel_regions[n]) for n in out_clust[i]])
-            for ci in out_clust[i]:
-                tvr_buff_seq = canonical_letter*(max_tvr_len - len(colorvecs_for_msa[ci]))
-                sub_buff_seq = UNKNOWN_LETTER*(max_sub_len - len(subtel_regions[ci]))
-                buffered_tvrs[ci] = colorvecs_for_msa[ci] + tvr_buff_seq
-                buffered_subs[ci] = sub_buff_seq + subtel_regions[ci]
-        #
-        manager     = multiprocessing.Manager()
-        msa_results = manager.dict()
-        processes   = []
-        muscle_params = [muscle_exe, muscle_prefix, char_score_adj, noncanon_cheat]
-        for i in range(alignment_processes):
-            my_inds = list(range(i,len(out_clust),alignment_processes))
-            p = multiprocessing.Process(target=parallel_msa_job,
-                                        args=(my_inds, out_clust, buffered_tvrs, buffered_subs, muscle_params, msa_results))
-            processes.append(p)
-        for i in range(alignment_processes):
-            processes[i].start()
-        for i in range(alignment_processes):
-            processes[i].join()
-        #
-        out_consensus    = ['' for n in out_clust]
-        subtel_consensus = ['' for n in out_clust]
-        msa_keys = sorted(msa_results.keys())
-        for k in msa_keys:
-            if k[0] == 'tvr':
-                out_consensus[k[1]] = msa_results[k]
-            elif k[0] == 'sub':
-                subtel_consensus[k[1]] = msa_results[k]
+            clust_inds = sorted(out_clust[i])
+            my_dists = dist_matrix[:,clust_inds]
+            my_dists = my_dists[clust_inds,:]
+            my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
+            # tvr msa
+            initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner)
+            if rand_shuffle_count > 1:
+                refined_msa = iterative_refinement(initial_msa, refinement_aligner)
+            else:
+                refined_msa = initial_msa
+            out_consensus.append(get_final_tvr_consensus(refined_msa,
+                                                         default_char=canonical_letter,
+                                                         untrustworthy_chars=[canonical_letter]+dubious_letters,
+                                                         tiebreak_adj={canonical_letter:1, UNKNOWN:-1}))
+            # subtel msa
+            my_seqs_sub_rev = [subtel_regions[ci][::-1] for ci in clust_inds]
+            initial_msa = progressive_alignment(my_seqs_sub_rev, my_dists, msa_aligner)
+            if rand_shuffle_count > 1:
+                refined_msa = iterative_refinement(initial_msa, refinement_aligner)
+            else:
+                refined_msa = initial_msa
+            subtel_consensus.append(get_final_tvr_consensus(refined_msa, default_char=UNKNOWN)[::-1])
         #
         if save_msa is not None:
             f = open(save_msa,'w')
@@ -411,18 +370,6 @@ def cluster_tvrs(kmer_dat,
     for n in out_clust:
         out_mapq.append([kmer_dat[m][5] for m in n])
     #
-    if PRINT_DEBUG:
-        print()
-        print('cluster_tvr() results:')
-        print(out_clust)
-        print(out_mapq)
-        print(out_adj)
-        print(all_subtel_lens)
-        print('len(out_consensus):', len(out_consensus))
-        print('len(cleaned_colorvecs):', len(cleaned_colorvecs))
-        print(err_end_lens)
-        print(out_tvr_tel_boundaries)
-    #
     return [out_clust,
             out_mapq,
             out_adj,
@@ -463,7 +410,7 @@ def cluster_consensus_tvrs(sequences,
     for i in range(len(kmer_list)):
         if 'canonical' in kmer_flags[i]:
             canonical_letter = kmer_letters[i]
-        if kmer_letters[i] == UNKNOWN_LETTER:
+        if kmer_letters[i] == UNKNOWN:
             print('Error: character A is reserved for unknown sequence')
             exit(1)
     if canonical_letter is None:
@@ -495,10 +442,10 @@ def cluster_consensus_tvrs(sequences,
                 all_indices[i] = [n for n in chunks_by_job[my_job]]
         #
         if aln_mode == 'ms':
-            aligner = get_aligner_object(scoring_matrix=None, gap_bool=gap_bool)
+            scoring_matrix = None
         elif aln_mode == 'ds':
-            scoring_matrix = get_scoring_matrix(canonical_letter, MATCH_CANON_PREFIX)
-            aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=gap_bool)
+            scoring_matrix = get_scoring_matrix(canonical_letter, which_type='consensus')
+        aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=gap_bool, which_type='tvr')
         manager     = multiprocessing.Manager()
         return_dict = manager.dict()
         processes   = []
@@ -655,7 +602,7 @@ def find_cumulative_boundary(sequence, which_letters, cum_thresh=0.05, min_hits=
     return first_pos_below_thresh
 
 
-def denoise_colorvec(v, replace_char=UNKNOWN_LETTER, min_size=10, max_gap_fill=50, chars_to_delete=[], chars_to_merge=[]):
+def denoise_colorvec(v, replace_char=UNKNOWN, min_size=10, max_gap_fill=50, chars_to_delete=[], chars_to_merge=[]):
     if len(v) == 0:
         return ''
     blocks = []

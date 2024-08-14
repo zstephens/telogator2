@@ -7,6 +7,8 @@ Stephens, Z., & Kocher, J. P. (2024). Characterization of telomere variant repea
 
 https://link.springer.com/article/10.1186/s12859-024-05807-5
 
+
+
 ## Dependencies:
 
 Telogator2 dependencies can be easily installed via conda:
@@ -27,13 +29,39 @@ Telogator2 can be run in single command:
 ```bash
 python telogator2.py -i input.fq \ 
                      -o results/ \ 
-                     --muscle /path/to/muscle \ 
                      --minimap2 /path/to/minimap2
 ```
 
 `-i` accepts fa / fa.gz / fq / fq.gz / bam. Multiple arguments can be provided (e.g. `-i reads1.fa reads2.fa`).
 
-Telogator2 requires that [muscle v3.8](https://drive5.com/muscle/downloads_v3.htm) is installed in order to produce consensus TVR sequences. If the dependencies were installed via conda then muscle should be found in the `envs/telogator2/` directory. Additionally, Telogator2 requires a path to an aligner, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
+Telogator2 requires specifying an aligner executable, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
+
+
+
+## Recommended settings
+
+Sequencing platforms have different sequencing error rates (and error types), as such we recommend running Telogator2 with different options based on your input data type:
+
+**PacBio Revio HiFi reads (30x)** - `-r hifi -tt 0.400 -ts 0.250 -n 4`  
+**PacBio Sequel II reads (10x)** - `-r hifi -tt 0.250 -ts 0.250 -n 3`  
+**Nanopore R10 reads (30x)** - `-r ont -tt 0.300 -ts 0.300 -n 5`  
+
+Older Nanopore data might not be usable, as reads basecalled with Guppy have extremely high rates of sequencing errors in telomere regions. Additionally, Revio data generated prior to SMRTLink13 will likely not have sufficient telomere reads. For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
+
+For very low coverage data, consider lowering the minimum number of reads per allele down to `-n 2` or even `-n 1`, but expect that this will also lead to false positives.
+
+
+
+## Test data
+
+Telomere reads for HG002 can be found in the `test_data/` directory.
+
+```
+HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
+ONT reads  (~25x): hg002-telreads_ont.fa.gz
+```
+
+These are full-sized datasets and may take awhile to run. A smaller input dataset (e.g. for just checking that Telogator2 successfully runs) is also provided: `test_data/test.fa.gz`.
 
 
 
@@ -60,31 +88,6 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 * `tvr_len` length of the cluster's TVR region
 * `tvr_consensus` consensus TVR region sequence
 * `supporting_reads` readnames of each read in the cluster
-
-
-
-## Recommended settings
-
-Sequencing platforms have different sequencing error rates (and error types), as such we recommend running Telogator2 with different options based on your input data type:
-
-**PacBio Revio HiFi reads (30x)** - `-r hifi -tt 0.400 -ts 0.250 -n 4`  
-**PacBio Sequel II reads (10x)** - `-r hifi -tt 0.250 -ts 0.250 -n 3`  
-**Nanopore R10 reads (30x)** - `-r ont -tt 0.300 -ts 0.300 -n 5`  
-
-Older Nanopore data might not be usable, as reads basecalled with Guppy have extremely high rates of sequencing errors in telomere regions. Additionally, Revio data generated prior to SMRTLink13 will likely not have sufficient telomere reads. For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
-
-For very low coverage data, consider lowering the minimum number of reads per allele down to `-n 2` or even `-n 1`, but expect that this will also lead to false positives.
-
-
-
-## Test data
-
-Telomere reads for HG002 can be found in the `test_data/` directory.
-
-```
-HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
-ONT reads  (~25x): hg002-telreads_ont.fa.gz
-```
 
 
 

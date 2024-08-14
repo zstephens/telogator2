@@ -4,14 +4,13 @@ import copy
 import gzip
 import numpy as np
 import pathlib
-import pickle
 import pysam
 import subprocess
 import sys
 import time
 
+from source.tg_align  import get_nucl_consensus
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
-from source.tg_muscle import check_muscle_version, get_muscle_msa
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
@@ -52,7 +51,6 @@ def main(raw_args=None):
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
     parser.add_argument('-ti', type=float, required=False, metavar='0.180', default=0.180, help="[Treecut value]: initial TVR clustering")
-    parser.add_argument('-tp', type=float, required=False, metavar='0.120', default=0.120, help="[Treecut value]: merging TVRs with similar prefixes")
     parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [TVR]")
     parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [SUBTEL]")
     #
@@ -67,7 +65,6 @@ def main(raw_args=None):
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="Plot tel signals for all reads")
-    parser.add_argument('--debug-print',    required=False, action='store_true', default=False, help="[DEBUG] Print extra info for each read as its processed")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
@@ -77,7 +74,6 @@ def main(raw_args=None):
     #
     parser.add_argument('--init-filt', type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="Apply terminating-tel filters to input reads")
     #
-    parser.add_argument('--muscle',    type=str, required=False, metavar='exe',    default='', help="/path/to/muscle")
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
     parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
     parser.add_argument('--pbmm2',     type=str, required=False, metavar='exe',    default='', help="/path/to/pbmm2")
@@ -102,7 +98,6 @@ def main(raw_args=None):
     CRAM_REF_FILE       = args.ref
     #
     TREECUT_INITIAL       = args.ti
-    TREECUT_PREFIXMERGE   = args.tp
     TREECUT_REFINE_SUBTEL = args.ts
     TREECUT_REFINE_TVR    = args.tt
     #
@@ -116,7 +111,6 @@ def main(raw_args=None):
 
     # executables
     #
-    MUSCLE_EXE    = args.muscle
     MINIMAP2_EXE  = args.minimap2
     WINNOWMAP_EXE = args.winnowmap
     PBMM2_EXE     = args.pbmm2
@@ -131,7 +125,6 @@ def main(raw_args=None):
     PLOT_ALL_INITIAL     = args.plot_all_reads
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PLOT_TEL_SIGNALS     = args.plot_signals
-    PRINT_DEBUG          = args.debug_print
     FAST_ALIGNMENT       = args.fast_aln
     INIT_FILTERING_TUPLE = args.init_filt
     #
@@ -213,11 +206,6 @@ def main(raw_args=None):
 
     #
     # check exes
-    #
-    if len(MUSCLE_EXE) == 0:
-        print('Warning: --muscle not specified, trying "muscle"...')
-        MUSCLE_EXE = 'muscle'
-    check_muscle_version(MUSCLE_EXE)
     #
     if len([n for n in [MINIMAP2_EXE, WINNOWMAP_EXE, PBMM2_EXE] if len(n)]) == 0:
         print('Warning: no aligner was specified, trying "minimap2"...')
@@ -466,9 +454,6 @@ def main(raw_args=None):
                                   rand_shuffle_count=RAND_SHUFFLE,
                                   dist_in=init_dist_matrix_fn,
                                   fig_name=init_dendrogram_fn,
-                                  muscle_exe=MUSCLE_EXE,
-                                  muscle_dir=OUT_CDIR_INIT + 'fa/',
-                                  PRINT_DEBUG=PRINT_DEBUG,
                                   clustering_only=clustering_only)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
@@ -569,11 +554,11 @@ def main(raw_args=None):
         current_clust_inds = sorted(current_clust_inds)
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         zfcn = str(clust_num).zfill(3)
-        telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'                   + zfcn + '.png'
-        telcompcons_fn = OUT_CDIR_TVR + 'results/' + 'consensus_'               + zfcn + '.png'
-        dendrogram_fn  = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
-        dist_matrix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix_'             + zfcn + '.npy'
-        consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'               + zfcn + '.fa'
+        telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'       + zfcn + '.png'
+        telcompcons_fn = OUT_CDIR_TVR + 'results/' + 'consensus_'   + zfcn + '.png'
+        dendrogram_fn  = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram_'  + zfcn + '.png'
+        dist_matrix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix_' + zfcn + '.npy'
+        consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
         my_dist_matrix = init_dist_matrix[:,current_clust_inds]
@@ -586,10 +571,7 @@ def main(raw_args=None):
                                        rand_shuffle_count=RAND_SHUFFLE,
                                        dist_in=dist_matrix_fn,
                                        fig_name=dendrogram_fn,
-                                       save_msa=consensus_fn,
-                                       muscle_exe=MUSCLE_EXE,
-                                       muscle_dir=OUT_CDIR_TVR + 'fa/',
-                                       PRINT_DEBUG=PRINT_DEBUG)
+                                       save_msa=consensus_fn)
         #
         make_tvr_plots(khd_subset, subset_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
@@ -687,7 +669,7 @@ def main(raw_args=None):
                             continue
                         zfcn_s = str(sci_s).zfill(3)
                         clustered_subtels = [my_subtels[n] for n in subclust_inds]
-                        [subtel_out_seq, subtel_consensus_seq] = get_muscle_msa(clustered_subtels, MUSCLE_EXE, tempfile_prefix=subtel_muscle_fn+f'_{zfcn_s}', mode='nucl')
+                        subtel_consensus_seq = get_nucl_consensus(clustered_subtels)
                         f.write(f'>subtel-consensus_{zfcn}_{zfcn_s}\n')
                         f.write(f'{subtel_consensus_seq}\n')
             my_cons_subtels = [n[1] for n in quick_grab_all_reads(subtel_muscle_fn + '.fa')]
@@ -842,11 +824,11 @@ def main(raw_args=None):
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         rlens_subset = [my_rlens[n] for n in current_clust_inds]
         zfcn = str(plot_num).zfill(3)
-        telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'                   + zfcn + '.png'
-        telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'               + zfcn + '.png'
-        dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'              + zfcn + '.png'
-        dist_matrix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix_'             + zfcn + '.npy'
-        consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'               + zfcn + '.fa'
+        telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'       + zfcn + '.png'
+        telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'   + zfcn + '.png'
+        dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'  + zfcn + '.png'
+        dist_matrix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix_' + zfcn + '.npy'
+        consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
         my_dist_matrix = init_dist_matrix[:,current_clust_inds]
@@ -861,10 +843,7 @@ def main(raw_args=None):
                                          rand_shuffle_count=RAND_SHUFFLE,
                                          dist_in=dist_matrix_fn,
                                          fig_name=dendrogram_fn,
-                                         save_msa=consensus_fn,
-                                         muscle_exe=MUSCLE_EXE,
-                                         muscle_dir=OUT_CDIR_FIN + 'fa/',
-                                         PRINT_DEBUG=PRINT_DEBUG)
+                                         save_msa=consensus_fn)
         else:
             # otherwise we're just reclustering to get tl boundaries so treecut can be set arbitrarily high
             solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, 100.,
@@ -873,10 +852,7 @@ def main(raw_args=None):
                                          rand_shuffle_count=1,
                                          dist_in=dist_matrix_fn,
                                          fig_name=dendrogram_fn,
-                                         save_msa=consensus_fn,
-                                         muscle_exe=MUSCLE_EXE,
-                                         muscle_dir=OUT_CDIR_FIN + 'fa/',
-                                         PRINT_DEBUG=PRINT_DEBUG)
+                                         save_msa=consensus_fn)
         #
         my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, my_chr, fake_pos, rlens_subset, gatd_params)
         prior_clustnum = clust_num
@@ -1037,23 +1013,20 @@ def main(raw_args=None):
                 sorted_choices.append((read_span, my_mapq, -dist_to_end, i))
             sorted_choices = sorted(sorted_choices, reverse=True)
             top_i = sorted_choices[0][3]
-            #print(readname, sorted_choices)
             my_cluster = int(readname.split('_')[0][8:])
             if my_cluster not in top_alns_by_cluster:
                 top_alns_by_cluster[my_cluster] = []
             top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
         #
         for clustnum in sorted(top_alns_by_cluster.keys()):
-            ####print(clustnum)
             chr_arm_scores = {}
             anchors_by_ref = {}
             for n in top_alns_by_cluster[clustnum]:
                 my_ref = n[1][2]
                 my_refspan = abs(n[1][3] - n[1][4])
                 my_anchor = n[1][4] # second refpos is always anchor coord?
-                my_orr = n[1][5]
+                #my_orr = n[1][5]
                 my_mapq = n[1][6]
-                ####print(my_ref, my_refspan, my_anchor, my_orr, my_mapq)
                 if my_ref != '*':
                     if my_ref not in chr_arm_scores:
                         chr_arm_scores[my_ref] = 0.
@@ -1064,7 +1037,6 @@ def main(raw_args=None):
             my_anchors = []
             if total_score > 0:
                 sorted_chr_scores = sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)
-                ####print(sorted_chr_scores)
                 my_anchors = [n[1] for n in sorted_chr_scores if n[0] >= ANCHORING_ASSIGNMENT_FRAC]
             else:
                 pass # all unmapped
