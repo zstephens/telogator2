@@ -179,10 +179,10 @@ def cluster_tvrs(kmer_dat,
                 dist_matrix[j,i] = ij_dist
         dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
-            np.save(dist_in, dist_matrix)
+            np.savez_compressed(dist_in, dist=dist_matrix)
     #
     else:
-        dist_matrix = np.load(dist_in, allow_pickle=True)
+        dist_matrix = np.load(dist_in)['dist']
 
     #
     # hierarchal clustering + dendrogram plotting
@@ -463,14 +463,14 @@ def cluster_consensus_tvrs(sequences,
             dist_matrix[j,i] = return_dict[(i,j)]
         if job[1] > 1:
             partial_dist_fn = dist_in[:-4] + '_job' + str(job[0]).zfill(3) + '.npy'
-            np.save(partial_dist_fn, dist_matrix)
+            np.savez_compressed(partial_dist_fn, dist=dist_matrix)
         else:
             if normalize_dist_matrix:
                 dist_matrix /= MAX_SEQ_DIST
             if dist_in is not None:
-                np.save(dist_in, dist_matrix)
+                np.savez_compressed(dist_in, dist=dist_matrix)
     else:
-        dist_matrix = np.load(dist_in, allow_pickle=True)
+        dist_matrix = np.load(dist_in)['dist']
     #
     if samp_labels is None:
         samp_labels = [str(n) for n in range(len(sequences))]

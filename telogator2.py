@@ -65,7 +65,7 @@ def main(raw_args=None):
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="Plot tel signals for all reads")
-    parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npy files and use existing .npy files")
+    parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npz files and use existing .npz files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip cluster refinement step that uses subtels")
@@ -118,7 +118,7 @@ def main(raw_args=None):
     # debug params
     #
     DONT_OVERWRITE_PLOTS = args.debug_noplot     # (True = don't replot figures if they already exist)
-    ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npy matrices, always recompute)
+    ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npz matrices, always recompute)
     NO_SUBTEL_REALIGN    = args.debug_realign
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
@@ -183,7 +183,7 @@ def main(raw_args=None):
         makedir(d)
         makedir(d + 'dendro/')
         makedir(d + 'fa/')
-        makedir(d + 'npy/')
+        makedir(d + 'npz/')
         makedir(d + 'results/')
     makedir(OUT_CDIR_COL)
     TEL_SIGNAL_DIR = OUT_DIR + 'tel_signal/'
@@ -444,7 +444,7 @@ def main(raw_args=None):
     sys.stdout.flush()
     tt = time.perf_counter()
     init_dendrogram_fn  = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
-    init_dist_matrix_fn = OUT_CDIR_INIT + 'npy/'    + 'dist-matrix.npy'
+    init_dist_matrix_fn = OUT_CDIR_INIT + 'npz/'    + 'dist-matrix.npz'
     if ALWAYS_REPROCESS:
         rm(init_dist_matrix_fn)
     clustering_only = True
@@ -500,7 +500,7 @@ def main(raw_args=None):
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
     # we're going to use these distances for all the remaining steps instead of recomputing it each time
-    init_dist_matrix = np.load(init_dist_matrix_fn, allow_pickle=True)
+    init_dist_matrix = np.load(init_dist_matrix_fn)['dist']
 
     #
     # [1.5] INTERSTITIAL TEL FILTER
@@ -560,13 +560,13 @@ def main(raw_args=None):
         telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'       + zfcn + '.png'
         telcompcons_fn = OUT_CDIR_TVR + 'results/' + 'consensus_'   + zfcn + '.png'
         dendrogram_fn  = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram_'  + zfcn + '.png'
-        dist_matrix_fn = OUT_CDIR_TVR + 'npy/'     + 'dist-matrix_' + zfcn + '.npy'
+        dist_matrix_fn = OUT_CDIR_TVR + 'npz/'     + 'dist-matrix_' + zfcn + '.npz'
         consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
         my_dist_matrix = init_dist_matrix[:,current_clust_inds]
         my_dist_matrix = my_dist_matrix[current_clust_inds,:]
-        np.save(dist_matrix_fn, my_dist_matrix)
+        np.savez_compressed(dist_matrix_fn, dist=my_dist_matrix)
         #
         subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                        aln_mode='ds',
@@ -580,8 +580,9 @@ def main(raw_args=None):
         #
         for sci,subclust_inds in enumerate(subset_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
+            my_tvr_len = subset_clustdat[7][sci]
             # blank tvr? --> add to blank inds
-            if len(subset_clustdat[4][sci]) <= 0:
+            if my_tvr_len <= 0:
                 blank_inds.extend(subclust_read_inds)
                 continue
             # readcount filter
@@ -607,7 +608,7 @@ def main(raw_args=None):
             # pass all checks? --> add to list for subsequent subtel clustering
             #
             clusters_with_tvrs.append((my_chr, [n for n in subclust_read_inds]))
-            all_consensus_tvrs.append(subset_clustdat[4][sci])
+            all_consensus_tvrs.append(subset_clustdat[4][sci][:my_tvr_len])
         #
         clust_num += 1
     #
@@ -643,7 +644,7 @@ def main(raw_args=None):
             #
             zfcn = str(sci).zfill(3)
             subtel_dendro_fn = OUT_CDIR_SUB + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
-            subtel_dist_fn   = OUT_CDIR_SUB + 'npy/'    + 'dist-matrix_' + zfcn + '.npy'
+            subtel_dist_fn   = OUT_CDIR_SUB + 'npz/'    + 'dist-matrix_' + zfcn + '.npz'
             subtel_muscle_fn = OUT_CDIR_SUB + 'fa/'     + 'consensus_'   + zfcn
             my_dendro_title  = zfcn
             subtel_labels    = None
@@ -706,12 +707,14 @@ def main(raw_args=None):
     tvrs_to_compare = [n[0] for n in all_consensus_tvr_subtel_pairs if n[0] is not None]
     if tvrs_to_compare:
         collapse_dendro_fn = OUT_CDIR_COL + 'tvrs_dendrogram.png'
-        collapse_dist_fn   = OUT_CDIR_COL + 'tvrs_dist-matrix.npy'
+        collapse_dist_fn   = OUT_CDIR_COL + 'tvrs_dist-matrix.npz'
         collapse_fig_fn    = OUT_CDIR_COL + 'tvrs_plot.png'
+        collapse_fa_fn     = OUT_CDIR_COL + 'tvrs.fa'
+        with open(collapse_fa_fn, 'w') as f:
+            for seq_i, seq in enumerate(tvrs_to_compare):
+                f.write(f'>tvr_{seq_i}\n{seq}\n')
         if ALWAYS_REPROCESS:
-            rm(collapse_dendro_fn)
             rm(collapse_dist_fn)
-            rm(collapse_fig_fn)
         clust1 = cluster_consensus_tvrs(tvrs_to_compare, KMER_METADATA, COLLAPSE_TVR_THRESH,
                                         dist_in=collapse_dist_fn,
                                         fig_name=collapse_fig_fn,
@@ -729,12 +732,14 @@ def main(raw_args=None):
     subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is not None]
     if subs_to_compare:
         collapse_dendro_fn = OUT_CDIR_COL + 'subtels_dendrogram.png'
-        collapse_dist_fn   = OUT_CDIR_COL + 'subtels_dist-matrix.npy'
+        collapse_dist_fn   = OUT_CDIR_COL + 'subtels_dist-matrix.npz'
         collapse_fig_fn    = OUT_CDIR_COL + 'subtels_plot.png'
+        collapse_fa_fn     = OUT_CDIR_COL + 'subtels.fa'
+        with open(collapse_fa_fn, 'w') as f:
+            for seq_i, seq in enumerate(subs_to_compare):
+                f.write(f'>subtel_{seq_i}\n{seq}\n')
         if ALWAYS_REPROCESS:
-            rm(collapse_dendro_fn)
             rm(collapse_dist_fn)
-            rm(collapse_fig_fn)
         clust2 = cluster_consensus_tvrs(subs_to_compare, KMER_METADATA, COLLAPSE_SUB_THRESH,
                                         dist_in=collapse_dist_fn,
                                         fig_name=collapse_fig_fn,
@@ -752,12 +757,14 @@ def main(raw_args=None):
     subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is None]
     if subs_to_compare:
         collapse_dendro_fn = OUT_CDIR_COL + 'subtels-blanktvr_dendrogram.png'
-        collapse_dist_fn   = OUT_CDIR_COL + 'subtels-blanktvr_dist-matrix.npy'
+        collapse_dist_fn   = OUT_CDIR_COL + 'subtels-blanktvr_dist-matrix.npz'
         collapse_fig_fn    = OUT_CDIR_COL + 'subtels-blanktvr_plot.png'
+        collapse_fa_fn     = OUT_CDIR_COL + 'subtels-blanktvr.fa'
+        with open(collapse_fa_fn, 'w') as f:
+            for seq_i, seq in enumerate(subs_to_compare):
+                f.write(f'>subtel-blank_{seq_i}\n{seq}\n')
         if ALWAYS_REPROCESS:
-            rm(collapse_dendro_fn)
             rm(collapse_dist_fn)
-            rm(collapse_fig_fn)
         clust3 = cluster_consensus_tvrs(subs_to_compare, KMER_METADATA, COLLAPSE_SUB_THRESH,
                                         dist_in=collapse_dist_fn,
                                         fig_name=collapse_fig_fn,
@@ -830,13 +837,13 @@ def main(raw_args=None):
         telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'       + zfcn + '.png'
         telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'   + zfcn + '.png'
         dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'  + zfcn + '.png'
-        dist_matrix_fn = OUT_CDIR_FIN + 'npy/'     + 'dist-matrix_' + zfcn + '.npy'
+        dist_matrix_fn = OUT_CDIR_FIN + 'npz/'     + 'dist-matrix_' + zfcn + '.npz'
         consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
         my_dist_matrix = init_dist_matrix[:,current_clust_inds]
         my_dist_matrix = my_dist_matrix[current_clust_inds,:]
-        np.save(dist_matrix_fn, my_dist_matrix)
+        np.savez_compressed(dist_matrix_fn, dist=my_dist_matrix)
         #
         if my_chr == unclust_chr:
             # if this cluster is from unclust_chr, we're allowed to scrutinize the TVRs
