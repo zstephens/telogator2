@@ -50,7 +50,7 @@ def main(raw_args=None):
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.180', default=0.180, help="[Treecut value]: initial TVR clustering")
+    parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[Treecut value]: initial TVR clustering")
     parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [TVR]")
     parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [SUBTEL]")
     #

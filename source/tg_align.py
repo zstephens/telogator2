@@ -150,12 +150,17 @@ def progressive_alignment(sequences, distance_matrix, aligner):
         padded_profile.append((alignments[0][1].ljust(max_len, '-'), len(sequences) - 1))
         return padded_profile
 
-    # Find the two closest sequences
-    n = len(sequences)
+    n_sequences = len(sequences)
+    if n_sequences <= 0:
+        print('Error: progressive_alignment() received empty alignment')
+        exit(1)
+    if n_sequences == 1:
+        return sequences
+    # find the two closest sequences
     min_distance = float('inf')
     closest_pair = None
-    for i in range(n):
-        for j in range(i+1, n):
+    for i in range(n_sequences):
+        for j in range(i+1, n_sequences):
             if distance_matrix[i][j] < min_distance:
                 min_distance = distance_matrix[i][j]
                 closest_pair = (i, j)
@@ -199,6 +204,12 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
                             score += freq * aligner.substitution_matrix[char, prof_char]
         return score
 
+    n_sequences = len(initial_alignment)
+    if n_sequences <= 0:
+        print('Error: iterative_refinement() received empty alignment')
+        exit(1)
+    if n_sequences == 1:
+        return initial_alignment
     current_alignment = initial_alignment
     current_score = sum(score_against_profile(seq, create_profile(current_alignment)) for seq in current_alignment)
     #
