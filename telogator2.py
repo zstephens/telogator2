@@ -24,7 +24,8 @@ DUMMY_TEL_MAPQ = 60
 SUBTEL_CLUSTER_SIZE = [1500, 3000]
 # if >30% this fraction of reads have no terminating tel, skip the cluster
 TERM_TEL_ZERO_FRAC = 0.30
-# if the nontel content of reads exceeds 190 for >49% of reads, skip this cluster
+# interstitial telomere filtering parameters:
+# - if the terminating content of reads is >190bp of non-telomere sequence for >49% of reads, skip this cluster
 NONTEL_END_FILT_PARAMS = (190, 0.49)
 # treecut values for collapsing multiple (presumably false positive) clusters together
 COLLAPSE_TVR_THRESH = 0.050
@@ -875,10 +876,10 @@ def main(raw_args=None):
             for i,read_i in enumerate(subclust_read_inds):
                 subtel_used_in_tvr = MIN_SUBTEL_BUFF - solo_clustdat[2][sci][i]
                 if subtel_used_in_tvr >= 0:
-                    my_subtels.append(all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr])
+                    my_subtels.append((read_i, all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr]))
                 else:
-                    my_subtels.append(all_subtel_seq[read_i])
-            for i,subtel_seq in enumerate(my_subtels):
+                    my_subtels.append((read_i, all_subtel_seq[read_i]))
+            for i,(read_i,subtel_seq) in enumerate(my_subtels):
                 subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[read_i]}', subtel_seq))
             allele_outdat.append(my_tsvdat[sci])
             allele_consensus.append(solo_clustdat[4][sci])
@@ -908,19 +909,14 @@ def main(raw_args=None):
     print(f' - ({n_final_clusters_added} clusters added during tvr reanalysis)')
 
     #
-    #
+    # SUBTEL ALIGNMENT
     #
     if SKIP_ANCHORING is False:
-        #
-        # write out subtels
         #
         with gzip.open(OUT_UNANCHORED_SUBTELS, 'wt') as f:
             for n in subtels_out:
                 if len(n[1]) > 0:
                     f.write(f'>{n[0]}\n{n[1]}\n')
-
-        #
-        # subtel alignment
         #
         aln_log = ALIGNED_SUBTELS + '.log'
         aln_sam = ALIGNED_SUBTELS + '.sam'
@@ -988,7 +984,6 @@ def main(raw_args=None):
             if exists_and_is_nonzero(aln_bam) is False:
                 print('Error: failed to create subtel bam')
                 exit(1)
-
         #
         # get anchors from subtel alignment
         #
@@ -1015,13 +1010,19 @@ def main(raw_args=None):
         samfile.close()
         #
         top_alns_by_cluster = {}
+        best_mapq_by_readname = {}
         for readname in ALIGNMENTS_BY_RNAME:
+            original_readname = '_'.join(readname.split('_')[2:])
             sorted_choices = []
             for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
                 dist_to_end = len(aln[7]) - max(aln[0], aln[1])
                 read_span = abs(aln[1] - aln[0])
                 my_mapq = aln[6]
                 sorted_choices.append((read_span, my_mapq, -dist_to_end, i))
+                if original_readname not in best_mapq_by_readname:
+                    best_mapq_by_readname[original_readname] = my_mapq
+                elif my_mapq > best_mapq_by_readname[original_readname]:
+                    best_mapq_by_readname[original_readname] = my_mapq
             sorted_choices = sorted(sorted_choices, reverse=True)
             top_i = sorted_choices[0][3]
             my_cluster = int(readname.split('_')[0][8:])
@@ -1069,9 +1070,19 @@ def main(raw_args=None):
                 ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
                 ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
                 ALLELE_TEL_DAT[clustnum][2] = ','.join(ref_builds) # assign ref builds
+                # annotate alignments to known interstitial telomere regions
                 any_interstitial = any([annotate_interstitial_tel(ref_builds[n]+'_'+my_chrs[n], int(anchor_pos[n])) for n in range(len(my_chrs))])
                 if any_interstitial:
                     ALLELE_TEL_DAT[clustnum][3] += 'i'
+                # assign mapq values
+                clust_readnames = ALLELE_TEL_DAT[clustnum][10].split(',')
+                clust_mapq = []
+                for og_readname in clust_readnames:
+                    if og_readname in best_mapq_by_readname:
+                        clust_mapq.append(best_mapq_by_readname[og_readname])
+                    else:
+                        clust_mapq.append(0)
+                ALLELE_TEL_DAT[clustnum][7] = ','.join([str(n) for n in clust_mapq])
         #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
