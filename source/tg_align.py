@@ -295,3 +295,8 @@ def get_nucl_consensus(sequences):
     refined_msa = iterative_refinement(initial_msa, aligner)
     consensus = get_final_tvr_consensus(refined_msa)
     return consensus
+
+
+def quick_compare_tvrs(tvr_1, tvr_2):
+    aligner = get_aligner_object(gap_bool=(True,False), which_type='tvr')
+    return tvr_distance(tvr_1, tvr_1, aligner) / MAX_SEQ_DIST

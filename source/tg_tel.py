@@ -59,14 +59,14 @@ def get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, g
         rname_str        = ','.join([str(n[2]) for n in allele_tlen_mapq])
         mapq_str         = ','.join([str(n[3]) for n in allele_tlen_mapq])
         #
-        consensus_tl_allele = choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD)
+        consensus_atl = choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD)
         #
         if allele_readcount >= MIN_READS_PER_PHASE:
             out_dat.append([my_chr,
                             str(my_pos),
                             '-',                            # ref builds (will be filled out later)
                             '0',                            # allele id (will be filled out later)
-                            str(int(consensus_tl_allele)),
+                            str(int(consensus_atl)),
                             allele_tlen_str,
                             rlen_str,
                             mapq_str,
@@ -74,6 +74,27 @@ def get_allele_tsv_dat(kmer_hit_dat, read_clust_dat, my_chr, my_pos, my_rlens, g
                             allele_cons_out,
                             rname_str])
     return out_dat
+
+
+def merge_allele_tsv_dat(dat1, dat2, ALLELE_TL_METHOD):
+    # (read_tls, read_lens, read_mapq, read_names)
+    teldat1 = [[int(n) for n in dat1[5].split(',')], dat1[6].split(','), dat1[7].split(','), dat1[10].split(',')]
+    teldat2 = [[int(n) for n in dat2[5].split(',')], dat2[6].split(','), dat2[7].split(','), dat2[10].split(',')]
+    my_chr, my_pos, my_ref, my_id = dat1[:4]
+    my_tvr_len, my_tvr = dat1[8], dat1[9]
+    which_ind = 0
+    if len(teldat2[0]) > len(teldat1[0]):
+        my_chr, my_pos, my_ref, my_id = dat2[:4]
+        my_tvr_len, my_tvr = dat2[8], dat2[9]
+        which_ind = 1
+    merged_dat = [teldat1[0] + teldat2[0], teldat1[1] + teldat2[1], teldat1[2] + teldat2[2], teldat1[3] + teldat2[3]]
+    sorted_dat = sorted([col for col in zip(*merged_dat)])
+    consensus_atl = choose_tl_from_observations([n[0] for n in sorted_dat], ALLELE_TL_METHOD)
+    allele_tlen_str = ','.join([str(n[0]) for n in sorted_dat])
+    rlen_str = ','.join([n[1] for n in sorted_dat])
+    mapq_str = ','.join([n[2] for n in sorted_dat])
+    rname_str = ','.join([n[3] for n in sorted_dat])
+    return which_ind, [my_chr, my_pos, my_ref, my_id, str(int(consensus_atl)), allele_tlen_str, rlen_str, mapq_str, my_tvr_len, my_tvr, rname_str]
 
 
 def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):

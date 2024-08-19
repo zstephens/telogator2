@@ -9,11 +9,11 @@ import subprocess
 import sys
 import time
 
-from source.tg_align  import get_nucl_consensus
+from source.tg_align  import get_nucl_consensus, quick_compare_tvrs
 from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
-from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl
+from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
@@ -27,9 +27,8 @@ TERM_TEL_ZERO_FRAC = 0.30
 # if the nontel content of reads exceeds 190 for >49% of reads, skip this cluster
 NONTEL_END_FILT_PARAMS = (190, 0.49)
 # treecut values for collapsing multiple (presumably false positive) clusters together
-# - note that these are scaled to apply to non-normalized distance matrices
-COLLAPSE_TVR_THRESH = 0.500
-COLLAPSE_SUB_THRESH = 0.050
+COLLAPSE_TVR_THRESH = 0.050
+COLLAPSE_SUB_THRESH = 0.050 # applies to non-normalized distance matrix
 #
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.20
@@ -50,29 +49,30 @@ def main(raw_args=None):
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[Treecut value]: initial TVR clustering")
-    parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [TVR]")
-    parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[Treecut value]: cluster refinement [SUBTEL]")
+    parser.add_argument('-ti', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] initial TVR clustering")
+    parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [TVR]")
+    parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [SUBTEL]")
     #
-    parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[all_final_alleles.png] X axis max")
-    parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[all_final_alleles.png] X axis tick steps")
-    parser.add_argument('-afa-a', type=int, required=False, metavar='100',   default=100,   help="[all_final_alleles.png] Min ATL to include allele")
+    parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
+    parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
+    parser.add_argument('-afa-a', type=int, required=False, metavar='100',   default=100,   help="[ALL_FINAL_ALLELES.PNG] Min ATL to include allele")
     #
-    parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[violin_atl.png] Y axis max")
-    parser.add_argument('-va-t', type=int, required=False, metavar='5000',  default=5000,  help="[violin_atl.png] Y axis tick steps")
-    parser.add_argument('-va-p', type=int, required=False, metavar='2',     default=2,     help="[violin_atl.png] ploidy. i.e. number of alleles per arm")
+    parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[VIOLIN_ATL.PNG] Y axis max")
+    parser.add_argument('-va-t', type=int, required=False, metavar='5000',  default=5000,  help="[VIOLIN_ATL.PNG] Y axis tick steps")
+    parser.add_argument('-va-p', type=int, required=False, metavar='2',     default=2,     help="[VIOLIN_ATL.PNG] ploidy. i.e. number of alleles per arm")
     #
-    parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="Plot denoised TVR instead of raw signal")
-    parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="Plot of all tel reads during initial clustering")
-    parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="Plot tel signals for all reads")
+    parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="[DEBUG] Plot denoised TVR instead of raw signal")
+    parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="[DEBUG] Plot all tel reads during initial clustering")
+    parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
     parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npz files and use existing .npz files")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
-    parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip cluster refinement step that uses subtels")
+    parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
-    parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="Use faster but less accurate pairwise alignment")
+    parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     #
-    parser.add_argument('--init-filt', type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="Apply terminating-tel filters to input reads")
+    parser.add_argument('--init-filt',    type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="[PERFORMANCE] Apply term-tel filters earlier")
+    parser.add_argument('--collapse-hom', type=int, required=False, metavar='',          default=1000,    help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
     #
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
     parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
@@ -127,6 +127,7 @@ def main(raw_args=None):
     PLOT_TEL_SIGNALS     = args.plot_signals
     FAST_ALIGNMENT       = args.fast_aln
     INIT_FILTERING_TUPLE = args.init_filt
+    COLLAPSE_HOM_BP      = args.collapse_hom
     #
     PLOT_SEPARATE_INITIAL = False # turn on for debugging, otherwise is mostly a waste of time
     #
@@ -724,7 +725,7 @@ def main(raw_args=None):
                                         adjust_lens=True,
                                         rand_shuffle_count=3,
                                         linkage_method='single',
-                                        normalize_dist_matrix=False,
+                                        normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
                                         dendrogram_xlim=[1,0])
     # [4b]: subtels in clusters with TVRs
@@ -1080,6 +1081,40 @@ def main(raw_args=None):
         #
         sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
         ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[3]] for n in sorted_ad_inds]
+
+    #
+    # collapse homozygous alleles
+    #
+    if COLLAPSE_HOM_BP > 0:
+        sys.stdout.write(f'merging alleles mapped within {COLLAPSE_HOM_BP} of each other...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        n_alleles_before_collapsing = len(ALLELE_TEL_DAT)
+        while True:
+            del_ind = None
+            for i in range(len(ALLELE_TEL_DAT)):
+                for j in range(i+1, len(ALLELE_TEL_DAT)):
+                    if all([ALLELE_TEL_DAT[i][0].split(',')[0] == ALLELE_TEL_DAT[j][0].split(',')[0],
+                            ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[j][2].split(',')[0],
+                            abs(int(ALLELE_TEL_DAT[i][1].split(',')[0]) - int(ALLELE_TEL_DAT[j][1].split(',')[0])) <= COLLAPSE_HOM_BP]):
+                        if quick_compare_tvrs(ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]) <= COLLAPSE_TVR_THRESH:
+                            which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
+                            if which_ind == 0:
+                                ALLELE_TEL_DAT[i] = merged_dat
+                                del_ind = j
+                            else:
+                                ALLELE_TEL_DAT[j] = merged_dat
+                                del_ind = i
+                            break
+                if del_ind is not None:
+                    break
+            if del_ind is not None:
+                del ALLELE_TEL_DAT[del_ind]
+            else:
+                break
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        print(f' - {n_alleles_before_collapsing} --> {len(ALLELE_TEL_DAT)} alleles')
 
     #
     # write out allele TLs
