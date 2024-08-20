@@ -132,19 +132,21 @@ class TG_Reader:
     def close(self):
         self.f.close()
 
-#
-# a convenience function to grab all reads from a file in a single line
-#
+
 def quick_grab_all_reads(fn):
+    #
+    # a convenience function to grab all reads from a file in a single line
+    #
     my_reader = TG_Reader(fn, verbose=False)
     all_read_dat = my_reader.get_all_reads()
     my_reader.close()
     return all_read_dat
 
-#
-# for ensuring no duplicates (e.g. reading in a bam with multimapped reads)
-#
+
 def quick_grab_all_reads_nodup(fn, min_len=None):
+    #
+    # a modified version for ensuring no duplicates (e.g. reading in a bam with multimapped reads)
+    #
     my_reader = TG_Reader(fn, verbose=False)
     all_read_dat = my_reader.get_all_reads()
     my_reader.close()

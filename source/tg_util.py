@@ -473,35 +473,6 @@ def parse_read(splt):
     if flag & 16:
         orientation = 'REV'
     #
-    ####if ref[:3] == 'chr':    # assume format: "chr1_p"
-    ####    ref_key = ref.split('_')[0]
-    ####    if ref_key in LEXICO_2_IND:
-    ####        ref_key = LEXICO_2_IND[ref_key]
-    ####    else:
-    ####        print('unknown ref name:', ref, '-->', ref_key)
-    ####        exit(1)
-    #####
-    ####elif ref[:3] == 'alt':  # assume format: "alt1_p_0" OR "alt_1p_0" because I'm sloppy
-    ####    ref_key = ''.join(ref.split('_')[:-1])
-    ####    ref_key = ref_key.replace('alt', 'chr')[:-1]
-    ####    alt_mul = int(ref.split('_')[-1]) + 1
-    ####    if ref_key in LEXICO_2_IND:
-    ####        ref_key = LEXICO_2_IND[ref_key] + alt_mul*len(LEXICO_2_IND)
-    ####    else:
-    ####        print('unknown ref name:', ref, '-->', ref_key)
-    ####        exit(1)
-    #####
-    ####elif ref[:3] == 'tel':
-    ####    ref_key = LARGE_NUMBER - 1
-    #####
-    ####elif is_unmapped is True:
-    ####    ref_key = LARGE_NUMBER
-    #####
-    ####else:
-    ####    print('unknown ref name:', ref)
-    ####    exit(1)
-    ref_key = 0 # pretty sure this is no longer used
-    #
     (read_pos_1, read_pos_2) = (None, None)
     (pos1, pos2) = (None, None)
     if is_unmapped is False:
@@ -523,12 +494,13 @@ def parse_read(splt):
         read_pos_1, read_pos_2 = 0, len(rdat)
         mapq = 0
     #
-    return [rnm, ref_key, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat]
+    return [rnm, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat]
 
-#
-# trim repeated matches in the same manner as pbmm2 (only affects read_pos coords)
-#
+
 def repeated_matches_trimming(alns, min_read_span_after_trimming=200, strategy='mapq', print_debug=False):
+    #
+    # trim repeated matches in the same manner as pbmm2 (only affects read_pos coords)
+    #
     if print_debug:
         print('- matches trimming')
         for n in alns:
@@ -626,20 +598,20 @@ def annotate_interstitial_tel(mychr, mypos, buffer=2000):
     return False
 
 
-#
-# cluster a sorted list
-#
-# "which_val = None" - assume input is list of values to directly sort
-# "which_val = 1"    - assume input is list of tuples, use index 1 to sort
-#
-def cluster_list(l, delta, which_val=None):
+def cluster_list(input_list, delta, which_val=None):
+    #
+    # cluster a sorted list
+    #
+    # "which_val = None" - assume input is list of values to directly sort
+    # "which_val = 1"    - assume input is list of tuples, use index 1 to sort
+    #
     if which_val is None:
-        prev_val = l[0]
+        prev_val = input_list[0]
     else:
-        prev_val = l[0][which_val]
-    out_list    = [[l[0]]]
+        prev_val = input_list[0][which_val]
+    out_list    = [[input_list[0]]]
     current_ind = 0
-    for n in l[1:]:
+    for n in input_list[1:]:
         if which_val is None:
             my_dist = n - prev_val
         else:
@@ -657,20 +629,20 @@ def cluster_list(l, delta, which_val=None):
     return out_list
 
 
-def cluster_ranges(l):
-    c = [[l[0]]]
-    for i in range(1,len(l)):
+def cluster_ranges(input_list):
+    c = [[input_list[0]]]
+    for i in range(1,len(input_list)):
         found_a_home = False
         for j in range(len(c)):
             for k in range(len(c[j])):
-                if l[i][0] <= c[j][k][1] and l[i][1] >= c[j][k][0]:
-                    c[j].append(l[i])
+                if input_list[i][0] <= c[j][k][1] and input_list[i][1] >= c[j][k][0]:
+                    c[j].append(input_list[i])
                     found_a_home = True
                     break
             if found_a_home:
                 break
         if found_a_home is False:
-            c.append([l[i]])
+            c.append([input_list[i]])
     return c
 
 

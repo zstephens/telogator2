@@ -6,16 +6,14 @@ import matplotlib.lines as lines
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
-from source.tg_align import UNKNOWN_LETTER
+from source.tg_align import UNKNOWN
 from source.tg_util  import exists_and_is_nonzero
 
 MAX_PLOT_SIZE = 65000 # the actual max is 65535 but it's risky
 DEFAULT_DPI   = 100
 KMER_HITS_DPI = 200
 
-#
-#
-#
+
 def getColor(i, N, colormap='jet'):
     cm = mpl.get_cmap(colormap)
     cNorm  = colors.Normalize(vmin=0, vmax=N+1)
@@ -23,9 +21,7 @@ def getColor(i, N, colormap='jet'):
     colorVal = scalarMap.to_rgba(i)
     return colorVal
 
-#
-#
-#
+
 def get_read_alignment_polygons(alignments, readlen):
     polygons = []
     p_alpha  = []
@@ -62,9 +58,7 @@ def get_read_alignment_polygons(alignments, readlen):
     #
     return (polygons, p_color, p_alpha, p_text, axis_val)
 
-#
-#
-#
+
 def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, plot_for_paper=False):
     #
     [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power, rlen, tel_window] = density_data
@@ -152,10 +146,11 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, plot_for_pape
     mpl.savefig(fig_name)
     mpl.close(fig)
 
-#
-#   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read_orientation, read_name, read_mapq, read_fasta]
-#
+
 def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=None, draw_boundaries=None, plot_params={}):
+    #
+    #   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read_orientation, read_name, read_mapq, read_fasta]
+    #
     if my_chr:
         which_tel = my_chr[-1]
     else:
@@ -315,15 +310,10 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
         mpl.xlabel(stock_params['custom_xlabel'])
     mpl.tight_layout()
     mpl.subplots_adjust(hspace=0.0)
-    #if my_chr == 'chr2p':
-    #   mpl.show()
-    #   exit(1)
     mpl.savefig(fig_name)
     mpl.close(fig)
 
-#
-#
-#
+
 def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means=True):
     v_line_keys = ['cmeans', 'cmins', 'cmaxes', 'cbars', 'cmedians', 'cquantiles']
     #
@@ -349,8 +339,6 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
                 violin_parts_q[k].set_color('black')
                 violin_parts_q[k].set_alpha(0.3)
     #
-    # plot means for each arm
-    #
     if plot_means:
         for i in range(len(dat_l_p)):
             yval = np.mean(dat_l_p[i])
@@ -361,12 +349,8 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
             xval = dat_p_q[i]
             mpl.plot([xval - 0.3, xval + 0.3], [yval, yval], '-k', linewidth=2, alpha=0.4)
 
-#
-#
-#
+
 def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth_dict={}, custom_plot_params={}):
-    #
-    # plotting constants
     #
     mpl.rcParams.update({'font.size': 18, 'font.weight':'normal'})
     plot_params = {'p_color':'steelblue',
@@ -512,14 +496,12 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth
     mpl.savefig(out_fn)
     mpl.close(fig)
 
-#
-# tel_len_by_samp[i] = (samp_name, 'p'/'q', tlen_list)
-#
-# ground_truth_by_samp[i] = (samp_name, 'p'/'q', tlen)
-#
+
 def tel_len_violin_single_chr_multiple_samples(tel_len_by_samp, out_fn, plot_means=True, ground_truth_by_samp=[], custom_plot_params={}):
     #
-    # plotting constants
+    # tel_len_by_samp[i] = (samp_name, 'p'/'q', tlen_list)
+    #
+    # ground_truth_by_samp[i] = (samp_name, 'p'/'q', tlen)
     #
     mpl.rcParams.update({'font.size': 18, 'font.weight':'bold'})
     plot_params = {'p_color':'blue',
@@ -609,12 +591,8 @@ def tel_len_violin_single_chr_multiple_samples(tel_len_by_samp, out_fn, plot_mea
     mpl.savefig(out_fn)
     mpl.close(fig)
 
-#
-#
-#
+
 def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
-    #
-    # plotting constants
     #
     mpl.rcParams.update({'font.size': 18, 'font.weight':'bold'})
     plot_params = {'p_color':'blue',
@@ -725,9 +703,7 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
     mpl.savefig(out_fn)
     mpl.close(fig)
 
-#
-#
-#
+
 def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params, dpi=None):
     #
     [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DO_NOT_OVERWRITE] = mtp_params
@@ -781,9 +757,7 @@ def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn,
                            draw_boundaries=consensus_tvr_tel_pos,
                            plot_params=custom_plot_params)
 
-#
-#
-#
+
 def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
     #
     [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
@@ -799,19 +773,17 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
             continue
         current_block = colorvecs[i][0]
         current_start = 0
-        colorvecs[i] += UNKNOWN_LETTER
+        colorvecs[i] += UNKNOWN
         for j in range(1,len(colorvecs[i])):
             if colorvecs[i][j] != current_block:
-                if current_block != UNKNOWN_LETTER:
+                if current_block != UNKNOWN:
                     my_ind = amino_2_kmer_ind[current_block]
                     out_kmerhits[-1][my_ind].append((current_start, j))
                 current_block = colorvecs[i][j]
                 current_start = j
     return out_kmerhits
 
-#
-#
-#
+
 def plot_some_tvrs(tvrs, labels, repeats_metadata, plot_fn, custom_plot_params={}):
     #
     # helper function for quickly plotting a set of tvrs (assumes Q orientation)
@@ -828,9 +800,7 @@ def plot_some_tvrs(tvrs, labels, repeats_metadata, plot_fn, custom_plot_params={
     clust_dat.append([0])
     plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, plot_fn, clust_dat=clust_dat, plot_params=custom_plot_params)
 
-#
-#
-#
+
 def readlen_plot(readlens_all, readlens_tel, readlens_final, plot_fn, xlim=(1000,1000000), nbins=60):
     mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
     fig = mpl.figure(1,figsize=(10,8))
