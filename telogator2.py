@@ -10,7 +10,7 @@ import sys
 import time
 
 from source.tg_align  import get_nucl_consensus, quick_compare_tvrs
-from source.tg_kmer   import get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
+from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
@@ -263,6 +263,7 @@ def main(raw_args=None):
     CANONICAL_STRINGS_REV = [RC(n) for n in CANONICAL_STRINGS]
     KMER_INITIAL = CANONICAL_STRINGS[0] + CANONICAL_STRINGS[0]
     KMER_INITIAL_RC = CANONICAL_STRINGS_REV[0] + CANONICAL_STRINGS_REV[0]
+    canonical_letter = get_canonical_letter(KMER_FILE, READ_TYPE)
 
     #
     # param lists that are needed in both anchored and unanchored mode
@@ -1097,7 +1098,7 @@ def main(raw_args=None):
     # collapse homozygous alleles
     #
     if COLLAPSE_HOM_BP > 0:
-        sys.stdout.write(f'merging alleles mapped within {COLLAPSE_HOM_BP} of each other...')
+        sys.stdout.write(f'merging alleles mapped within {COLLAPSE_HOM_BP}bp of each other...')
         sys.stdout.flush()
         tt = time.perf_counter()
         n_alleles_before_collapsing = len(ALLELE_TEL_DAT)
@@ -1108,7 +1109,16 @@ def main(raw_args=None):
                     if all([ALLELE_TEL_DAT[i][0].split(',')[0] == ALLELE_TEL_DAT[j][0].split(',')[0],
                             ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[j][2].split(',')[0],
                             abs(int(ALLELE_TEL_DAT[i][1].split(',')[0]) - int(ALLELE_TEL_DAT[j][1].split(',')[0])) <= COLLAPSE_HOM_BP]):
-                        if quick_compare_tvrs(ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]) <= COLLAPSE_TVR_THRESH:
+                        my_dist = 0.
+                        tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
+                        if len(tvr_i) and len(tvr_j):
+                            my_dist = quick_compare_tvrs(tvr_i, tvr_j)
+                        # handling blank tvrs
+                        elif len(tvr_i) and len(tvr_j) == 0:
+                            my_dist = quick_compare_tvrs(tvr_i, canonical_letter*len(tvr_i))
+                        elif len(tvr_i) == 0 and len(tvr_j):
+                            my_dist = quick_compare_tvrs(canonical_letter*len(tvr_j), tvr_j)
+                        if my_dist <= COLLAPSE_TVR_THRESH:
                             which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
                             if which_ind == 0:
                                 ALLELE_TEL_DAT[i] = merged_dat

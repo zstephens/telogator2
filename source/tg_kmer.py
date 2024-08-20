@@ -19,22 +19,21 @@ def read_kmer_tsv(fn, READ_TYPE):
     KMER_FLAGS  = []
     CANONICAL_STRINGS = []
     #
-    f = open(fn,'r')
-    for line in f:
-        if line[0] != '#' and len(line.strip()):
-            splt = line.strip().split('\t')
-            splt2 = splt[3].split(',')
-            if 'pacbio_only' in splt2 and READ_TYPE not in ['hifi']:
-                continue
-            if 'nanopore_only' in splt2 and READ_TYPE not in ['ont']:
-                continue
-            KMER_LIST.append(splt[0])
-            KMER_COLORS.append(splt[1])
-            KMER_LETTER.append(splt[2])
-            KMER_FLAGS.append(tuple(splt2))
-            if 'canonical' in KMER_FLAGS[-1]:
-                CANONICAL_STRINGS.append(KMER_LIST[-1])
-    f.close()
+    with open(fn,'r') as f:
+        for line in f:
+            if line[0] != '#' and len(line.strip()):
+                splt = line.strip().split('\t')
+                splt2 = splt[3].split(',')
+                if 'pacbio_only' in splt2 and READ_TYPE not in ['hifi']:
+                    continue
+                if 'nanopore_only' in splt2 and READ_TYPE not in ['ont']:
+                    continue
+                KMER_LIST.append(splt[0])
+                KMER_COLORS.append(splt[1])
+                KMER_LETTER.append(splt[2])
+                KMER_FLAGS.append(tuple(splt2))
+                if 'canonical' in KMER_FLAGS[-1]:
+                    CANONICAL_STRINGS.append(KMER_LIST[-1])
     #
     sorted_kmer_dat  = sorted(list(set([(len(KMER_LIST[n]), KMER_LIST[n], KMER_COLORS[n], KMER_LETTER[n], KMER_FLAGS[n]) for n in range(len(KMER_LIST))])), reverse=True)   # sort by length
     KMER_LIST        = [n[1] for n in sorted_kmer_dat]
@@ -47,6 +46,21 @@ def read_kmer_tsv(fn, READ_TYPE):
         KMER_ISSUBSTRING.append([j for j in range(len(KMER_LIST)) if (j != i and KMER_LIST[i] in KMER_LIST[j])])
     #
     return (KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRINGS)
+
+
+def get_canonical_letter(fn, READ_TYPE):
+    with open(fn,'r') as f:
+        for line in f:
+            if line[0] != '#' and len(line.strip()):
+                splt = line.strip().split('\t')
+                splt2 = splt[3].split(',')
+                if 'pacbio_only' in splt2 and READ_TYPE not in ['hifi']:
+                    continue
+                if 'nanopore_only' in splt2 and READ_TYPE not in ['ont']:
+                    continue
+                if 'canonical' in splt2:
+                    return splt[2]
+    return None
 
 
 def get_telomere_kmer_density(read_dat, kmer_list, tel_window, mode='hifi', smoothing=False):
