@@ -15,7 +15,7 @@ from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs
-from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
+from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -65,7 +65,7 @@ def main(raw_args=None):
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="[DEBUG] Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="[DEBUG] Plot all tel reads during initial clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
-    parser.add_argument('--debug-npy',      required=False, action='store_true', default=False, help="[DEBUG] Save .npz files and use existing .npz files")
+    parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
     parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
@@ -118,8 +118,8 @@ def main(raw_args=None):
 
     # debug params
     #
-    DONT_OVERWRITE_PLOTS = args.debug_noplot     # (True = don't replot figures if they already exist)
-    ALWAYS_REPROCESS     = not(args.debug_npy)   # (True = don't write out .npz matrices, always recompute)
+    DONT_OVERWRITE_PLOTS = args.debug_noplot          # (True = don't replot figures if they already exist)
+    ALWAYS_REPROCESS     = not(args.dont_reprocess)   # (True = don't write out .npz matrices, always recompute)
     NO_SUBTEL_REALIGN    = args.debug_realign
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
@@ -179,6 +179,9 @@ def main(raw_args=None):
     OUT_CDIR_FIN  = OUT_CLUST_DIR + '05_final/'
     OUT_QC_DIR    = OUT_DIR + 'qc/'
     makedir(OUT_DIR)
+    if dir_exists(OUT_DIR) is False:
+        print('Error: could not create output directory')
+        exit(1)
     makedir(OUT_CLUST_DIR)
     makedir(OUT_QC_DIR)
     for d in [OUT_CDIR_INIT, OUT_CDIR_TVR, OUT_CDIR_SUB, OUT_CDIR_FIN]:
@@ -264,6 +267,9 @@ def main(raw_args=None):
     KMER_INITIAL = CANONICAL_STRINGS[0] + CANONICAL_STRINGS[0]
     KMER_INITIAL_RC = CANONICAL_STRINGS_REV[0] + CANONICAL_STRINGS_REV[0]
     canonical_letter = get_canonical_letter(KMER_FILE, READ_TYPE)
+    if canonical_letter is None:
+        print('Error: kmer list does not contain any kmer marked as canonical')
+        exit(1)
 
     #
     # param lists that are needed in both anchored and unanchored mode
@@ -283,57 +289,59 @@ def main(raw_args=None):
         f.write(' '.join(stripped_strings) + '\n')
 
     #
-    # begin unanchored telogator2
+    # begin!
     #
     ALLELE_TEL_DAT = []
     #
-    all_readcount = 0
-    tel_readcount = 0
-    sup_readcount = 0
-    sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
-    sys.stdout.flush()
-    tt = time.perf_counter()
-    total_bp_all = 0
-    total_bp_tel = 0
-    readlens_all = []
-    readlens_tel = []
-    with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
-        for ifn in INPUT_ALN:
-            my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
-            while True:
-                (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
-                if not my_name:
-                    break
-                if my_issup:
-                    sup_readcount += 1
-                    continue
-                count_fwd = my_rdat.count(KMER_INITIAL)
-                count_rev = my_rdat.count(KMER_INITIAL_RC)
-                all_readcount += 1
-                my_rlen = len(my_rdat)
-                total_bp_all += my_rlen
-                readlens_all.append(my_rlen)
-                if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
-                    f.write(f'>{my_name}\n{my_rdat}\n')
-                    tel_readcount += 1
-                    total_bp_tel += my_rlen
-                    readlens_tel.append(my_rlen)
-            my_reader.close()
-    mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
-    #
-    np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
-    del readlens_all
-    del readlens_tel
-    #
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    if sup_readcount:
-        print(f' - skipped {sup_readcount} supplementary alignments')
-    print(f' - {all_readcount} --> {tel_readcount} reads')
-    print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
-    if tel_readcount <= 0:
-        print('Error: No telomere reads found, stopping here...')
-        exit(1)
+    if ALWAYS_REPROCESS or exists_and_is_nonzero(TELOMERE_READS) is False or exists_and_is_nonzero(READLEN_NPZ) is False:
+        sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
+        sys.stdout.flush()
+        tt = time.perf_counter()
+        all_readcount = 0
+        tel_readcount = 0
+        sup_readcount = 0
+        total_bp_all = 0
+        total_bp_tel = 0
+        readlens_all = []
+        readlens_tel = []
+        with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
+            for ifn in INPUT_ALN:
+                my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
+                while True:
+                    (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
+                    if not my_name:
+                        break
+                    if my_issup:
+                        sup_readcount += 1
+                        continue
+                    count_fwd = my_rdat.count(KMER_INITIAL)
+                    count_rev = my_rdat.count(KMER_INITIAL_RC)
+                    all_readcount += 1
+                    my_rlen = len(my_rdat)
+                    total_bp_all += my_rlen
+                    readlens_all.append(my_rlen)
+                    if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
+                        f.write(f'>{my_name}\n{my_rdat}\n')
+                        tel_readcount += 1
+                        total_bp_tel += my_rlen
+                        readlens_tel.append(my_rlen)
+                my_reader.close()
+        mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
+        np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
+        del readlens_all
+        del readlens_tel
+        #
+        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+        sys.stdout.flush()
+        if sup_readcount:
+            print(f' - skipped {sup_readcount} supplementary alignments')
+        print(f' - {all_readcount} --> {tel_readcount} reads')
+        print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
+        if tel_readcount <= 0:
+            print('Error: No telomere reads found, stopping here...')
+            exit(1)
+    else:
+        print('found telomere reads from a previous run, using them instead of reprocessing input file')
     #
     sys.stdout.write(f'filtering by read length (>{MINIMUM_READ_LEN}bp)...')
     sys.stdout.flush()

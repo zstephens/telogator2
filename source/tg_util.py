@@ -385,6 +385,10 @@ def makedir(d):
         os.mkdir(d)
 
 
+def dir_exists(d):
+    return os.path.isdir(d)
+
+
 def rm(fn):
     if os.path.isdir(fn):
         os.rmdir(fn)
