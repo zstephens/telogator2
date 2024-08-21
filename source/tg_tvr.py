@@ -227,9 +227,7 @@ def cluster_tvrs(kmer_dat,
     #
     # do MSA of TVRs (and also subtels) to get a consensus sequences
     #
-    out_consensus    = []
-    subtel_consensus = []
-    #
+    out_consensus = []
     if save_msa is not None and exists_and_is_nonzero(save_msa):
         my_reader = TG_Reader(save_msa, verbose=False)
         while True:
@@ -239,9 +237,10 @@ def cluster_tvrs(kmer_dat,
             if read_dat[0][:3] == 'tvr':
                 out_consensus.append(read_dat[1])
             elif read_dat[0][:6] == 'subtel':
-                subtel_consensus.append(read_dat[1])
+                pass # only keeping this around for reprocessing previous runs that used to do subtel consensuses
         my_reader.close()
-        if len(out_consensus) != len(out_clust):    # msa we read from file has different number of clusters than we currently have, abort!
+        if len(out_consensus) != len(out_clust):
+            # msa we read from file has different number of clusters than we currently have, abort!
             out_consensus = []
     #
     if save_msa is None or len(out_consensus) == 0:
@@ -254,7 +253,6 @@ def cluster_tvrs(kmer_dat,
             my_dists = dist_matrix[:,clust_inds]
             my_dists = my_dists[clust_inds,:]
             my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
-            # tvr msa
             initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner)
             if rand_shuffle_count > 1:
                 refined_msa = iterative_refinement(initial_msa, refinement_aligner)
@@ -264,23 +262,11 @@ def cluster_tvrs(kmer_dat,
                                                          default_char=canonical_letter,
                                                          untrustworthy_chars=[canonical_letter]+dubious_letters,
                                                          tiebreak_adj={canonical_letter:1, UNKNOWN:-1}))
-            # subtel msa
-            my_seqs_sub_rev = [subtel_regions[ci][::-1] for ci in clust_inds]
-            initial_msa = progressive_alignment(my_seqs_sub_rev, my_dists, msa_aligner)
-            if rand_shuffle_count > 1:
-                refined_msa = iterative_refinement(initial_msa, refinement_aligner)
-            else:
-                refined_msa = initial_msa
-            subtel_consensus.append(get_final_tvr_consensus(refined_msa, default_char=UNKNOWN)[::-1])
-        #
         if save_msa is not None:
             f = open(save_msa,'w')
             for i in range(len(out_consensus)):
-                f.write('>tvr-' + str(i+1).zfill(2) + '\n')
+                f.write('>tvr-' + str(i+1).zfill(3) + '\n')
                 f.write(out_consensus[i] + '\n')
-            for i in range(len(subtel_consensus)):
-                f.write('>subtel-' + str(i+1).zfill(2) + '\n')
-                f.write(subtel_consensus[i] + '\n')
             f.close()
 
     #
