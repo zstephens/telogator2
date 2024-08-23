@@ -52,8 +52,8 @@ def main(raw_args=None):
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.175', default=0.175, help="[TREECUT] initial TVR clustering")
-    parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [TVR]")
+    parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] initial TVR clustering")
+    parser.add_argument('-tt', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] cluster refinement [TVR]")
     parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [SUBTEL]")
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")

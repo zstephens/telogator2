@@ -17,6 +17,7 @@ MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when findin
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 10      # add this many bp to detected TVR boundary
 TVR_BOUNDARY_ADJ_STEP = 50  # how far are we willing to look for more variant repeats to extend TVR boundary?
+MAX_MSA_READCOUNT = 10      # use this many reads when creating MSAs for consensus sequences (chooses longest reads)
 
 # if tvr + tel region has at least this many unknown characters, use minimum-dens pos instead of first-below-dens ps
 TOO_MUCH_UNKNOWN_IN_TVRTEL = 1000
@@ -240,9 +241,8 @@ def cluster_tvrs(kmer_dat,
         msa_aligner = get_aligner_object(scoring_matrix=msa_matrix, gap_bool=(True,False), which_type='msa')
         refinement_aligner = get_aligner_object(scoring_matrix=refine_matrix, gap_bool=(True,False), which_type='msa')
         for i in range(len(out_clust)):
-            clust_inds = sorted(out_clust[i])
-            my_dists = dist_matrix[:,clust_inds]
-            my_dists = my_dists[clust_inds,:]
+            clust_inds = [n[1] for n in sorted([(len(colorvecs_for_msa[ci]), ci) for ci in out_clust[i]], reverse=True)[:MAX_MSA_READCOUNT]]
+            my_dists = dist_matrix[np.ix_(clust_inds, clust_inds)]
             my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
             initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, num_processes=alignment_processes)
             refined_msa = iterative_refinement(initial_msa, refinement_aligner)
