@@ -1,6 +1,8 @@
-import multiprocessing
+import itertools
 import numpy as np
 import matplotlib.pyplot as mpl
+
+from concurrent.futures import as_completed, ProcessPoolExecutor
 
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance  import squareform
@@ -149,36 +151,20 @@ def cluster_tvrs(kmer_dat,
     # PAIRWISE ALIGNMENT OF ALL SEQUENCES
     #
     if dist_in is None or exists_and_is_nonzero(dist_in) is False:
-        all_indices = [[] for n in range(alignment_processes)]
-        k = 0
-        for i in range(n_reads):
-            for j in range(i+1, n_reads):
-                all_indices[k % alignment_processes].append((i,j))
-                k += 1
-        # get pairwise distance for all tvr + tel colorvecs
         if aln_mode == 'ms':
             scoring_matrix = None
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
         #
-        manager     = multiprocessing.Manager()
-        tvrtel_dist = manager.dict()
-        processes   = []
-        for i in range(alignment_processes):
-            p = multiprocessing.Process(target=parallel_alignment_job, args=(tvrtels_for_clustering, all_indices[i], tvrtel_dist, aligner, True, True, rand_shuffle_count))
-            processes.append(p)
-        for i in range(alignment_processes):
-            processes[i].start()
-        for i in range(alignment_processes):
-            processes[i].join()
-        # combine distances for final distance matrix
         dist_matrix = np.zeros((n_reads,n_reads))
-        for i in range(n_reads):
-            for j in range(i+1,n_reads):
-                ij_dist = tvrtel_dist[(i,j)]
-                dist_matrix[i,j] = ij_dist
-                dist_matrix[j,i] = ij_dist
+        with ProcessPoolExecutor(max_workers=alignment_processes) as executor:
+            futures = {executor.submit(tvr_distance, tvrtels_for_clustering[i], tvrtels_for_clustering[j], aligner, True, True, rand_shuffle_count):(i,j) for (i,j) in itertools.combinations(range(n_reads),2)}
+        for future in as_completed(futures):
+            my_tvr_dist = future.result()
+            (my_i,my_j) = futures.pop(future)
+            dist_matrix[my_i,my_j] = my_tvr_dist
+            dist_matrix[my_j,my_i] = my_tvr_dist
         dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
             np.savez_compressed(dist_in, dist=dist_matrix)
@@ -258,11 +244,8 @@ def cluster_tvrs(kmer_dat,
             my_dists = dist_matrix[:,clust_inds]
             my_dists = my_dists[clust_inds,:]
             my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
-            initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner)
-            if rand_shuffle_count > 1:
-                refined_msa = iterative_refinement(initial_msa, refinement_aligner)
-            else:
-                refined_msa = initial_msa
+            initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, num_processes=alignment_processes)
+            refined_msa = iterative_refinement(initial_msa, refinement_aligner)
             out_consensus.append(get_final_tvr_consensus(refined_msa,
                                                          default_char=canonical_letter,
                                                          untrustworthy_chars=[canonical_letter]+dubious_letters,
@@ -402,34 +385,20 @@ def cluster_consensus_tvrs(sequences,
         exit(1)
     #
     if dist_in is None or exists_and_is_nonzero(dist_in) is False:
-        dist_matrix = np.zeros((n_seq,n_seq))
-        all_indices = [[] for n in range(alignment_processes)]
-        k = 0
-        for i in range(n_seq):
-            for j in range(i+1,n_seq):
-                all_indices[k % alignment_processes].append((i,j))
-                k += 1
-        #
         if aln_mode == 'ms':
             scoring_matrix = None
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='consensus')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=gap_bool, which_type='tvr')
-        manager     = multiprocessing.Manager()
-        return_dict = manager.dict()
-        processes   = []
-        for i in range(alignment_processes):
-            p = multiprocessing.Process(target=parallel_alignment_job, args=(sequences, all_indices[i], return_dict, aligner, adjust_lens, False, rand_shuffle_count))
-            processes.append(p)
-        for i in range(alignment_processes):
-            processes[i].start()
-        for i in range(alignment_processes):
-            processes[i].join()
         #
         dist_matrix = np.zeros((n_seq,n_seq))
-        for (i,j) in return_dict.keys():
-            dist_matrix[i,j] = return_dict[(i,j)]
-            dist_matrix[j,i] = return_dict[(i,j)]
+        with ProcessPoolExecutor(max_workers=alignment_processes) as executor:
+            futures = {executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, False, rand_shuffle_count):(i,j) for (i,j) in itertools.combinations(range(n_seq),2)}
+        for future in as_completed(futures):
+            my_tvr_dist = future.result()
+            (my_i,my_j) = futures.pop(future)
+            dist_matrix[my_i,my_j] = my_tvr_dist
+            dist_matrix[my_j,my_i] = my_tvr_dist
         if normalize_dist_matrix:
             dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:

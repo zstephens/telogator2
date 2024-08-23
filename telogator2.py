@@ -48,11 +48,11 @@ def main(raw_args=None):
     parser.add_argument('-s', type=int, required=False, metavar='1000',         default=1000,   help="Minimum subtelomere anchor size")
     parser.add_argument('-c', type=int, required=False, metavar='8',            default=8,      help="Minimum hits to tandem canonical kmer")
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
-    parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for computing chr TL: mean / median / p75 / max")
+    parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for choosing ATL: mean / median / p75 / max")
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] initial TVR clustering")
+    parser.add_argument('-ti', type=float, required=False, metavar='0.175', default=0.175, help="[TREECUT] initial TVR clustering")
     parser.add_argument('-tt', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [TVR]")
     parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [SUBTEL]")
     #
@@ -576,7 +576,7 @@ def main(raw_args=None):
                                        fig_name=dendrogram_fn,
                                        save_msa=consensus_fn)
         #
-        # update init dist matrix with new (preumably better) values
+        # update init dist matrix with new (presumably better) values
         #
         submatrix = np.load(dist_matrix_fn)['dist']
         init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)] = submatrix
@@ -890,15 +890,6 @@ def main(raw_args=None):
                 continue
             for i,sri in enumerate(subclust_read_inds):
                 subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[sri]}', rev_subtels[subclust_inds[i]][::-1]))
-            ####my_subtels = []
-            ####for i,read_i in enumerate(subclust_read_inds):
-            ####    subtel_used_in_tvr = MIN_SUBTEL_BUFF - solo_clustdat[2][sci][i]
-            ####    if subtel_used_in_tvr >= 0:
-            ####        my_subtels.append((read_i, all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr]))
-            ####    else:
-            ####        my_subtels.append((read_i, all_subtel_seq[read_i]))
-            ####for i,(read_i,subtel_seq) in enumerate(my_subtels):
-            ####    subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[read_i]}', subtel_seq))
             allele_outdat.append(my_tsvdat[sci])
             allele_consensus.append(solo_clustdat[4][sci])
             clust_num += 1

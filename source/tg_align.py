@@ -1,8 +1,9 @@
 from Bio.Align import PairwiseAligner, substitution_matrices
 import numpy as np
 
-from collections import Counter, defaultdict
-from itertools import zip_longest
+from collections        import Counter, defaultdict
+from concurrent.futures import as_completed, ProcessPoolExecutor
+from itertools          import zip_longest
 
 from source.tg_util import shuffle_seq
 
@@ -137,14 +138,24 @@ def remove_gap_columns(alignment):
     return aln_out
 
 
-def progressive_alignment(sequences, distance_matrix, aligner):
+def pairwise_align(seq1, seq2, aligner):
+    alignment = aligner.align(seq1, seq2)[0]
+    return str(alignment[0]), str(alignment[1])
 
-    def pairwise_align(seq1, seq2):
-        alignment = aligner.align(seq1, seq2)[0]
-        return str(alignment[0]), str(alignment[1])
+
+def progressive_alignment(sequences, distance_matrix, aligner, num_processes=1):
 
     def align_to_profile(sequence, profile):
-        alignments = [pairwise_align(seq, sequence) for seq, _ in profile]
+        alignments = [pairwise_align(seq, sequence, aligner) for seq, _ in profile]
+        max_len = max(len(n[0]) for n in alignments)
+        padded_profile = [(a[0].ljust(max_len, '-'), idx) for (a, idx) in zip(alignments, [idx for _, idx in profile])]
+        padded_profile.append((alignments[0][1].ljust(max_len, '-'), len(sequences) - 1))
+        return padded_profile
+
+    def align_to_profile_parallel(sequence, profile):
+        with ProcessPoolExecutor(max_workers=num_processes) as executor:
+            future_alignments = [executor.submit(pairwise_align, seq, sequence, aligner) for seq, _ in profile]
+            alignments = [future.result() for future in as_completed(future_alignments)]
         max_len = max(len(n[0]) for n in alignments)
         padded_profile = [(a[0].ljust(max_len, '-'), idx) for (a, idx) in zip(alignments, [idx for _, idx in profile])]
         padded_profile.append((alignments[0][1].ljust(max_len, '-'), len(sequences) - 1))
@@ -164,7 +175,7 @@ def progressive_alignment(sequences, distance_matrix, aligner):
             if distance_matrix[i][j] < min_distance:
                 min_distance = distance_matrix[i][j]
                 closest_pair = (i, j)
-    seq1, seq2 = pairwise_align(sequences[closest_pair[0]], sequences[closest_pair[1]])
+    seq1, seq2 = pairwise_align(sequences[closest_pair[0]], sequences[closest_pair[1]], aligner)
     alignment = [(seq1, closest_pair[0]), (seq2, closest_pair[1])]
     remaining = [(seq, i) for i, seq in enumerate(sequences) if i not in closest_pair]
     #
@@ -174,7 +185,10 @@ def progressive_alignment(sequences, distance_matrix, aligner):
         closest_index = np.argmin(distances)
         closest_seq, original_index = remaining.pop(closest_index)
         # align the closest sequence to the current profile
-        alignment = align_to_profile(closest_seq, alignment)
+        if num_processes > 1:
+            alignment = align_to_profile_parallel(closest_seq, alignment)
+        else:
+            alignment = align_to_profile(closest_seq, alignment)
     # sort based on the original sequence indices
     alignment.sort(key=lambda x: x[1])
     return remove_gap_columns([seq for seq, _ in alignment])
