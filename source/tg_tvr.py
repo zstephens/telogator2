@@ -113,6 +113,7 @@ def cluster_tvrs(kmer_dat,
     #
     subtel_regions = []
     tvrtel_regions = []
+    tvrtels_for_clustering = []
     cleaned_colorvecs = []
     colorvecs_for_msa = []
     err_end_lens      = []
@@ -138,10 +139,11 @@ def cluster_tvrs(kmer_dat,
         err_end_lens.append(len(err_left))                      # needed for adjusting offsets in plots
         colorvecs_for_msa.append(err_right[::-1])
         #
-        subtel_regions.append(seq_left)                         # subtel regions (currently not used for anything)
-        tvrtel_regions.append(err_right[::-1])                  # tvr sequence used for clustering
-        if len(tvrtel_regions[-1]) > tvr_truncate:
-            tvrtel_regions[-1] = tvrtel_regions[-1][:tvr_truncate]
+        subtel_regions.append(seq_left)                         # subtel regions
+        tvrtel_regions.append(seq_right)                        # tvrtel regions
+        tvrtels_for_clustering.append(err_right[::-1])          # tvr sequence used for clustering
+        if len(tvrtels_for_clustering[-1]) > tvr_truncate:
+            tvrtels_for_clustering[-1] = tvrtels_for_clustering[-1][:tvr_truncate]
 
     #
     # PAIRWISE ALIGNMENT OF ALL SEQUENCES
@@ -164,7 +166,7 @@ def cluster_tvrs(kmer_dat,
         tvrtel_dist = manager.dict()
         processes   = []
         for i in range(alignment_processes):
-            p = multiprocessing.Process(target=parallel_alignment_job, args=(tvrtel_regions, all_indices[i], tvrtel_dist, aligner, True, True, rand_shuffle_count))
+            p = multiprocessing.Process(target=parallel_alignment_job, args=(tvrtels_for_clustering, all_indices[i], tvrtel_dist, aligner, True, True, rand_shuffle_count))
             processes.append(p)
         for i in range(alignment_processes):
             processes[i].start()
@@ -187,10 +189,13 @@ def cluster_tvrs(kmer_dat,
     #
     # hierarchal clustering + dendrogram plotting
     #
-    out_clust = [list(range(len(tvrtel_regions)))]
-    if len(tvrtel_regions) > 1:
+    out_clust = [list(range(len(tvrtels_for_clustering)))]
+    if len(tvrtels_for_clustering) > 1:
         dist_array = squareform(dist_matrix)
         Zread = linkage(dist_array, method='ward')
+        max_distance = np.max(Zread[:,2])
+        if max_distance > 1:
+            Zread[:,2] /= max_distance # normalize linkage distances so that dendrogram height is 1.
         #
         if fig_name is not None:
             dendrogram_width = max(8, 0.12 * n_reads)
@@ -341,6 +346,7 @@ def cluster_tvrs(kmer_dat,
     # lets use tvr/subtel boundary as offset instead of msa offset
     #
     all_subtel_lens = [len(subtel_regions[n]) for n in range(len(subtel_regions))]
+    all_tvrtel_lens = [len(tvrtel_regions[n]) for n in range(len(tvrtel_regions))]
     longest_subtel  = max(all_subtel_lens)
     out_adj         = []
     for i in range(len(out_clust)):     # this is strangely complicated...
@@ -349,15 +355,8 @@ def cluster_tvrs(kmer_dat,
         clust_subtel_adj  = longest_subtel - longest_subtel_cl
         out_adj.append([longest_subtel_cl - n + clust_subtel_adj for n in my_subtel_lens])
 
-    #
-    # output mapping quality as well (not sure what I'll do with this yet, maybe filtering?)
-    #
-    out_mapq = []
-    for n in out_clust:
-        out_mapq.append([kmer_dat[m][5] for m in n])
-    #
     return [out_clust,
-            out_mapq,
+            all_tvrtel_lens,
             out_adj,
             all_subtel_lens,
             out_consensus,
@@ -381,7 +380,6 @@ def cluster_consensus_tvrs(sequences,
                            linkage_method='complete',
                            normalize_dist_matrix=True,
                            alignment_processes=8,
-                           job=(1,1),
                            dendrogram_title=None,
                            dendrogram_height=12,
                            dendrogram_allblack=False,
@@ -412,21 +410,6 @@ def cluster_consensus_tvrs(sequences,
                 all_indices[k % alignment_processes].append((i,j))
                 k += 1
         #
-        #   even more parallelization! Any problem can be solved by throwing tons of CPU at it.
-        #
-        if job[1] > 1:
-            my_job = job[0] - 1
-            chunks = job[1]
-            for i in range(alignment_processes):
-                chunksize = int(len(all_indices[i])/chunks)
-                chunks_by_job = []
-                for j in range(chunks):
-                    if j == chunks-1:
-                        chunks_by_job.append(all_indices[i][j*chunksize:])
-                    else:
-                        chunks_by_job.append(all_indices[i][j*chunksize:(j+1)*chunksize])
-                all_indices[i] = [n for n in chunks_by_job[my_job]]
-        #
         if aln_mode == 'ms':
             scoring_matrix = None
         elif aln_mode == 'ds':
@@ -447,70 +430,65 @@ def cluster_consensus_tvrs(sequences,
         for (i,j) in return_dict.keys():
             dist_matrix[i,j] = return_dict[(i,j)]
             dist_matrix[j,i] = return_dict[(i,j)]
-        if job[1] > 1:
-            partial_dist_fn = dist_in[:-4] + '_job' + str(job[0]).zfill(3) + '.npy'
-            np.savez_compressed(partial_dist_fn, dist=dist_matrix)
-        else:
-            if normalize_dist_matrix:
-                dist_matrix /= MAX_SEQ_DIST
-            if dist_in is not None:
-                np.savez_compressed(dist_in, dist=dist_matrix)
+        if normalize_dist_matrix:
+            dist_matrix /= MAX_SEQ_DIST
+        if dist_in is not None:
+            np.savez_compressed(dist_in, dist=dist_matrix)
     else:
         dist_matrix = np.load(dist_in)['dist']
     #
     if samp_labels is None:
         samp_labels = [str(n) for n in range(len(sequences))]
     #
-    if job[1] == 1 or job[0] == 0:
+    out_clust = [list(range(n_seq))]
+    if n_seq > 1:
+        d_arr = squareform(dist_matrix)
+        Zread = linkage(d_arr, method=linkage_method)
+        max_distance = np.max(Zread[:,2])
+        if max_distance > 1:
+            Zread[:,2] /= max_distance # normalize linkage distances so that dendrogram height is 1.
         #
-        out_clust = [list(range(n_seq))]
-        if n_seq > 1:
-            d_arr = squareform(dist_matrix)
-            Zread = linkage(d_arr, method=linkage_method)
-            #
-            mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
-            fig = mpl.figure(figsize=(8,dendrogram_height))
-            dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
-            labels_fromtop = dendro_dat['ivl'][::-1]
-            # ugliness to keep dendrogram ordering consistent with other figures
-            reorder_map = {n:samp_labels.index(m) for n,m in enumerate(labels_fromtop)}
-            replot_labels = [f'({labels_fromtop.index(n)}) {n}' for n in samp_labels]
-            mpl.close(fig)
-            #
-            fig = mpl.figure(figsize=(8,dendrogram_height))
-            if dendrogram_allblack:
-                dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut, above_threshold_color='black', link_color_func=lambda k:'black')
-            else:
-                dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
-            if dendrogram_xlim is not None:
-                mpl.xlim(dendrogram_xlim[0], dendrogram_xlim[1])
-            #
-            mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
-            mpl.xlabel('distance')
-            if dendrogram_title is not None:
-                mpl.title(dendrogram_title)
-            mpl.tight_layout()
-            if dendro_name is not None:
-                mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
-            mpl.close(fig)
-            #
-            if fig_name is not None:
-                if exists_and_is_nonzero(fig_name) is False or overwrite_figures is True:
-                    reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
-                    plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params=fig_plot_params)
-            #
-            assignments = fcluster(Zread, tree_cut, 'distance').tolist()
-            by_class = {}
-            for i in range(len(assignments)):
-                if assignments[i] not in by_class:
-                    by_class[assignments[i]] = []
-                by_class[assignments[i]].append(i)
-            out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
-            out_clust = [n[1] for n in out_clust]
+        mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
+        fig = mpl.figure(figsize=(8,dendrogram_height))
+        dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
+        labels_fromtop = dendro_dat['ivl'][::-1]
+        # ugliness to keep dendrogram ordering consistent with other figures
+        reorder_map = {n:samp_labels.index(m) for n,m in enumerate(labels_fromtop)}
+        replot_labels = [f'({labels_fromtop.index(n)}) {n}' for n in samp_labels]
+        mpl.close(fig)
         #
-        return out_clust
+        fig = mpl.figure(figsize=(8,dendrogram_height))
+        if dendrogram_allblack:
+            dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut, above_threshold_color='black', link_color_func=lambda k:'black')
+        else:
+            dendrogram(Zread, orientation='left', labels=replot_labels, color_threshold=tree_cut)
+        if dendrogram_xlim is not None:
+            mpl.xlim(dendrogram_xlim[0], dendrogram_xlim[1])
+        #
+        mpl.axvline(x=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
+        mpl.xlabel('distance')
+        if dendrogram_title is not None:
+            mpl.title(dendrogram_title)
+        mpl.tight_layout()
+        if dendro_name is not None:
+            mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
+        mpl.close(fig)
+        #
+        if fig_name is not None:
+            if exists_and_is_nonzero(fig_name) is False or overwrite_figures is True:
+                reordered_sequences = [sequences[reorder_map[n]] for n in range(len(sequences))]
+                plot_some_tvrs(reordered_sequences, labels_fromtop, repeats_metadata, fig_name, custom_plot_params=fig_plot_params)
+        #
+        assignments = fcluster(Zread, tree_cut, 'distance').tolist()
+        by_class = {}
+        for i in range(len(assignments)):
+            if assignments[i] not in by_class:
+                by_class[assignments[i]] = []
+            by_class[assignments[i]].append(i)
+        out_clust = sorted([(len(by_class[k]), sorted(by_class[k])) for k in by_class.keys()], reverse=True)
+        out_clust = [n[1] for n in out_clust]
     #
-    return None
+    return out_clust
 
 
 def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', starting_coord=0, use_lowest_dens=False, debug_plot=False, readname=''):
@@ -621,3 +599,41 @@ def denoise_colorvec(v, replace_char=UNKNOWN, min_size=10, max_gap_fill=50, char
         for i in range(block[0],block[1]):
             v_out[i] = block[2]
     return ''.join(v_out)
+
+
+def quick_get_tvrtel_lens(kmer_dat, repeats_metadata):
+    [kmer_list, kmer_colors, kmer_letters, kmer_flags] = repeats_metadata
+    subfilt_letters  = []
+    for i in range(len(kmer_list)):
+        if 'subtel-filt' in kmer_flags[i]:
+            subfilt_letters.append(kmer_letters[i])
+    subfilt_letters = list(set(subfilt_letters))
+    #
+    all_colorvecs = []
+    for i in range(len(kmer_dat)):
+        [my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[i]
+        my_letters = [UNKNOWN for n in range(my_tlen)]
+        for ki in range(len(my_kmer_hits)):
+            if len(my_kmer_hits[ki]):
+                for kmer_span in my_kmer_hits[ki]:
+                    for j in range(kmer_span[0], kmer_span[1]):
+                        my_letters[j] = kmer_letters[ki]
+        all_colorvecs.append(''.join(my_letters))
+    #
+    all_tvrtel_lens = []
+    for i in range(len(all_colorvecs)):
+        # identify subtel/tvr boundary based on density of unknown characters
+        (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
+        # lets walk backwards with a smaller window to see if there are some tvrs we missed
+        (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
+        seq_right = recovered_tvr[::-1] + seq_right
+        seq_left = rest_is_subtel[::-1]
+        # adjust subtel boundary so that tvr does not begin with an unknown character
+        adj = 0
+        while seq_right[adj] == UNKNOWN and adj < len(seq_right)-1:
+            adj += 1
+        seq_left = seq_left + seq_right[:adj]
+        seq_right = seq_right[adj:]
+        all_tvrtel_lens.append(len(seq_right))
+    #
+    return all_tvrtel_lens

@@ -14,14 +14,16 @@ from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits,
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
-from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs
+from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
 DUMMY_TEL_MAPQ = 60
-# how much subtel should we use for de-clustering alleles? [min_size, max_size]
-SUBTEL_CLUSTER_SIZE = [1500, 3000]
+# only compare up to this much tvr / subtel sequence for clustering
+TVR_TRUNCATE_INIT = 2000
+TVR_TRUNCATE = 3000
+SUBTEL_TRUNCATE = 3000
 # if >30% this fraction of reads have no terminating tel, skip the cluster
 TERM_TEL_ZERO_FRAC = 0.30
 # interstitial telomere filtering parameters:
@@ -358,8 +360,6 @@ def main(raw_args=None):
     sys.stdout.flush()
     tt = time.perf_counter()
     kmer_hit_dat = []
-    all_tvrtel_seq = []
-    all_subtel_seq = []
     all_terminating_tl = []
     all_nontel_end = []
     gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
@@ -394,16 +394,9 @@ def main(raw_args=None):
             continue
         my_subtel_end = max(len(my_rdat)-my_terminating_tel-MIN_SUBTEL_BUFF, 0)
         my_teltvr_seq = my_rdat[my_subtel_end:]
-        # if there's no terminating tel at all (and no fast-filt), then lets pretend entire read is tvr+tel then
-        # - so that we can use this read for removing interstitial tel regions later
-        # - though we're probably just as well off removing them entirely at this point, I don't know for sure.
+        # if there's no terminating tel at all, then lets pretend entire read is tvr+tel
         if len(my_teltvr_seq) == 0:
             my_teltvr_seq = my_rdat
-            out_tvrtel_seq = my_rdat
-            out_subtel_seq = ''
-        else:
-            out_tvrtel_seq = my_rdat[len(my_rdat)-my_terminating_tel:]
-            out_subtel_seq = my_rdat[:len(my_rdat)-my_terminating_tel]
         #
         kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
                              len(my_teltvr_seq),   # atb, lets pretend entire read is tel
@@ -411,9 +404,7 @@ def main(raw_args=None):
                              'q',                  # my_type
                              my_rnm.split(' ')[0], # my_rnm
                              DUMMY_TEL_MAPQ,       # my_mapq
-                             None])                # out_fasta_dat
-        all_tvrtel_seq.append(out_tvrtel_seq)
-        all_subtel_seq.append(out_subtel_seq)
+                             my_rdat])             # read fasta
         all_terminating_tl.append(my_terminating_tel)
         all_nontel_end.append(my_nontel_end)
     fast_filt_str = ''
@@ -435,8 +426,6 @@ def main(raw_args=None):
         del_keys = get_downsample_inds(len(kmer_hit_dat), len(kmer_hit_dat) - DOWNSAMPLE_READS)
         for di in del_keys:
             del kmer_hit_dat[di]
-            del all_tvrtel_seq[di]
-            del all_subtel_seq[di]
             del all_terminating_tl[di]
             del all_nontel_end[di]
         num_ending_reads = len(kmer_hit_dat)
@@ -444,7 +433,7 @@ def main(raw_args=None):
         sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads\n')
         sys.stdout.flush()
     #
-    my_rlens = [len(all_subtel_seq[n]) + len(all_tvrtel_seq[n]) for n in range(len(all_subtel_seq))]
+    my_rlens = [len(n[6]) for n in kmer_hit_dat]
     my_rnames = [n[4] for n in kmer_hit_dat]
 
     #
@@ -464,6 +453,7 @@ def main(raw_args=None):
     #
     read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL,
                                   aln_mode='ds',
+                                  tvr_truncate=TVR_TRUNCATE_INIT,
                                   alignment_processes=NUM_PROCESSES,
                                   rand_shuffle_count=RAND_SHUFFLE,
                                   dist_in=init_dist_matrix_fn,
@@ -581,6 +571,7 @@ def main(raw_args=None):
         #
         subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                        aln_mode='ds',
+                                       tvr_truncate=TVR_TRUNCATE,
                                        alignment_processes=NUM_PROCESSES,
                                        rand_shuffle_count=RAND_SHUFFLE,
                                        dist_in=dist_matrix_fn,
@@ -618,13 +609,29 @@ def main(raw_args=None):
             #
             # pass all checks? --> add to list for subsequent subtel clustering
             #
-            clusters_with_tvrs.append((my_chr, [n for n in subclust_read_inds]))
+            tvrtel_lens = [subset_clustdat[1][n] for n in subclust_inds]
+            my_subtels = []
+            for tti,sri in enumerate(subclust_read_inds):
+                my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
+                my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
+                my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
+            #
+            clusters_with_tvrs.append((my_chr, [n for n in subclust_read_inds], my_subtels))
             all_consensus_tvrs.append(subset_clustdat[4][sci][:my_tvr_len])
         #
         clust_num += 1
     #
+    # add in the blanks
+    #
     if len(blank_inds) >= MIN_READS_PER_PHASE:
-        clusters_with_tvrs.append((blank_chr, [n for n in blank_inds]))
+        khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in blank_inds]
+        tvrtel_lens = quick_get_tvrtel_lens(khd_subset, KMER_METADATA)
+        my_subtels = []
+        for tti,sri in enumerate(blank_inds):
+            my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
+            my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
+            my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
+        clusters_with_tvrs.append((blank_chr, [n for n in blank_inds], my_subtels))
     #
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
@@ -648,11 +655,7 @@ def main(raw_args=None):
         tt = time.perf_counter()
         final_clustered_read_inds = []
         n_reads = 0
-        for sci,(my_chr,subclust_read_inds) in enumerate(clusters_with_tvrs):
-            subtel_sizes = [len(all_subtel_seq[n]) for n in subclust_read_inds]
-            subtel_size = max(min(min(subtel_sizes), SUBTEL_CLUSTER_SIZE[1]), SUBTEL_CLUSTER_SIZE[0])
-            my_subtels = [all_subtel_seq[n][-subtel_size:] for n in subclust_read_inds]
-            #
+        for sci,(my_chr,subclust_read_inds,my_subtels) in enumerate(clusters_with_tvrs):
             zfcn = str(sci).zfill(3)
             subtel_dendro_fn = OUT_CDIR_SUB + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
             subtel_dist_fn   = OUT_CDIR_SUB + 'npz/'    + 'dist-matrix_' + zfcn + '.npz'
@@ -665,14 +668,14 @@ def main(raw_args=None):
             subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_REFINE_SUBTEL,
                                                      alignment_processes=NUM_PROCESSES,
                                                      aln_mode='ms',
-                                                     gap_bool=(False,False),
+                                                     gap_bool=(True,False),
                                                      rand_shuffle_count=RAND_SHUFFLE,
-                                                     adjust_lens=False,
+                                                     adjust_lens=True,
                                                      dist_in=subtel_dist_fn,
                                                      dendro_name=subtel_dendro_fn,
                                                      samp_labels=subtel_labels,
                                                      linkage_method='ward',
-                                                     normalize_dist_matrix=False,
+                                                     normalize_dist_matrix=True,
                                                      dendrogram_title=my_dendro_title,
                                                      dendrogram_height=8)
             #
@@ -698,7 +701,7 @@ def main(raw_args=None):
                 if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
                     continue
                 n_reads += len(subsubclust_read_inds)
-                final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds]))
+                final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds], [my_subtels[n] for n in subclust_inds]))
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {len(final_clustered_read_inds)} clusters ({n_reads} reads)')
@@ -737,7 +740,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
-                                        dendrogram_xlim=[1,0])
+                                        dendrogram_xlim=[1.1,0])
     # [4b]: subtels in clusters with TVRs
     clust2 = []
     subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is not None]
@@ -760,9 +763,9 @@ def main(raw_args=None):
                                         adjust_lens=True,
                                         rand_shuffle_count=3,
                                         linkage_method='single',
-                                        normalize_dist_matrix=False,
+                                        normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
-                                        dendrogram_xlim=[1,0])
+                                        dendrogram_xlim=[1.1,0])
     # [4c]: subtels in clusters without TVRs
     clust3 = []
     subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is None]
@@ -785,9 +788,9 @@ def main(raw_args=None):
                                         adjust_lens=True,
                                         rand_shuffle_count=3,
                                         linkage_method='single',
-                                        normalize_dist_matrix=False,
+                                        normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
-                                        dendrogram_xlim=[1,0])
+                                        dendrogram_xlim=[1.1,0])
         clust3 = [[n + len(tvrs_to_compare) for n in l3] for l3 in clust3]
     #
     intersections = []
@@ -812,7 +815,8 @@ def main(raw_args=None):
                     break
             if intersection_ind is not None:
                 new_final_inds.append((final_clustered_read_inds[intersections[intersection_ind][0]][0],
-                                       sum([final_clustered_read_inds[n][1] for n in intersections[intersection_ind]], [])))
+                                       sum([final_clustered_read_inds[n][1] for n in intersections[intersection_ind]], []),
+                                       sum([final_clustered_read_inds[n][2] for n in intersections[intersection_ind]], [])))
                 for k in intersections[intersection_ind]:
                     final_inds_seen[k] = True
             else:
@@ -840,7 +844,7 @@ def main(raw_args=None):
     allele_consensus = []
     n_final_clusters_added = 0
     n_final_clusters_removed = 0
-    for (my_chr, current_clust_inds) in final_clustered_read_inds:
+    for (my_chr, current_clust_inds, rev_subtels) in final_clustered_read_inds:
         current_clust_inds = sorted(current_clust_inds)
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         rlens_subset = [my_rlens[n] for n in current_clust_inds]
@@ -881,15 +885,17 @@ def main(raw_args=None):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
             if len(subclust_read_inds) < MIN_READS_PER_PHASE:
                 continue
-            my_subtels = []
-            for i,read_i in enumerate(subclust_read_inds):
-                subtel_used_in_tvr = MIN_SUBTEL_BUFF - solo_clustdat[2][sci][i]
-                if subtel_used_in_tvr >= 0:
-                    my_subtels.append((read_i, all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr]))
-                else:
-                    my_subtels.append((read_i, all_subtel_seq[read_i]))
-            for i,(read_i,subtel_seq) in enumerate(my_subtels):
-                subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[read_i]}', subtel_seq))
+            for i,sri in enumerate(subclust_read_inds):
+                subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[sri]}', rev_subtels[subclust_inds[i]][::-1]))
+            ####my_subtels = []
+            ####for i,read_i in enumerate(subclust_read_inds):
+            ####    subtel_used_in_tvr = MIN_SUBTEL_BUFF - solo_clustdat[2][sci][i]
+            ####    if subtel_used_in_tvr >= 0:
+            ####        my_subtels.append((read_i, all_subtel_seq[read_i][:len(all_subtel_seq[read_i])-subtel_used_in_tvr]))
+            ####    else:
+            ####        my_subtels.append((read_i, all_subtel_seq[read_i]))
+            ####for i,(read_i,subtel_seq) in enumerate(my_subtels):
+            ####    subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[read_i]}', subtel_seq))
             allele_outdat.append(my_tsvdat[sci])
             allele_consensus.append(solo_clustdat[4][sci])
             clust_num += 1

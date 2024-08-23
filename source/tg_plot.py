@@ -185,10 +185,8 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
         x_axis_adj         = 0
     else:
         read_clusters      = clust_dat[0]
-        #read_anchor_mapq   = clust_dat[1]
         read_msa_offsets   = clust_dat[2]
         x_axis_adj         = max(clust_dat[3])  # longest subtel length
-        #largest_msa_off   = max([max(n) for n in read_msa_offsets])
         total_rows_to_plot = n_reads + len(read_clusters)-1
     #
     # plotting
