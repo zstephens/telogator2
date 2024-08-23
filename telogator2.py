@@ -565,9 +565,7 @@ def main(raw_args=None):
         consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
-        my_dist_matrix = init_dist_matrix[:,current_clust_inds]
-        my_dist_matrix = my_dist_matrix[current_clust_inds,:]
-        np.savez_compressed(dist_matrix_fn, dist=my_dist_matrix)
+            rm(dist_matrix_fn)
         #
         subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                        aln_mode='ds',
@@ -577,6 +575,11 @@ def main(raw_args=None):
                                        dist_in=dist_matrix_fn,
                                        fig_name=dendrogram_fn,
                                        save_msa=consensus_fn)
+        #
+        # update init dist matrix with new (preumably better) values
+        #
+        submatrix = np.load(dist_matrix_fn)['dist']
+        init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)] = submatrix
         #
         make_tvr_plots(khd_subset, subset_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
@@ -856,8 +859,8 @@ def main(raw_args=None):
         consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
-        my_dist_matrix = init_dist_matrix[:,current_clust_inds]
-        my_dist_matrix = my_dist_matrix[current_clust_inds,:]
+        # get distance from init_dist_matrix (which was also updated during tvr step)
+        my_dist_matrix = init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)]
         np.savez_compressed(dist_matrix_fn, dist=my_dist_matrix)
         #
         if my_chr == unclust_chr:
