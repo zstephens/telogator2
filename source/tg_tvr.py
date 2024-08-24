@@ -439,7 +439,7 @@ def cluster_consensus_tvrs(sequences,
         if dendrogram_title is not None:
             mpl.title(dendrogram_title)
         mpl.tight_layout()
-        if dendro_name is not None:
+        if dendro_name is not None and (exists_and_is_nonzero(dendro_name) is False or overwrite_figures is True):
             mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
         mpl.close(fig)
         #

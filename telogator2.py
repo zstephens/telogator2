@@ -11,7 +11,7 @@ import time
 
 from source.tg_align  import get_nucl_consensus, quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
-from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, readlen_plot, tel_len_violin_plot
+from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
@@ -31,7 +31,7 @@ TERM_TEL_ZERO_FRAC = 0.30
 NONTEL_END_FILT_PARAMS = (190, 0.49)
 # treecut values for collapsing multiple (presumably false positive) clusters together
 COLLAPSE_TVR_THRESH = 0.050
-COLLAPSE_SUB_THRESH = 0.050 # applies to non-normalized distance matrix
+COLLAPSE_SUB_THRESH = 0.050
 #
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.20
@@ -54,7 +54,7 @@ def main(raw_args=None):
     #
     parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] initial TVR clustering")
     parser.add_argument('-tt', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] cluster refinement [TVR]")
-    parser.add_argument('-ts', type=float, required=False, metavar='0.250', default=0.250, help="[TREECUT] cluster refinement [SUBTEL]")
+    parser.add_argument('-ts', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] cluster refinement [SUBTEL]")
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
@@ -68,14 +68,14 @@ def main(raw_args=None):
     parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="[DEBUG] Plot all tel reads during initial clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
     parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
-    parser.add_argument('--debug-noplot',   required=False, action='store_true', default=False, help="[DEBUG] Do not regenerate plots that already exist")
+    parser.add_argument('--debug-replot',   required=False, action='store_true', default=False, help="[DEBUG] Regenerate plots that already exist")
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     #
     parser.add_argument('--init-filt',    type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="[PERFORMANCE] Apply term-tel filters earlier")
-    parser.add_argument('--collapse-hom', type=int, required=False, metavar='',          default=1000,    help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
+    parser.add_argument('--collapse-hom', type=int, required=False, metavar='',          default=-1,      help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
     #
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
     parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
@@ -120,7 +120,7 @@ def main(raw_args=None):
 
     # debug params
     #
-    DONT_OVERWRITE_PLOTS = args.debug_noplot          # (True = don't replot figures if they already exist)
+    DONT_OVERWRITE_PLOTS = not(args.debug_replot)     # (True = don't replot figures if they already exist)
     ALWAYS_REPROCESS     = not(args.dont_reprocess)   # (True = don't write out .npz matrices, always recompute)
     NO_SUBTEL_REALIGN    = args.debug_realign
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
@@ -179,6 +179,7 @@ def main(raw_args=None):
     OUT_CDIR_SUB  = OUT_CLUST_DIR + '03_subtel/'
     OUT_CDIR_COL  = OUT_CLUST_DIR + '04_collapse/'
     OUT_CDIR_FIN  = OUT_CLUST_DIR + '05_final/'
+    OUT_CDIR_COL2 = OUT_CLUST_DIR + '06_collapse/'
     OUT_QC_DIR    = OUT_DIR + 'qc/'
     makedir(OUT_DIR)
     if dir_exists(OUT_DIR) is False:
@@ -193,6 +194,8 @@ def main(raw_args=None):
         makedir(d + 'npz/')
         makedir(d + 'results/')
     makedir(OUT_CDIR_COL)
+    if COLLAPSE_HOM_BP > 0:
+        makedir(OUT_CDIR_COL2)
     TEL_SIGNAL_DIR = OUT_DIR + 'tel_signal/'
     if PLOT_TEL_SIGNALS:
         makedir(TEL_SIGNAL_DIR)
@@ -680,7 +683,8 @@ def main(raw_args=None):
                                                      linkage_method='ward',
                                                      normalize_dist_matrix=True,
                                                      dendrogram_title=my_dendro_title,
-                                                     dendrogram_height=8)
+                                                     dendrogram_height=8,
+                                                     overwrite_figures=not(DONT_OVERWRITE_PLOTS))
             #
             if ALWAYS_REPROCESS or exists_and_is_nonzero(subtel_muscle_fn + '.fa') is False:
                 with open(subtel_muscle_fn + '.fa', 'w') as f:
@@ -743,6 +747,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
+                                        overwrite_figures=not(DONT_OVERWRITE_PLOTS),
                                         dendrogram_xlim=[1.1,0])
     # [4b]: subtels in clusters with TVRs
     clust2 = []
@@ -768,6 +773,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
+                                        overwrite_figures=not(DONT_OVERWRITE_PLOTS),
                                         dendrogram_xlim=[1.1,0])
     # [4c]: subtels in clusters without TVRs
     clust3 = []
@@ -793,6 +799,7 @@ def main(raw_args=None):
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
                                         alignment_processes=NUM_PROCESSES,
+                                        overwrite_figures=not(DONT_OVERWRITE_PLOTS),
                                         dendrogram_xlim=[1.1,0])
         clust3 = [[n + len(tvrs_to_compare) for n in l3] for l3 in clust3]
     #
@@ -1110,6 +1117,7 @@ def main(raw_args=None):
         sys.stdout.flush()
         tt = time.perf_counter()
         n_alleles_before_collapsing = len(ALLELE_TEL_DAT)
+        plot_num = 0
         while True:
             del_ind = None
             for i in range(len(ALLELE_TEL_DAT)):
@@ -1117,15 +1125,10 @@ def main(raw_args=None):
                     if all([ALLELE_TEL_DAT[i][0].split(',')[0] == ALLELE_TEL_DAT[j][0].split(',')[0],
                             ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[j][2].split(',')[0],
                             abs(int(ALLELE_TEL_DAT[i][1].split(',')[0]) - int(ALLELE_TEL_DAT[j][1].split(',')[0])) <= COLLAPSE_HOM_BP]):
-                        my_dist = 0.
+                        my_dist = COLLAPSE_TVR_THRESH * 2
                         tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
                         if len(tvr_i) and len(tvr_j):
                             my_dist = quick_compare_tvrs(tvr_i, tvr_j)
-                        # handling blank tvrs
-                        elif len(tvr_i) and len(tvr_j) == 0:
-                            my_dist = quick_compare_tvrs(tvr_i, canonical_letter*len(tvr_i))
-                        elif len(tvr_i) == 0 and len(tvr_j):
-                            my_dist = quick_compare_tvrs(canonical_letter*len(tvr_j), tvr_j)
                         if my_dist <= COLLAPSE_TVR_THRESH:
                             which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
                             if which_ind == 0:
@@ -1134,6 +1137,10 @@ def main(raw_args=None):
                             else:
                                 ALLELE_TEL_DAT[j] = merged_dat
                                 del_ind = i
+                            plot_fn_col2 = OUT_CDIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
+                            if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
+                                plot_some_tvrs([tvr_i, tvr_j], [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])], KMER_METADATA, plot_fn_col2)
+                            plot_num += 1
                             break
                 if del_ind is not None:
                     break
