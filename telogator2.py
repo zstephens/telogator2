@@ -1139,7 +1139,11 @@ def main(raw_args=None):
                                 del_ind = i
                             plot_fn_col2 = OUT_CDIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
                             if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
-                                plot_some_tvrs([tvr_i, tvr_j], [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])], KMER_METADATA, plot_fn_col2)
+                                plot_some_tvrs([tvr_i, tvr_j],
+                                               [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])],
+                                               KMER_METADATA,
+                                               plot_fn_col2,
+                                               custom_plot_params={'custom_title':f'tvr dist = {my_dist:.3f}'})
                             plot_num += 1
                             break
                 if del_ind is not None:

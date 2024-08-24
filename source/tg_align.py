@@ -312,5 +312,5 @@ def get_nucl_consensus(sequences):
 
 
 def quick_compare_tvrs(tvr_1, tvr_2):
-    aligner = get_aligner_object(gap_bool=(True,False), which_type='tvr')
-    return tvr_distance(tvr_1, tvr_1, aligner) / MAX_SEQ_DIST
+    aligner = get_aligner_object(gap_bool=(True,True), which_type='tvr')
+    return tvr_distance(tvr_1, tvr_1, aligner, adjust_lens=False, min_viable=False) / MAX_SEQ_DIST

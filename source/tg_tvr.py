@@ -34,11 +34,6 @@ TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.125, 100)
 TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.250,  50)
 
 
-def parallel_alignment_job(sequences, ij, results_dict, aligner, adjust_lens=True, min_viable=True, randshuffle=3):
-    for (i,j) in ij:
-        results_dict[(i,j)] = tvr_distance(sequences[i], sequences[j], aligner, adjust_lens=adjust_lens, min_viable=min_viable, randshuffle=randshuffle)
-
-
 def cluster_tvrs(kmer_dat,
                  repeats_metadata,
                  my_chr,
