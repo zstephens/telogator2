@@ -54,7 +54,7 @@ def main(raw_args=None):
     #
     parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] initial TVR clustering")
     parser.add_argument('-tt', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] cluster refinement [TVR]")
-    parser.add_argument('-ts', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] cluster refinement [SUBTEL]")
+    parser.add_argument('-ts', type=float, required=False, metavar='0.100', default=0.100, help="[TREECUT] cluster refinement [SUBTEL]")
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
@@ -457,7 +457,7 @@ def main(raw_args=None):
     read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL,
                                   aln_mode='ds',
                                   tvr_truncate=TVR_TRUNCATE_INIT,
-                                  alignment_processes=NUM_PROCESSES,
+                                  num_processes=NUM_PROCESSES,
                                   rand_shuffle_count=RAND_SHUFFLE,
                                   dist_in=init_dist_matrix_fn,
                                   fig_name=init_dendrogram_fn,
@@ -573,7 +573,7 @@ def main(raw_args=None):
         subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                        aln_mode='ds',
                                        tvr_truncate=TVR_TRUNCATE,
-                                       alignment_processes=NUM_PROCESSES,
+                                       num_processes=NUM_PROCESSES,
                                        rand_shuffle_count=RAND_SHUFFLE,
                                        dist_in=dist_matrix_fn,
                                        fig_name=dendrogram_fn,
@@ -672,7 +672,7 @@ def main(raw_args=None):
                 rm(subtel_dist_fn)
             #
             subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_REFINE_SUBTEL,
-                                                     alignment_processes=NUM_PROCESSES,
+                                                     num_processes=NUM_PROCESSES,
                                                      aln_mode='ms',
                                                      gap_bool=(True,False),
                                                      rand_shuffle_count=RAND_SHUFFLE,
@@ -746,7 +746,7 @@ def main(raw_args=None):
                                         rand_shuffle_count=3,
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
-                                        alignment_processes=NUM_PROCESSES,
+                                        num_processes=NUM_PROCESSES,
                                         overwrite_figures=not(DONT_OVERWRITE_PLOTS),
                                         dendrogram_xlim=[1.1,0])
     # [4b]: subtels in clusters with TVRs
@@ -772,7 +772,7 @@ def main(raw_args=None):
                                         rand_shuffle_count=3,
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
-                                        alignment_processes=NUM_PROCESSES,
+                                        num_processes=NUM_PROCESSES,
                                         overwrite_figures=not(DONT_OVERWRITE_PLOTS),
                                         dendrogram_xlim=[1.1,0])
     # [4c]: subtels in clusters without TVRs
@@ -798,7 +798,7 @@ def main(raw_args=None):
                                         rand_shuffle_count=3,
                                         linkage_method='single',
                                         normalize_dist_matrix=True,
-                                        alignment_processes=NUM_PROCESSES,
+                                        num_processes=NUM_PROCESSES,
                                         overwrite_figures=not(DONT_OVERWRITE_PLOTS),
                                         dendrogram_xlim=[1.1,0])
         clust3 = [[n + len(tvrs_to_compare) for n in l3] for l3 in clust3]
@@ -874,7 +874,7 @@ def main(raw_args=None):
             # if this cluster is from unclust_chr, we're allowed to scrutinize the TVRs
             solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                          aln_mode='ds',
-                                         alignment_processes=NUM_PROCESSES,
+                                         num_processes=NUM_PROCESSES,
                                          rand_shuffle_count=RAND_SHUFFLE,
                                          dist_in=dist_matrix_fn,
                                          fig_name=dendrogram_fn,
@@ -883,7 +883,7 @@ def main(raw_args=None):
             # otherwise we're just reclustering to get tl boundaries so treecut can be set arbitrarily high
             solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, 100.,
                                          aln_mode='ms',
-                                         alignment_processes=NUM_PROCESSES,
+                                         num_processes=NUM_PROCESSES,
                                          rand_shuffle_count=1,
                                          dist_in=dist_matrix_fn,
                                          fig_name=dendrogram_fn,

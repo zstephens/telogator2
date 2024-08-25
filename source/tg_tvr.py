@@ -1,13 +1,10 @@
-import itertools
 import numpy as np
 import matplotlib.pyplot as mpl
-
-from concurrent.futures import as_completed, ProcessPoolExecutor
 
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance  import squareform
 
-from source.tg_align  import get_aligner_object, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_SEQ_DIST, progressive_alignment, tvr_distance, UNKNOWN
+from source.tg_align  import get_aligner_object, get_dist_matrix_parallel, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_SEQ_DIST, progressive_alignment, UNKNOWN
 from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_some_tvrs
 from source.tg_reader import TG_Reader
 from source.tg_util   import exists_and_is_nonzero
@@ -45,7 +42,7 @@ def cluster_tvrs(kmer_dat,
                  fig_name=None,
                  save_msa=None,
                  tvr_truncate=3000,
-                 alignment_processes=4,
+                 num_processes=4,
                  clustering_only=False):
     #
     #   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
@@ -152,15 +149,7 @@ def cluster_tvrs(kmer_dat,
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
-        #
-        dist_matrix = np.zeros((n_reads,n_reads))
-        with ProcessPoolExecutor(max_workers=alignment_processes) as executor:
-            futures = {executor.submit(tvr_distance, tvrtels_for_clustering[i], tvrtels_for_clustering[j], aligner, True, True, rand_shuffle_count):(i,j) for (i,j) in itertools.combinations(range(n_reads),2)}
-        for future in as_completed(futures):
-            my_tvr_dist = future.result()
-            (my_i,my_j) = futures.pop(future)
-            dist_matrix[my_i,my_j] = my_tvr_dist
-            dist_matrix[my_j,my_i] = my_tvr_dist
+        dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_running=num_processes)
         dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
             np.savez_compressed(dist_in, dist=dist_matrix)
@@ -239,7 +228,7 @@ def cluster_tvrs(kmer_dat,
             clust_inds = [n[1] for n in sorted([(len(colorvecs_for_msa[ci]), ci) for ci in out_clust[i]], reverse=True)[:MAX_MSA_READCOUNT]]
             my_dists = dist_matrix[np.ix_(clust_inds, clust_inds)]
             my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
-            initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, num_processes=alignment_processes)
+            initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, num_processes=num_processes)
             refined_msa = iterative_refinement(initial_msa, refinement_aligner)
             out_consensus.append(get_final_tvr_consensus(refined_msa,
                                                          default_char=canonical_letter,
@@ -357,7 +346,7 @@ def cluster_consensus_tvrs(sequences,
                            rand_shuffle_count=3,
                            linkage_method='complete',
                            normalize_dist_matrix=True,
-                           alignment_processes=8,
+                           num_processes=8,
                            dendrogram_title=None,
                            dendrogram_height=12,
                            dendrogram_allblack=False,
@@ -385,15 +374,7 @@ def cluster_consensus_tvrs(sequences,
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='consensus')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=gap_bool, which_type='tvr')
-        #
-        dist_matrix = np.zeros((n_seq,n_seq))
-        with ProcessPoolExecutor(max_workers=alignment_processes) as executor:
-            futures = {executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, False, rand_shuffle_count):(i,j) for (i,j) in itertools.combinations(range(n_seq),2)}
-        for future in as_completed(futures):
-            my_tvr_dist = future.result()
-            (my_i,my_j) = futures.pop(future)
-            dist_matrix[my_i,my_j] = my_tvr_dist
-            dist_matrix[my_j,my_i] = my_tvr_dist
+        dist_matrix = get_dist_matrix_parallel(sequences, aligner, adjust_lens, False, rand_shuffle_count, max_running=num_processes)
         if normalize_dist_matrix:
             dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:

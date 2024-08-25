@@ -1,9 +1,9 @@
-from Bio.Align import PairwiseAligner, substitution_matrices
 import numpy as np
 
+from Bio.Align          import PairwiseAligner, substitution_matrices
 from collections        import Counter, defaultdict
-from concurrent.futures import as_completed, ProcessPoolExecutor
-from itertools          import zip_longest
+from concurrent.futures import as_completed, FIRST_COMPLETED, ProcessPoolExecutor, wait
+from itertools          import combinations, zip_longest
 
 from source.tg_util import shuffle_seq
 
@@ -130,6 +130,33 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     my_dist_out = max(my_dist_out, MIN_SEQ_DIST)
     #print(aln_score, iden_score, rand_score_shuffle, my_dist_out)
     return my_dist_out
+
+
+def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_running=4, max_pending=100):
+    n_seq = len(sequences)
+    tasks = combinations(range(n_seq),2)
+    dist_matrix = np.zeros((n_seq,n_seq))
+    with ProcessPoolExecutor(max_workers=max_running) as executor:
+        pending_futures = {}
+        while True:
+            # submit new tasks if we have capacity
+            while len(pending_futures) < max_pending:
+                try:
+                    (i,j) = next(tasks)
+                    future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count)
+                    pending_futures[future] = (i,j)
+                except StopIteration:
+                    # no more tasks to submit
+                    break
+            if not pending_futures:
+                # no more pending futures and no more tasks to submit
+                break
+            done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                my_tvr_dist = future.result()
+                (i,j) = pending_futures.pop(future)
+                dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
+    return dist_matrix
 
 
 def remove_gap_columns(alignment):
