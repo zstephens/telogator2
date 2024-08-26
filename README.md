@@ -1,5 +1,5 @@
 # Telogator2
-A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads. Telogator2 was designed to work with long reads that are capable of representing telomere regions without high sequencing error rates, and has been tested primarily on PacBio HiFi reads and ONT reads basecalled with Dorado.
+A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads.
 
 If this software has been useful for your work, please cite us at:
 
@@ -24,33 +24,29 @@ conda activate telogator2
 
 ## Running Telogator2:
 
-Telogator2 can be run in single command:
-
 ```bash
 python telogator2.py -i input.fq \ 
                      -o results/ \ 
                      --minimap2 /path/to/minimap2
 ```
 
-`-i` accepts fa / fa.gz / fq / fq.gz / bam. Multiple arguments can be provided (e.g. `-i reads1.fa reads2.fa`).
+`-i` accepts fa, fa.gz, fq, fq.gz, or bam (multiple can be provided, e.g. `-i reads1.fa reads2.fa`). For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
 
-Telogator2 requires specifying an aligner executable, via either the `--minimap2`, `--winnowmap`, or `--pbmm2` input parameters.
+An aligner executable must be specified, via either `--minimap2`, `--winnowmap`, or `--pbmm2`.
 
 
 
 ## Recommended settings
 
-Sequencing platforms have different sequencing error rates (and error types), as such we recommend running Telogator2 with different options based on your input data type:
+Sequencing platforms have different sequencing error types, as such we recommend running Telogator2 with different options based on which platform was used:
 
-**PacBio Revio HiFi reads (30x)** - `-r hifi -n 4`  
-**PacBio Sequel II reads (10x)** - `-r hifi -n 3`  
-**Nanopore R10 reads (30x)** - `-r ont -n 4`  
+**PacBio Revio HiFi (30x)** - `-r hifi -n 4`  
+**PacBio Sequel II (10x)** - `-r hifi -n 3`  
+**Nanopore R10 (30x)** - `-r ont -n 4`  
 
-For Nanopore reads generated using telomere enrichment methods, such as those described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431), we recommend using `-r ont -n 5 -tt 0.100 --collapse-hom 1000`  
+For Nanopore reads generated using telomere enrichment methods, such as those described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431), we recommend using `-r ont -n 5 -tt 0.100 --collapse-hom 1000`.  
 
-Older Nanopore data might not be usable, as reads basecalled with Guppy have extremely high rates of sequencing errors in telomere regions. Additionally, Revio data generated prior to SMRTLink13 will likely not have sufficient telomere reads. For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
-
-For very low coverage data, consider lowering the minimum number of reads per allele down to `-n 2` or even `-n 1`, but expect that this will also lead to false positives.
+Telogator2 may be unable to analyze older Nanopore data, as reads basecalled with Guppy have prohibitively high sequencing error rates in telomere regions.
 
 
 
