@@ -46,6 +46,8 @@ Sequencing platforms have different sequencing error rates (and error types), as
 **PacBio Sequel II reads (10x)** - `-r hifi -n 3`  
 **Nanopore R10 reads (30x)** - `-r ont -n 4`  
 
+For Nanopore reads generated using telomere enrichment methods, such as those described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431), we recommend using `-r ont -n 5 -tt 0.100 --collapse-hom 1000`  
+
 Older Nanopore data might not be usable, as reads basecalled with Guppy have extremely high rates of sequencing errors in telomere regions. Additionally, Revio data generated prior to SMRTLink13 will likely not have sufficient telomere reads. For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
 
 For very low coverage data, consider lowering the minimum number of reads per allele down to `-n 2` or even `-n 1`, but expect that this will also lead to false positives.

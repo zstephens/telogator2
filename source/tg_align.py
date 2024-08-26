@@ -21,6 +21,9 @@ MAX_SEQ_DIST = 10.0
 # similarly, lets choose a small number as the minimum to prevent numerical weirdness from giving us negative values
 MIN_SEQ_DIST = 0.0001
 
+# use this many reads when creating MSAs for consensus sequences (chooses longest reads)
+MAX_MSA_READCOUNT = 10
+
 
 def get_scoring_matrix(canon_char, which_type='tvr'):
     m = substitution_matrices.Array(''.join(AMINO) + GAP_CHR, dims=2)

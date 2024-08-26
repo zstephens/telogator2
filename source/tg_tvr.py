@@ -4,7 +4,7 @@ import matplotlib.pyplot as mpl
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance  import squareform
 
-from source.tg_align  import get_aligner_object, get_dist_matrix_parallel, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_SEQ_DIST, progressive_alignment, UNKNOWN
+from source.tg_align  import get_aligner_object, get_dist_matrix_parallel, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_MSA_READCOUNT, MAX_SEQ_DIST, progressive_alignment, UNKNOWN
 from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_some_tvrs
 from source.tg_reader import TG_Reader
 from source.tg_util   import exists_and_is_nonzero
@@ -14,7 +14,6 @@ MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when findin
 MAX_TVR_LEN_SHORT = 3000    # when examining TVRs with very few variant repeats
 TVR_BOUNDARY_BUFF = 10      # add this many bp to detected TVR boundary
 TVR_BOUNDARY_ADJ_STEP = 50  # how far are we willing to look for more variant repeats to extend TVR boundary?
-MAX_MSA_READCOUNT = 10      # use this many reads when creating MSAs for consensus sequences (chooses longest reads)
 
 # if tvr + tel region has at least this many unknown characters, use minimum-dens pos instead of first-below-dens ps
 TOO_MUCH_UNKNOWN_IN_TVRTEL = 1000

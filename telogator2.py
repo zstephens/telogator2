@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 
-from source.tg_align  import get_nucl_consensus, quick_compare_tvrs
+from source.tg_align  import get_nucl_consensus, MAX_MSA_READCOUNT, quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
@@ -653,19 +653,19 @@ def main(raw_args=None):
     if SKIP_SUBTEL_REFINE:
         print('skipping subtel cluster refinement...')
         final_clustered_read_inds = []
-        for sci,(my_chr,subclust_read_inds) in enumerate(clusters_with_tvrs):
-            final_clustered_read_inds.append((my_chr, [n for n in subclust_read_inds]))
+        for sci, (my_chr, subclust_read_inds, my_subtels) in enumerate(clusters_with_tvrs):
+            final_clustered_read_inds.append((my_chr, [n for n in subclust_read_inds], [my_subtels[n] for n in subclust_inds]))
     else:
         sys.stdout.write('refining clusters [SUBTEL]...')
         sys.stdout.flush()
         tt = time.perf_counter()
         final_clustered_read_inds = []
         n_reads = 0
-        for sci,(my_chr,subclust_read_inds,my_subtels) in enumerate(clusters_with_tvrs):
+        for sci, (my_chr, subclust_read_inds, my_subtels) in enumerate(clusters_with_tvrs):
             zfcn = str(sci).zfill(3)
             subtel_dendro_fn = OUT_CDIR_SUB + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
             subtel_dist_fn   = OUT_CDIR_SUB + 'npz/'    + 'dist-matrix_' + zfcn + '.npz'
-            subtel_muscle_fn = OUT_CDIR_SUB + 'fa/'     + 'consensus_'   + zfcn
+            subtel_cons_fn   = OUT_CDIR_SUB + 'fa/'     + 'consensus_'   + zfcn
             my_dendro_title  = zfcn
             subtel_labels    = None
             if ALWAYS_REPROCESS:
@@ -686,18 +686,19 @@ def main(raw_args=None):
                                                      dendrogram_height=8,
                                                      overwrite_figures=not(DONT_OVERWRITE_PLOTS))
             #
-            if ALWAYS_REPROCESS or exists_and_is_nonzero(subtel_muscle_fn + '.fa') is False:
-                with open(subtel_muscle_fn + '.fa', 'w') as f:
+            if ALWAYS_REPROCESS or exists_and_is_nonzero(subtel_cons_fn + '.fa') is False:
+                with open(subtel_cons_fn + '.fa', 'w') as f:
                     for sci_s,subclust_inds in enumerate(subtel_clustdat):
                         subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
                         if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
                             continue
-                        zfcn_s = str(sci_s).zfill(3)
-                        clustered_subtels = [my_subtels[n] for n in subclust_inds]
+                        # only use MAX_MSA_READCOUNT for creating the subtel consensus (choosing the longest sequences)
+                        clustered_subtels = [n[1] for n in sorted([(len(my_subtels[n]), my_subtels[n]) for n in subclust_inds], reverse=True)[:MAX_MSA_READCOUNT]]
                         subtel_consensus_seq = get_nucl_consensus(clustered_subtels)
+                        zfcn_s = str(sci_s).zfill(3)
                         f.write(f'>subtel-consensus_{zfcn}_{zfcn_s}\n')
                         f.write(f'{subtel_consensus_seq}\n')
-            my_cons_subtels = [n[1] for n in quick_grab_all_reads(subtel_muscle_fn + '.fa')]
+            my_cons_subtels = [n[1] for n in quick_grab_all_reads(subtel_cons_fn + '.fa')]
             for cons_subtel in my_cons_subtels:
                 if my_chr != blank_chr:
                     all_consensus_tvr_subtel_pairs.append((all_consensus_tvrs[sci], cons_subtel))
