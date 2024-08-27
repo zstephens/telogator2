@@ -348,11 +348,11 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
             mpl.plot([xval - 0.3, xval + 0.3], [yval, yval], '-k', linewidth=2, alpha=0.4)
 
 
-def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth_dict={}, custom_plot_params={}):
+def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_params={}):
     #
     mpl.rcParams.update({'font.size': 18, 'font.weight':'normal'})
-    plot_params = {'p_color':'steelblue',
-                   'q_color':'mediumorchid',
+    plot_params = {'p_colors':[(70/255, 130/255, 180/255)], # steelblue
+                   'q_colors':[(186/255, 85/255, 211/255)], # mediumorchid
                    'xlabel_rot':0,
                    'y_label':'<-- q   telomere length   p -->',
                    'p_ymax':20000,
@@ -366,7 +366,11 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth
                    'boxfliers':False,
                    'custom_yticks':None}
     for k in custom_plot_params.keys():
-        plot_params[k] = custom_plot_params[k]
+        if k in plot_params:
+            plot_params[k] = custom_plot_params[k]
+        else:
+            print('Error: tel_len_violin_plot() was given an invalid plot_param:', k)
+            exit(1)
     #
     alleles_per_arm = len(tel_len_dict_list)
     spacer_between_alleles = 2
@@ -397,9 +401,21 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth
     ref_2_x = {'chr'+xlab[i]:xtck[i] for i in range(len(xlab))}
     ref_2_x['unanchored'] = xtck[0]
     ref_2_x['unanchore'] = xtck[0]
+    if plot_params['include_unanchored'] is False:
+        plot_params['skip_plot'].append('unanchored')
     #
-    rcds = []
+    width_max = 0.9
+    width_min = 0.1
+    width_box = 0.6
+    #
+    # read in lengths and create data structures needed for violin plot, then do the plotting
+    #
+    fig = mpl.figure(1,figsize=plot_params['fig_size'])
     for tldi,tel_len_dict in enumerate(tel_len_dict_list):
+        dat_l_p, dat_l_q = [], []
+        dat_p_p, dat_p_q = [], []
+        dat_w_p, dat_w_q = [], []
+        #
         if len(tel_len_dict):
             tel_readcounts = [len(tel_len_dict[k]) for k in tel_len_dict.keys() if k != 'unanchored']
             if len(tel_readcounts):
@@ -408,22 +424,12 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth
                 readcount_denom = 1
         else:
             readcount_denom = 1
-        rcds.append(readcount_denom)
-    width_max = 0.9
-    width_min = 0.1
-    width_box = 0.6
-    #
-    # read in lengths and create data structures needed for violin plot
-    #
-    (dat_l_p, dat_l_q) = ([], [])
-    (dat_p_p, dat_p_q) = ([], [])
-    (dat_w_p, dat_w_q) = ([], [])
-    for tldi,tel_len_dict in enumerate(tel_len_dict_list):
+        #
         for k in tel_len_dict.keys():
             if len(tel_len_dict[k]) == 0 or k in plot_params['skip_plot']:
                 continue
             if plot_params['norm_by_readcount']:
-                my_width = min([width_max, max([width_min, width_max*(float(len(tel_len_dict[k]))/rcds[tldi])])])
+                my_width = min([width_max, max([width_min, width_max*(float(len(tel_len_dict[k]))/readcount_denom)])])
             else:
                 if plot_params['boxplot']:
                     my_width = width_box
@@ -442,33 +448,19 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, ground_truth
                     dat_l_p[-1].append(n)
                 elif k[-1] == 'q':
                     dat_l_q[-1].append(-n)
-    #
-    # violin plot
-    #
-    fig = mpl.figure(1,figsize=plot_params['fig_size'])
-    #
-    if plot_params['boxplot']:
-        box_params   = {'linewidth':2, 'facecolor':(0.9, 0.9, 0.9)}
-        mean_params  = {'linewidth':1, 'linestyle':'dotted', 'color':(0.1, 0.1, 0.1)}
-        line_params  = {'linewidth':2}
-        flier_params = {'marker':'.', 'markerfacecolor':(0.0, 0.0, 0.0), 'markersize':8, 'linestyle':'none', 'alpha':0.2}
-        mpl.boxplot(dat_l_p, vert=True, positions=dat_p_p, widths=dat_w_p, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
-        mpl.boxplot(dat_l_q, vert=True, positions=dat_p_q, widths=dat_w_q, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
-    else:
-        violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means)
-    #
-    # plot ground-truth values (for simulated data)
-    #
-    for k in ground_truth_dict.keys():
-        xval = ref_2_x[k[:-1]]
-        if k[-1] == 'p':
-            yval = ground_truth_dict[k]
-        elif k[-1] == 'q':
-            yval = -ground_truth_dict[k]
+        #
+        plot_params['p_color'] = plot_params['p_colors'][min(tldi, len(plot_params['p_colors'])-1)]
+        plot_params['q_color'] = plot_params['q_colors'][min(tldi, len(plot_params['q_colors'])-1)]
+        if plot_params['boxplot']:
+            mean_params  = {'linewidth':1, 'linestyle':'dotted', 'color':(0.1, 0.1, 0.1)}
+            line_params  = {'linewidth':2}
+            flier_params = {'marker':'.', 'markerfacecolor':(0.0, 0.0, 0.0), 'markersize':8, 'linestyle':'none', 'alpha':0.2}
+            box_params = {'linewidth':2, 'facecolor':plot_params['p_color']}
+            mpl.boxplot(dat_l_p, vert=True, positions=dat_p_p, widths=dat_w_p, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
+            box_params = {'linewidth':2, 'facecolor':plot_params['q_color']}
+            mpl.boxplot(dat_l_q, vert=True, positions=dat_p_q, widths=dat_w_q, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
         else:
-            print('skipping weird benchmark contig:', k, ground_truth_dict[k])
-            continue
-        mpl.plot([xval - 0.35, xval + 0.35], [yval, yval], '-k', linewidth=3, alpha=1.0)
+            violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means)
     #
     xt_packed = [(xtck[i]+0.5*(alleles_per_arm-1), xlab[i]) for i in range(len(xtck)) if len(xlab[i])]
     num_blank = len([n for n in xlab if len(n) == 0])

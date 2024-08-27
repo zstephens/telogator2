@@ -1245,7 +1245,6 @@ def main(raw_args=None):
     readlens_all = in_npz['readlen_all']
     readlens_tel = in_npz['readlen_tel']
     readlen_plot(readlens_all, readlens_tel, readlens_final, QC_READLEN)
-    rm(READLEN_NPZ)
     #
     if len(tvrs_to_plot):
         redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
