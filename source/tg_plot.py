@@ -364,7 +364,8 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
                    'include_unanchored':False,
                    'boxplot':False,
                    'boxfliers':False,
-                   'custom_yticks':None}
+                   'custom_yticks':None,
+                   'custom_title':''}
     for k in custom_plot_params.keys():
         if k in plot_params:
             plot_params[k] = custom_plot_params[k]
@@ -481,6 +482,8 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
     mpl.yticks(ytck, ylab)
     mpl.ylim([-q_ymax, p_ymax])
     mpl.ylabel(plot_params['y_label'], fontweight='bold')
+    if plot_params['custom_title']:
+        mpl.title(plot_params['custom_title'])
     mpl.grid(linestyle='--', alpha=0.5)
     mpl.tight_layout()
     mpl.savefig(out_fn)

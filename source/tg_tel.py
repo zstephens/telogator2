@@ -97,6 +97,47 @@ def merge_allele_tsv_dat(dat1, dat2, ALLELE_TL_METHOD):
     return which_ind, [my_chr, my_pos, my_ref, my_id, str(int(consensus_atl)), allele_tlen_str, rlen_str, mapq_str, my_tvr_len, my_tvr, rname_str]
 
 
+def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_maxatl=100, print_warnings=False):
+    out_dat = []
+    fail_dict = {'interstitial':0,
+                 'min_tvr':0,
+                 'min_maxatl':0,
+                 'min_reads':0}
+    with open(fn, 'r') as f:
+        for line in f:
+            if line[0] == '#':
+                continue
+            splt = line.strip().split('\t')
+            my_chr = splt[0].split(',')[0]
+            #my_pos = int(splt[1].split(',')[0])
+            #my_t2t = splt[2].split(',')[0]
+            my_aid = splt[3]
+            if my_aid[-1] == 'i':
+                fail_dict['interstitial'] += 1
+                continue
+            else:
+                my_aid = int(my_aid)
+            tvr_len = int(splt[8])
+            if tvr_len < min_tvr:
+                fail_dict['min_tvr'] += 1
+                continue
+            my_tvr = splt[9]
+            allele_tls = [int(n) for n in splt[5].split(',')]
+            num_alleles_prefilt = len(allele_tls)
+            allele_tls = [n for n in allele_tls if n < max_atl and n > min_atl]
+            if max(allele_tls) < min_maxatl:
+                fail_dict['min_maxatl'] += 1
+                continue
+            if print_warnings and len(allele_tls) < num_alleles_prefilt:
+                print(f'warning: skipping {num_alleles_prefilt-len(allele_tls)} reads with ATL >{max_atl} or <{min_atl} in allele {my_aid}')
+            if len(allele_tls) < min_reads:
+                fail_dict['min_reads'] += 1
+                continue
+            consensus_tl = int(splt[4])
+            out_dat.append((my_chr, my_aid, allele_tls, consensus_tl, my_tvr))
+    return out_dat, fail_dict
+
+
 def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
     [SIGNAL_KMERS, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH] = gtt_params
     #
