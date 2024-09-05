@@ -365,7 +365,8 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
                    'boxplot':False,
                    'boxfliers':False,
                    'custom_yticks':None,
-                   'custom_title':''}
+                   'custom_title':'',
+                   'spacer_between_alleles':2}
     for k in custom_plot_params.keys():
         if k in plot_params:
             plot_params[k] = custom_plot_params[k]
@@ -374,7 +375,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
             exit(1)
     #
     alleles_per_arm = len(tel_len_dict_list)
-    spacer_between_alleles = 2
+    spacer_between_alleles = plot_params['spacer_between_alleles']
     #
     xlab_temp = [str(n) for n in range(1,22+1)] + ['X', 'Y']
     xlab = ['-']

@@ -4,7 +4,7 @@ from source.tg_kmer import get_telomere_kmer_density, get_telomere_regions
 from source.tg_plot import plot_tel_signal
 from source.tg_util import posmax
 
-MIN_TEL_SCORE   = 100
+MIN_TEL_SCORE = 100
 
 
 def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD, skip_negative_vals=False):
