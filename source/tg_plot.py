@@ -320,22 +320,22 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
         for pc in violin_parts_p['bodies']:
             pc.set_facecolor(plot_params['p_color'])
             pc.set_edgecolor('black')
-            pc.set_alpha(0.7)
+            pc.set_alpha(0.85)
         for k in v_line_keys:
             if k in violin_parts_p:
                 violin_parts_p[k].set_color('black')
-                violin_parts_p[k].set_alpha(0.3)
+                violin_parts_p[k].set_alpha(0.4)
     #
     if len(dat_l_q) and len(dat_p_q):
         violin_parts_q = mpl.violinplot(dat_l_q, dat_p_q, points=200, widths=dat_w_q)
         for pc in violin_parts_q['bodies']:
             pc.set_facecolor(plot_params['q_color'])
             pc.set_edgecolor('black')
-            pc.set_alpha(0.7)
+            pc.set_alpha(0.85)
         for k in v_line_keys:
             if k in violin_parts_q:
                 violin_parts_q[k].set_color('black')
-                violin_parts_q[k].set_alpha(0.3)
+                violin_parts_q[k].set_alpha(0.4)
     #
     if plot_means:
         for i in range(len(dat_l_p)):
@@ -366,7 +366,8 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
                    'boxfliers':False,
                    'custom_yticks':None,
                    'custom_title':'',
-                   'spacer_between_alleles':2}
+                   'spacer_between_alleles':2,
+                   'legend':[]}
     for k in custom_plot_params.keys():
         if k in plot_params:
             plot_params[k] = custom_plot_params[k]
@@ -376,6 +377,9 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
     #
     alleles_per_arm = len(tel_len_dict_list)
     spacer_between_alleles = plot_params['spacer_between_alleles']
+    samp_names = []
+    if plot_params['legend']:
+        samp_names = plot_params['legend'][:min(alleles_per_arm, len(plot_params['legend']))]
     #
     xlab_temp = [str(n) for n in range(1,22+1)] + ['X', 'Y']
     xlab = ['-']
@@ -406,13 +410,17 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
     if plot_params['include_unanchored'] is False:
         plot_params['skip_plot'].append('unanchored')
     #
-    width_max = 0.9
-    width_min = 0.1
-    width_box = 0.6
+    width_max = 0.85
+    width_min = 0.10
+    width_box = 0.60
     #
     # read in lengths and create data structures needed for violin plot, then do the plotting
     #
-    fig = mpl.figure(1,figsize=plot_params['fig_size'])
+    fig = mpl.figure(1, figsize=plot_params['fig_size'], dpi=200) # default dpi = 100
+    # plot some line off screen for legend entries
+    for tldi in range(len(tel_len_dict_list)):
+        mpl.plot([-2,-2], [0,1], color=plot_params['p_colors'][min(tldi, len(plot_params['p_colors'])-1)])
+    #
     for tldi,tel_len_dict in enumerate(tel_len_dict_list):
         dat_l_p, dat_l_q = [], []
         dat_p_p, dat_p_q = [], []
@@ -453,6 +461,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
         #
         plot_params['p_color'] = plot_params['p_colors'][min(tldi, len(plot_params['p_colors'])-1)]
         plot_params['q_color'] = plot_params['q_colors'][min(tldi, len(plot_params['q_colors'])-1)]
+        #
         if plot_params['boxplot']:
             mean_params  = {'linewidth':1, 'linestyle':'dotted', 'color':(0.1, 0.1, 0.1)}
             line_params  = {'linewidth':2}
@@ -485,6 +494,8 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
     mpl.ylabel(plot_params['y_label'], fontweight='bold')
     if plot_params['custom_title']:
         mpl.title(plot_params['custom_title'])
+    if samp_names:
+        mpl.legend(samp_names, prop={'size':12})
     mpl.grid(linestyle='--', alpha=0.5)
     mpl.tight_layout()
     mpl.savefig(out_fn)
