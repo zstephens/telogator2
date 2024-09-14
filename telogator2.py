@@ -320,7 +320,9 @@ def main(raw_args=None):
                         sup_readcount += 1
                         continue
                     count_fwd = my_rdat.count(KMER_INITIAL)
-                    count_rev = my_rdat.count(KMER_INITIAL_RC)
+                    count_rev = 0
+                    if count_fwd < MINIMUM_CANON_HITS:  # don't need to do this is we already have enough fwd hits
+                        count_rev = my_rdat.count(KMER_INITIAL_RC)
                     all_readcount += 1
                     my_rlen = len(my_rdat)
                     total_bp_all += my_rlen

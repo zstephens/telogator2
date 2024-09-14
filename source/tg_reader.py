@@ -99,17 +99,7 @@ class TG_Reader:
         elif self.filetype in ['BAM', 'CRAM']:
             try:
                 aln = next(self.alns)
-                my_name = aln.qname
-                try:
-                    my_np = aln.get_tag('np')
-                    my_rq = aln.get_tag('rq')
-                    my_name += ' np={0} rq={1:0.6f}'.format(my_np, my_rq)
-                # np or rq tag is not present
-                except KeyError:
-                    pass
-                # get read sequence directly from SAM entry instead of using aln.query (which doesn't include softclipped bases)
-                aln_readdat = str(aln).split('\t')[9]
-                return (my_name, aln_readdat, aln.qual, aln.is_supplementary)
+                return (aln.qname, aln.query_sequence, aln.qual, aln.is_supplementary)
             # we reached the end of file
             except StopIteration:
                 return ('','','',False)

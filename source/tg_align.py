@@ -271,8 +271,13 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
         new_alignment = [seq.ljust(max_len, '-') for seq in new_alignment]
         #
         new_score = sum(score_against_profile(seq, create_profile(new_alignment)) for seq in new_alignment)
-        if (new_score - current_score) / current_score < improvement_threshold:
-            break
+        if abs(current_score) < 1e-6:
+            if new_score < current_score:
+                break
+        else:
+            relative_improvement = (new_score - current_score) / abs(current_score)
+            if relative_improvement < improvement_threshold:
+                break
         current_alignment = new_alignment
         current_score = new_score
     #
