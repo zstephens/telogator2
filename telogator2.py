@@ -72,6 +72,7 @@ def main(raw_args=None):
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
+    parser.add_argument('--debug-telreads', required=False, action='store_true', default=False, help="[DEBUG] Stop immediately after extracting tel reads")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     #
     parser.add_argument('--init-filt',    type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="[PERFORMANCE] Apply term-tel filters earlier")
@@ -125,6 +126,7 @@ def main(raw_args=None):
     NO_SUBTEL_REALIGN    = args.debug_realign
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
+    STOP_AFTER_TELREADS  = args.debug_telreads
     PLOT_ALL_INITIAL     = args.plot_all_reads
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PLOT_TEL_SIGNALS     = args.plot_signals
@@ -349,6 +351,10 @@ def main(raw_args=None):
             exit(1)
     else:
         print('found telomere reads from a previous run, using them instead of reprocessing input file')
+    #
+    if STOP_AFTER_TELREADS:
+        print('--debug-telreads was specified, stopping now.')
+        exit(0)
     #
     sys.stdout.write(f'filtering by read length (>{MINIMUM_READ_LEN}bp)...')
     sys.stdout.flush()
