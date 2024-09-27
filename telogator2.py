@@ -158,6 +158,9 @@ def main(raw_args=None):
             exit(1)
         if input_type == 'cram':
             any_cram = True
+    if len(set(INPUT_ALN)) < len(INPUT_ALN):
+        print('Error: an input file was provided multiple times')
+        exit(1)
     if any_cram and CRAM_REF_FILE == '':
         print('Error: cram input requires reference fasta via --ref')
         exit(1)
@@ -318,6 +321,8 @@ def main(raw_args=None):
                     (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
                     if not my_name:
                         break
+                    if not my_rdat: # can happen in aligned bam if sequence is not present (because read is multimapped maybe?)
+                        continue
                     if my_issup:
                         sup_readcount += 1
                         continue
