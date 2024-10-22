@@ -412,7 +412,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
     #
     width_max = 0.85
     width_min = 0.10
-    width_box = 0.60
+    width_box = 0.70
     #
     # read in lengths and create data structures needed for violin plot, then do the plotting
     #
@@ -464,11 +464,11 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
         #
         if plot_params['boxplot']:
             mean_params  = {'linewidth':1, 'linestyle':'dotted', 'color':(0.1, 0.1, 0.1)}
-            line_params  = {'linewidth':2}
+            line_params  = {'linewidth':1}
             flier_params = {'marker':'.', 'markerfacecolor':(0.0, 0.0, 0.0), 'markersize':8, 'linestyle':'none', 'alpha':0.2}
-            box_params = {'linewidth':2, 'facecolor':plot_params['p_color']}
+            box_params = {'linewidth':1, 'facecolor':plot_params['p_color']}
             mpl.boxplot(dat_l_p, vert=True, positions=dat_p_p, widths=dat_w_p, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
-            box_params = {'linewidth':2, 'facecolor':plot_params['q_color']}
+            box_params = {'linewidth':1, 'facecolor':plot_params['q_color']}
             mpl.boxplot(dat_l_q, vert=True, positions=dat_p_q, widths=dat_w_q, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
         else:
             violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means)

@@ -5,6 +5,7 @@ import gzip
 import numpy as np
 import pathlib
 import pysam
+import random
 import subprocess
 import sys
 import time
@@ -21,7 +22,7 @@ TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
 DUMMY_TEL_MAPQ = 60
 # only compare up to this much tvr / subtel sequence for clustering
-TVR_TRUNCATE_INIT = 2000
+TVR_TRUNCATE_INIT = 1500
 TVR_TRUNCATE = 3000
 SUBTEL_TRUNCATE = 3000
 # if >30% this fraction of reads have no terminating tel, skip the cluster
@@ -45,12 +46,15 @@ def main(raw_args=None):
     parser.add_argument('-t', type=str, required=False, metavar='telogator.fa', default='',     help="Telogator reference fasta")
     parser.add_argument('-r', type=str, required=False, metavar='hifi',         default='hifi', help="Read type: hifi / ont")
     parser.add_argument('-l', type=int, required=False, metavar='4000',         default=4000,   help="Minimum read length")
-    parser.add_argument('-s', type=int, required=False, metavar='1000',         default=1000,   help="Minimum subtelomere anchor size")
     parser.add_argument('-c', type=int, required=False, metavar='8',            default=8,      help="Minimum hits to tandem canonical kmer")
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
     parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for choosing ATL: mean / median / p75 / max")
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
+    #
+    parser.add_argument('--filt-tel',    type=int, required=False, metavar='', default=500,  help="[FILTERING] Remove reads that end in < this much tel")
+    parser.add_argument('--filt-nontel', type=int, required=False, metavar='', default=200,  help="[FILTERING] Remove reads that end in > this much non-tel")
+    parser.add_argument('--filt-sub',    type=int, required=False, metavar='', default=1000, help="[FILTERING] Remove reads that end in < this much subtel")
     #
     parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] initial TVR clustering")
     parser.add_argument('-tt', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] cluster refinement [TVR]")
@@ -65,7 +69,7 @@ def main(raw_args=None):
     parser.add_argument('-va-p', type=int, required=False, metavar='2',     default=2,     help="[VIOLIN_ATL.PNG] ploidy. i.e. number of alleles per arm")
     #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="[DEBUG] Plot denoised TVR instead of raw signal")
-    parser.add_argument('--plot-all-reads', required=False, action='store_true', default=False, help="[DEBUG] Plot all tel reads during initial clustering")
+    parser.add_argument('--plot-initclust', required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during initial clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
     parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
     parser.add_argument('--debug-replot',   required=False, action='store_true', default=False, help="[DEBUG] Regenerate plots that already exist")
@@ -73,15 +77,15 @@ def main(raw_args=None):
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--debug-telreads', required=False, action='store_true', default=False, help="[DEBUG] Stop immediately after extracting tel reads")
+    parser.add_argument('--debug-progress', required=False, action='store_true', default=False, help="[DEBUG] Print progress to screen during init matrix computation")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
-    #
-    parser.add_argument('--init-filt',    type=int, required=False, metavar='', nargs=2, default=(-1,-1), help="[PERFORMANCE] Apply term-tel filters earlier")
-    parser.add_argument('--collapse-hom', type=int, required=False, metavar='',          default=-1,      help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
+    parser.add_argument('--collapse-hom',  type=int, required=False, metavar='', default=-1,   help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
     #
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
     parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
     parser.add_argument('--pbmm2',     type=str, required=False, metavar='exe',    default='', help="/path/to/pbmm2")
     parser.add_argument('--ref',       type=str, required=False, metavar='ref.fa', default='', help="Reference filename (only needed if input is cram)")
+    parser.add_argument('--rng',       type=int, required=False, metavar='-1',     default=-1, help="RNG seed value")
     #
     args = parser.parse_args()
     #
@@ -94,12 +98,12 @@ def main(raw_args=None):
     READ_TYPE           = args.r
     MINIMUM_READ_LEN    = args.l
     MINIMUM_CANON_HITS  = args.c
-    MIN_SUBTEL_BUFF     = args.s
     MIN_READS_PER_PHASE = args.n
     ALLELE_TL_METHOD    = args.m
     DOWNSAMPLE_READS    = args.d
     NUM_PROCESSES       = args.p
     CRAM_REF_FILE       = args.ref
+    RNG_SEED            = args.rng
     #
     TREECUT_INITIAL       = args.ti
     TREECUT_REFINE_SUBTEL = args.ts
@@ -127,22 +131,15 @@ def main(raw_args=None):
     SKIP_SUBTEL_REFINE   = args.debug_nosubtel
     SKIP_ANCHORING       = args.debug_noanchor
     STOP_AFTER_TELREADS  = args.debug_telreads
-    PLOT_ALL_INITIAL     = args.plot_all_reads
+    PRINT_INIT_PROGRESS  = args.debug_progress
+    PLOT_ALL_INITIAL     = args.plot_initclust
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PLOT_TEL_SIGNALS     = args.plot_signals
+    FILT_TERM_TEL        = args.filt_tel         # reads must terminate in at least this much tel sequence
+    FILT_TERM_NONTEL     = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
+    FILT_TERM_SUBTEL     = args.filt_sub         # reads must terminate in at least this much subtel sequence
     FAST_ALIGNMENT       = args.fast_aln
-    INIT_FILTERING_TUPLE = args.init_filt
     COLLAPSE_HOM_BP      = args.collapse_hom
-    #
-    PLOT_SEPARATE_INITIAL = False # turn on for debugging, otherwise is mostly a waste of time
-    #
-    INIT_FILTERING = False
-    MIN_TEL_UNANCHORED = 500
-    NONTEL_EDGE_UNANCHORED = 200
-    if INIT_FILTERING_TUPLE[0] >= 0 and INIT_FILTERING_TUPLE[1] >= 0:
-        INIT_FILTERING = True
-        MIN_TEL_UNANCHORED = INIT_FILTERING_TUPLE[0]
-        NONTEL_EDGE_UNANCHORED = INIT_FILTERING_TUPLE[1]
 
     # check input
     #
@@ -217,10 +214,21 @@ def main(raw_args=None):
     QC_READLEN = OUT_QC_DIR + 'qc_readlens.png'
     QC_CMD     = OUT_QC_DIR + 'cmd.txt'
     QC_STATS   = OUT_QC_DIR + 'stats.txt'
+    QC_RNG     = OUT_QC_DIR + 'rng.txt'
 
+    # rng
+    if RNG_SEED <= -1:
+        RNG_SEED = random.randint(1, 99999999)
+    random.seed(RNG_SEED)
+    with open(QC_RNG, 'w') as f:
+        f.write(str(RNG_SEED) + '\n')
+
+    # random shuffle amounts
     RAND_SHUFFLE = 3
+    RAND_SHUFFLE_INIT = 2
     if FAST_ALIGNMENT:
         RAND_SHUFFLE = 1
+        RAND_SHUFFLE_INIT = 1
 
     #
     # check exes
@@ -321,7 +329,8 @@ def main(raw_args=None):
                     (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
                     if not my_name:
                         break
-                    if not my_rdat: # can happen in aligned bam if sequence is not present (because read is multimapped maybe?)
+                    if not my_rdat:
+                        # this can happen in aligned bam if sequence is not present (because read is multimapped maybe?)
                         continue
                     if my_issup:
                         sup_readcount += 1
@@ -381,6 +390,9 @@ def main(raw_args=None):
     gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
     num_starting_reads = len(all_read_dat)
     tel_signal_plot_num = 0
+    reads_removed_term_tel = 0
+    reads_removed_term_unk = 0
+    reads_removed_term_sub = 0
     for (my_rnm, my_rdat, my_qdat) in all_read_dat:
         tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
         tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
@@ -401,14 +413,17 @@ def main(raw_args=None):
         my_terminating_tel = min(my_terminating_tel, len(my_rdat))
         my_nontel_end = min(my_nontel_end, len(my_rdat))
         #
-        if INIT_FILTERING and my_terminating_tel < MIN_TEL_UNANCHORED:
+        if FILT_TERM_TEL > 0 and my_terminating_tel < FILT_TERM_TEL:
+            reads_removed_term_tel += 1
             continue
-        if INIT_FILTERING and my_nontel_end > NONTEL_EDGE_UNANCHORED:
+        if FILT_TERM_NONTEL > 0 and my_nontel_end > FILT_TERM_NONTEL:
+            reads_removed_term_unk += 1
             continue
         # too little subtel sequence?
-        if MIN_SUBTEL_BUFF > 0 and len(my_rdat) < my_terminating_tel + MIN_SUBTEL_BUFF:
+        if FILT_TERM_SUBTEL > 0 and len(my_rdat) < my_terminating_tel + FILT_TERM_SUBTEL:
+            reads_removed_term_sub += 1
             continue
-        my_subtel_end = max(len(my_rdat)-my_terminating_tel-MIN_SUBTEL_BUFF, 0)
+        my_subtel_end = max(len(my_rdat)-my_terminating_tel-FILT_TERM_SUBTEL, 0)
         my_teltvr_seq = my_rdat[my_subtel_end:]
         # if there's no terminating tel at all, then lets pretend entire read is tvr+tel
         if len(my_teltvr_seq) == 0:
@@ -423,13 +438,18 @@ def main(raw_args=None):
                              my_rdat])             # read fasta
         all_terminating_tl.append(my_terminating_tel)
         all_nontel_end.append(my_nontel_end)
-    fast_filt_str = ''
-    if INIT_FILTERING:
-        fast_filt_str = ' [init-filt applied]'
+    #
     num_ending_reads = len(kmer_hit_dat)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.write(' - ' + str(num_starting_reads) + ' --> ' + str(num_ending_reads) + ' reads' + fast_filt_str + '\n')
     sys.stdout.flush()
+    print(f' - {num_starting_reads} --> {num_ending_reads} reads')
+    if FILT_TERM_TEL > 0:
+        print(f' - ({reads_removed_term_tel} reads removed for ending in < {FILT_TERM_TEL}bp tel sequence)')
+    if FILT_TERM_NONTEL > 0:
+        print(f' - ({reads_removed_term_unk} reads removed for ending in > {FILT_TERM_NONTEL}bp non-tel sequence)')
+    if FILT_TERM_SUBTEL > 0:
+        print(f' - ({reads_removed_term_sub} reads removed for ending in < {FILT_TERM_SUBTEL}bp subtel sequence)')
+    #
     if num_ending_reads <= 0:
         print('Error: No telomere reads remaining, stopping here...')
         exit(1)
@@ -461,20 +481,24 @@ def main(raw_args=None):
     tt = time.perf_counter()
     init_dendrogram_fn  = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
     init_dist_matrix_fn = OUT_CDIR_INIT + 'npz/'    + 'dist-matrix.npz'
+    init_consensus_fn   = OUT_CDIR_INIT + 'fa/'     + 'consensus.fa'
     if ALWAYS_REPROCESS:
         rm(init_dist_matrix_fn)
+        rm(init_consensus_fn)
     clustering_only = True
-    if PLOT_ALL_INITIAL or PLOT_SEPARATE_INITIAL:
+    if PLOT_ALL_INITIAL:
         clustering_only = False
     #
     read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL,
                                   aln_mode='ds',
                                   tvr_truncate=TVR_TRUNCATE_INIT,
                                   num_processes=NUM_PROCESSES,
-                                  rand_shuffle_count=RAND_SHUFFLE,
+                                  rand_shuffle_count=RAND_SHUFFLE_INIT,
                                   dist_in=init_dist_matrix_fn,
                                   fig_name=init_dendrogram_fn,
-                                  clustering_only=clustering_only)
+                                  clustering_only=clustering_only,
+                                  save_msa=init_consensus_fn,
+                                  print_matrix_progress=PRINT_INIT_PROGRESS)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
@@ -491,31 +515,7 @@ def main(raw_args=None):
         make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, init_telcompplot_fn, init_telcompcons_fn, mtp_params, dpi=100)
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
-    #
-    if PLOT_SEPARATE_INITIAL:
-        sys.stdout.write('plotting initial clusters...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        for clust_i in range(len(read_clust_dat[0])):
-            current_clust_inds = read_clust_dat[0][clust_i]
-            if len(current_clust_inds) < MIN_READS_PER_PHASE:
-                continue
-            khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
-            clustdat_to_plot = [[list(range(len(current_clust_inds)))],
-                                [read_clust_dat[1][clust_i]],
-                                [read_clust_dat[2][clust_i]],
-                                [read_clust_dat[3][n] for n in current_clust_inds],
-                                [read_clust_dat[4][clust_i]],
-                                [read_clust_dat[5][clust_i]],
-                                [read_clust_dat[6][n] for n in current_clust_inds],
-                                [read_clust_dat[7][clust_i]]]
-            plot_fn_reads = OUT_CDIR_INIT + 'results/' + 'reads_' + str(clust_i).zfill(3) + '.png'
-            if DONT_OVERWRITE_PLOTS and exists_and_is_nonzero(plot_fn_reads):
-                pass
-            else:
-                make_tvr_plots(khd_subset, clustdat_to_plot, fake_chr, fake_pos, plot_fn_reads, None, mtp_params)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
+
     # we're going to use these distances for all the remaining steps instead of recomputing it each time
     init_dist_matrix = np.load(init_dist_matrix_fn)['dist']
 
@@ -547,6 +547,24 @@ def main(raw_args=None):
                 pass_clust_inds_list.append(read_clust_dat[0][clust_i])
         else:
             fail_clust_inds_list.append(read_clust_dat[0][clust_i])
+        #
+        if PLOT_ALL_INITIAL:
+            khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
+            clustdat_to_plot = [[list(range(len(current_clust_inds)))],
+                                [read_clust_dat[1][clust_i]],
+                                [read_clust_dat[2][clust_i]],
+                                [read_clust_dat[3][n] for n in current_clust_inds],
+                                [read_clust_dat[4][clust_i]],
+                                [read_clust_dat[5][clust_i]],
+                                [read_clust_dat[6][n] for n in current_clust_inds],
+                                [read_clust_dat[7][clust_i]]]
+            plot_type = 'pass'
+            if passed_termtel is False:
+                plot_type = 'fail'
+            plot_fn_reads = OUT_CDIR_INIT + 'results/' + 'reads-' + plot_type + '_' + str(clust_i).zfill(3) + '.png'
+            if DONT_OVERWRITE_PLOTS is False or exists_and_is_nonzero(plot_fn_reads) is False:
+                make_tvr_plots(khd_subset, clustdat_to_plot, fake_chr, fake_pos, plot_fn_reads, None, mtp_params)
+        #
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     print(f' - {len(fail_clust_inds_list)} clusters removed for not ending in enough tel sequence')
@@ -1234,7 +1252,7 @@ def main(raw_args=None):
         if atd[0] in [fake_chr, blank_chr, unclust_chr]:
             num_alleles_unmapped += 1
             continue
-        if my_max_atl < MIN_ATL_FOR_FINAL_PLOTTING:
+        if my_tvr_len + my_rep_atl < MIN_ATL_FOR_FINAL_PLOTTING:
             num_alleles_too_short += 1
             continue
         if 'i' in atd[3]:

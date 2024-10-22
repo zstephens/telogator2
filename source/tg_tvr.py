@@ -42,7 +42,8 @@ def cluster_tvrs(kmer_dat,
                  save_msa=None,
                  tvr_truncate=3000,
                  num_processes=4,
-                 clustering_only=False):
+                 clustering_only=False,
+                 print_matrix_progress=False):
     #
     #   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
     #
@@ -148,7 +149,7 @@ def cluster_tvrs(kmer_dat,
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
-        dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_running=num_processes)
+        dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_running=num_processes, print_progress=print_matrix_progress)
         dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
             np.savez_compressed(dist_in, dist=dist_matrix)

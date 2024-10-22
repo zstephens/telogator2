@@ -102,6 +102,7 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
     fail_dict = {'interstitial':0,
                  'min_tvr':0,
                  'min_maxatl':0,
+                 'no_atl_in_range':0,
                  'min_reads':0}
     with open(fn, 'r') as f:
         for line in f:
@@ -125,6 +126,9 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
             allele_tls = [int(n) for n in splt[5].split(',')]
             num_alleles_prefilt = len(allele_tls)
             allele_tls = [n for n in allele_tls if n < max_atl and n > min_atl]
+            if not allele_tls:
+                fail_dict['no_atl_in_range'] += 1
+                continue
             if max(allele_tls) < min_maxatl:
                 fail_dict['min_maxatl'] += 1
                 continue

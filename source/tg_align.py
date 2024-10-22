@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 from Bio.Align          import PairwiseAligner, substitution_matrices
 from collections        import Counter, defaultdict
@@ -135,10 +136,12 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     return my_dist_out
 
 
-def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_running=4, max_pending=100):
+def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_running=4, max_pending=100, print_progress=False):
     n_seq = len(sequences)
     tasks = combinations(range(n_seq),2)
-    dist_matrix = np.zeros((n_seq,n_seq))
+    dist_matrix = np.zeros((n_seq,n_seq), dtype='<f4')
+    tt = time.perf_counter()
+    current_i = -1
     with ProcessPoolExecutor(max_workers=max_running) as executor:
         pending_futures = {}
         while True:
@@ -159,6 +162,10 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
                 my_tvr_dist = future.result()
                 (i,j) = pending_futures.pop(future)
                 dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
+                if i > current_i:
+                    current_i = i
+                    if print_progress:
+                        print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
     return dist_matrix
 
 
