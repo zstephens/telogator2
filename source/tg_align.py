@@ -21,6 +21,8 @@ MIN_VIABLE_SEQ_LEN = 1000
 MAX_SEQ_DIST = 10.0
 # similarly, lets choose a small number as the minimum to prevent numerical weirdness from giving us negative values
 MIN_SEQ_DIST = 0.0001
+# if aln_score is < - IDEN_SCORE_SCALAR_CHEAT * iden_score, then assign MAX_SEQ_DIST
+IDEN_SCORE_SCALAR_CHEAT = 0.900
 
 # use this many reads when creating MSAs for consensus sequences (chooses longest reads)
 MAX_MSA_READCOUNT = 10
@@ -121,6 +123,10 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
         is1 = sum([c1[n]*aligner.substitution_matrix[n,n] for n in c1.keys()])
         is2 = sum([c2[n]*aligner.substitution_matrix[n,n] for n in c2.keys()])
         iden_score = (is1+is2) / 2.
+    # a cheat for performance reasons:
+    # - if our aln_score is very low that almost always results in a MAX_SEQ_DIST score
+    if aln_score < -(IDEN_SCORE_SCALAR_CHEAT * iden_score):
+        return MAX_SEQ_DIST
     # rand score
     rand_scores = []
     for k in range(randshuffle):
