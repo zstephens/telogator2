@@ -685,7 +685,7 @@ def main(raw_args=None):
         print('skipping subtel cluster refinement...')
         final_clustered_read_inds = []
         for sci, (my_chr, subclust_read_inds, my_subtels) in enumerate(clusters_with_tvrs):
-            final_clustered_read_inds.append((my_chr, [n for n in subclust_read_inds], [my_subtels[n] for n in subclust_inds]))
+            final_clustered_read_inds.append((my_chr, subclust_read_inds, my_subtels))
     else:
         sys.stdout.write('refining clusters [SUBTEL]...')
         sys.stdout.flush()
