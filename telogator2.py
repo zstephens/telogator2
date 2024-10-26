@@ -78,8 +78,9 @@ def main(raw_args=None):
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--debug-telreads', required=False, action='store_true', default=False, help="[DEBUG] Stop immediately after extracting tel reads")
     parser.add_argument('--debug-progress', required=False, action='store_true', default=False, help="[DEBUG] Print progress to screen during init matrix computation")
+    parser.add_argument('--debug-dendro',   required=False, action='store_true', default=False, help="[DEBUG] Plot dendrogram during init clustering")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
-    parser.add_argument('--collapse-hom',  type=int, required=False, metavar='', default=-1,   help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
+    parser.add_argument('--collapse-hom',   type=int, required=False, metavar='', default=-1,   help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
     #
     parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
     parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
@@ -132,6 +133,7 @@ def main(raw_args=None):
     SKIP_ANCHORING       = args.debug_noanchor
     STOP_AFTER_TELREADS  = args.debug_telreads
     PRINT_INIT_PROGRESS  = args.debug_progress
+    PLOT_INIT_DENDRO     = args.debug_dendro
     PLOT_ALL_INITIAL     = args.plot_initclust
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PLOT_TEL_SIGNALS     = args.plot_signals
@@ -479,9 +481,11 @@ def main(raw_args=None):
     sys.stdout.write('initial clustering of all reads...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    init_dendrogram_fn  = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
-    init_dist_matrix_fn = OUT_CDIR_INIT + 'npz/'    + 'dist-matrix.npz'
-    init_consensus_fn   = OUT_CDIR_INIT + 'fa/'     + 'consensus.fa'
+    init_dendrogram_fn = None
+    if PLOT_INIT_DENDRO:
+        init_dendrogram_fn = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
+    init_dist_matrix_fn = OUT_CDIR_INIT + 'npz/' + 'dist-matrix.npz'
+    init_consensus_fn   = OUT_CDIR_INIT + 'fa/'  + 'consensus.fa'
     if ALWAYS_REPROCESS:
         rm(init_dist_matrix_fn)
         rm(init_consensus_fn)
