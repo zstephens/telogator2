@@ -4,8 +4,6 @@ from source.tg_kmer import get_telomere_kmer_density, get_telomere_regions
 from source.tg_plot import plot_tel_signal
 from source.tg_util import posmax
 
-MIN_TEL_SCORE = 100
-
 
 def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD, skip_negative_vals=False):
     if skip_negative_vals:
@@ -143,7 +141,8 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
 
 
 def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
-    [SIGNAL_KMERS, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH] = gtt_params
+    [SIGNAL_KMERS, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, MIN_TEL_SCORE] = gtt_params
+    window_adj = TEL_WINDOW_SIZE // 2
     #
     (td_p_e0, td_p_e1) = get_telomere_kmer_density(rdat, SIGNAL_KMERS,     TEL_WINDOW_SIZE)
     (td_q_e0, td_q_e1) = get_telomere_kmer_density(rdat, SIGNAL_KMERS_REV, TEL_WINDOW_SIZE)
@@ -152,6 +151,7 @@ def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
     my_score = []
     my_tel_len = None
     edge_nontel = 0
+    interstitial_regions = [n for n in tel_regions]
     if pq == 'p':
         if tel_regions[0][2] is None:
             edge_nontel = tel_regions[0][1] - tel_regions[0][0]
@@ -164,9 +164,10 @@ def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
             elif tel_regions[i][2] is None:
                 my_score.append(-my_s)
         cum_score = np.cumsum(my_score)
-        max_i     = posmax(cum_score)
+        max_i = posmax(cum_score)
         if cum_score[max_i] >= MIN_TEL_SCORE:
-            my_tel_len = int(tel_regions[max_i][1] + TEL_WINDOW_SIZE/2)
+            my_tel_len = int(tel_regions[max_i][1] + window_adj)
+            interstitial_regions = tel_regions[max_i:]
     elif pq == 'q':
         if tel_regions[-1][2] is None:
             edge_nontel = tel_regions[-1][1] - tel_regions[-1][0]
@@ -179,9 +180,33 @@ def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
             elif tel_regions[i][2] is None:
                 my_score.append(-my_s)
         cum_score = np.cumsum(my_score[::-1])[::-1]
-        max_i     = posmax(cum_score)
+        max_i = posmax(cum_score)
         if cum_score[max_i] >= MIN_TEL_SCORE:
-            my_tel_len = int(tel_regions[-1][1] - tel_regions[max_i][0] + TEL_WINDOW_SIZE/2)
+            my_tel_len = int(tel_regions[-1][1] - tel_regions[max_i][0] + window_adj)
+            interstitial_regions = tel_regions[:max_i]
+    #
+    # get largest interstitial telomere region
+    #
+    largest_interstitial_tel = None
+    interstitial_tels = [n for n in interstitial_regions if n[2] is not None]
+    if interstitial_tels:
+        clustered_regions = []
+        current_clust = [0]
+        for i in range(len(interstitial_tels) - 1):
+            my_size   = interstitial_tels[i][1]   - interstitial_tels[i][0]
+            next_size = interstitial_tels[i+1][1] - interstitial_tels[i+1][0]
+            our_dist  = interstitial_tels[i+1][0] - interstitial_tels[i][1]
+            if max(my_size, next_size) > our_dist:
+                current_clust.append(i+1)
+            else:
+                clustered_regions.append([n for n in current_clust])
+                current_clust = [i+1]
+        if current_clust:
+            clustered_regions.append([n for n in current_clust])
+        largest_interstitial_tel = [(interstitial_tels[min(n)][0] + window_adj, interstitial_tels[max(n)][1] + window_adj) for n in clustered_regions]
+        largest_interstitial_tel = sorted([(n[1] - n[0], n) for n in largest_interstitial_tel], reverse=True)[0][1]
+    #
+    # plot telomere signals, if desired
     #
     if telplot_dat is not None:
         (telplot_title, telplot_fn) = telplot_dat
@@ -189,8 +214,9 @@ def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
         tl_vals_to_plot = None
         if my_tel_len is not None and my_tel_len > 0:
             tl_vals_to_plot = [0, my_tel_len]
-        plot_tel_signal(density_data, telplot_title, telplot_fn, tl_vals=tl_vals_to_plot)
+        print(telplot_title, telplot_fn)
+        plot_tel_signal(density_data, telplot_title, telplot_fn, tl_vals=tl_vals_to_plot, interstitial_tels=[largest_interstitial_tel])
     #
     if my_tel_len is None or my_tel_len <= 0:
-        return (0, 0)
-    return (my_tel_len, edge_nontel)
+        return (0, 0, largest_interstitial_tel)
+    return (my_tel_len, edge_nontel, largest_interstitial_tel)

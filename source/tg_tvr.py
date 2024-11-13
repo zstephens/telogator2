@@ -172,13 +172,12 @@ def cluster_tvrs(kmer_dat,
             dendrogram_width = max(8, 0.12 * n_reads)
             dendrogram_width = min(dendrogram_width, MAX_PLOT_SIZE / DEFAULT_DPI)
             mpl.rcParams.update({'font.size': 20, 'lines.linewidth':2.0})
-            fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI)
+            fig = mpl.figure(3, figsize=(dendrogram_width,6), dpi=DEFAULT_DPI, layout="constrained")
             dendrogram(Zread, color_threshold=tree_cut)
             mpl.axhline(y=[tree_cut], linestyle='dashed', color='black', alpha=0.7)
             mpl.xlabel('read #')
             mpl.ylabel('distance')
             mpl.title(my_chr + ' : ' + str(my_pos))
-            #mpl.tight_layout() # for some reason this was using 200 dpi instead of 100 and was returning ValueErrors for figures being too large
             mpl.savefig(fig_name)
             mpl.close(fig)
         #
@@ -351,7 +350,8 @@ def cluster_consensus_tvrs(sequences,
                            dendrogram_height=12,
                            dendrogram_allblack=False,
                            dendrogram_xlim=None,
-                           overwrite_figures=True):
+                           overwrite_figures=True,
+                           print_matrix_progress=False):
     #
     n_seq = len(sequences)
     #
@@ -374,7 +374,7 @@ def cluster_consensus_tvrs(sequences,
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='consensus')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=gap_bool, which_type='tvr')
-        dist_matrix = get_dist_matrix_parallel(sequences, aligner, adjust_lens, False, rand_shuffle_count, max_running=num_processes)
+        dist_matrix = get_dist_matrix_parallel(sequences, aligner, adjust_lens, False, rand_shuffle_count, max_running=num_processes, print_progress=print_matrix_progress)
         if normalize_dist_matrix:
             dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
@@ -394,7 +394,9 @@ def cluster_consensus_tvrs(sequences,
             Zread[:,2] /= max_distance # normalize linkage distances so that dendrogram height is 1.
         #
         mpl.rcParams.update({'font.size': 16, 'font.weight':'bold'})
-        fig = mpl.figure(figsize=(8,dendrogram_height))
+        #
+        dendrogram_height = min(dendrogram_height, MAX_PLOT_SIZE / DEFAULT_DPI)
+        fig = mpl.figure(figsize=(8,dendrogram_height), dpi=DEFAULT_DPI, layout="constrained")
         dendro_dat = dendrogram(Zread, orientation='left', labels=samp_labels, color_threshold=tree_cut)
         labels_fromtop = dendro_dat['ivl'][::-1]
         # ugliness to keep dendrogram ordering consistent with other figures
@@ -414,7 +416,7 @@ def cluster_consensus_tvrs(sequences,
         mpl.xlabel('distance')
         if dendrogram_title is not None:
             mpl.title(dendrogram_title)
-        mpl.tight_layout()
+        #
         if dendro_name is not None and (exists_and_is_nonzero(dendro_name) is False or overwrite_figures is True):
             mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
         mpl.close(fig)

@@ -12,7 +12,7 @@ import time
 
 from source.tg_align  import get_nucl_consensus, MAX_MSA_READCOUNT, quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
-from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
+from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
@@ -20,6 +20,8 @@ from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_e
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
+MIN_TEL_SCORE = 100
+#
 DUMMY_TEL_MAPQ = 60
 # only compare up to this much tvr / subtel sequence for clustering
 TVR_TRUNCATE_INIT = 1500
@@ -71,6 +73,7 @@ def main(raw_args=None):
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="[DEBUG] Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-initclust', required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during initial clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
+    parser.add_argument('--plot-fusions',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel fusions for all reads")
     parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
     parser.add_argument('--debug-replot',   required=False, action='store_true', default=False, help="[DEBUG] Regenerate plots that already exist")
     parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
@@ -137,11 +140,15 @@ def main(raw_args=None):
     PLOT_ALL_INITIAL     = args.plot_initclust
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PLOT_TEL_SIGNALS     = args.plot_signals
+    PLOT_TEL_FUSIONS     = args.plot_fusions
     FILT_TERM_TEL        = args.filt_tel         # reads must terminate in at least this much tel sequence
     FILT_TERM_NONTEL     = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
     FILT_TERM_SUBTEL     = args.filt_sub         # reads must terminate in at least this much subtel sequence
     FAST_ALIGNMENT       = args.fast_aln
     COLLAPSE_HOM_BP      = args.collapse_hom
+
+    MIN_INTERSTITIAL_TL = 100
+    MIN_FUSION_ANCHOR = 1000
 
     # check input
     #
@@ -198,16 +205,19 @@ def main(raw_args=None):
         makedir(d + 'npz/')
         makedir(d + 'results/')
     makedir(OUT_CDIR_COL)
+
+    # optional dirs
     if COLLAPSE_HOM_BP > 0:
         makedir(OUT_CDIR_COL2)
     TEL_SIGNAL_DIR = OUT_DIR + 'tel_signal/'
     if PLOT_TEL_SIGNALS:
         makedir(TEL_SIGNAL_DIR)
-    UNCOMPRESSED_TELOGATOR_REF = OUT_CLUST_DIR + 'telogator-ref.fa'
+    TEL_FUSION_DIR = OUT_DIR + 'tel_fusion/'
+    if PLOT_TEL_FUSIONS:
+        makedir(TEL_FUSION_DIR)
 
     TELOMERE_READS = OUT_CLUST_DIR + 'tel_reads.fa.gz'
     OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
-    ####OUT_PICKLE_UNANCHORED = OUT_CLUST_DIR + 'unanchored-dat.p'
     OUT_UNANCHORED_SUBTELS = OUT_CLUST_DIR + 'unanchored_subtels.fa.gz'
     ALIGNED_SUBTELS = OUT_CLUST_DIR + 'subtel_aln'
     VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
@@ -217,6 +227,7 @@ def main(raw_args=None):
     QC_CMD     = OUT_QC_DIR + 'cmd.txt'
     QC_STATS   = OUT_QC_DIR + 'stats.txt'
     QC_RNG     = OUT_QC_DIR + 'rng.txt'
+    UNCOMPRESSED_TELOGATOR_REF = OUT_CLUST_DIR + 'telogator-ref.fa'
 
     # rng
     if RNG_SEED <= -1:
@@ -389,12 +400,20 @@ def main(raw_args=None):
     kmer_hit_dat = []
     all_terminating_tl = []
     all_nontel_end = []
-    gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH]
     num_starting_reads = len(all_read_dat)
     tel_signal_plot_num = 0
     reads_removed_term_tel = 0
     reads_removed_term_unk = 0
     reads_removed_term_sub = 0
+    interstitial_subtels = []
+    interstitial_khd_by_readname = {}
+    interstitial_khd_rev_by_readname = {}
+    #
+    gtt_min_tel_score = MIN_TEL_SCORE
+    if FILT_TERM_TEL > 0:
+        gtt_min_tel_score = min(FILT_TERM_TEL, MIN_TEL_SCORE)
+    gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, gtt_min_tel_score]
+    #
     for (my_rnm, my_rdat, my_qdat) in all_read_dat:
         tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
         tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
@@ -410,10 +429,21 @@ def main(raw_args=None):
             tel_signal_plot_dat = None
         # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
         # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
-        (my_terminating_tel, my_nontel_end) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
+        (my_terminating_tel, my_nontel_end, interstitial_tel) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
         # some paranoid bounds checking
         my_terminating_tel = min(my_terminating_tel, len(my_rdat))
         my_nontel_end = min(my_nontel_end, len(my_rdat))
+        #
+        if my_terminating_tel == 0 and interstitial_tel is not None and interstitial_tel[1] - interstitial_tel[0] >= MIN_INTERSTITIAL_TL:
+            isubtel_left  = my_rdat[:interstitial_tel[0]]
+            isubtel_right = my_rdat[interstitial_tel[1]:]
+            if len(isubtel_left) >= MIN_FUSION_ANCHOR and len(isubtel_right) >= MIN_FUSION_ANCHOR:
+                interstitial_subtels.append((f'interstitial-left_{len(my_rdat)}_{my_rnm}', isubtel_left))
+                interstitial_subtels.append((f'interstitial-right_{len(my_rdat)}_{my_rnm}', isubtel_right))
+                interstitial_khd_by_readname[my_rnm] = [get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST, KMER_ISSUBSTRING),
+                                                        len(my_rdat), 0, 'q', my_rnm.split(' ')[0], DUMMY_TEL_MAPQ, my_rdat]
+                interstitial_khd_rev_by_readname[my_rnm] = [get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST_REV, KMER_ISSUBSTRING),
+                                                            len(my_rdat), 0, 'q', my_rnm.split(' ')[0], DUMMY_TEL_MAPQ, my_rdat]
         #
         if FILT_TERM_TEL > 0 and my_terminating_tel < FILT_TERM_TEL:
             reads_removed_term_tel += 1
@@ -431,13 +461,16 @@ def main(raw_args=None):
         if len(my_teltvr_seq) == 0:
             my_teltvr_seq = my_rdat
         #
+        # a lot of these fields in kmer_hit_dat are holdovers from telogator1
+        # and no longer used, but still need to be populated with values.
+        #
         kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
                              len(my_teltvr_seq),   # atb, lets pretend entire read is tel
                              0,                    # my_dbta
                              'q',                  # my_type
                              my_rnm.split(' ')[0], # my_rnm
                              DUMMY_TEL_MAPQ,       # my_mapq
-                             my_rdat])             # read fasta
+                             my_rdat])             # read sequence
         all_terminating_tl.append(my_terminating_tel)
         all_nontel_end.append(my_nontel_end)
     #
@@ -969,6 +1002,9 @@ def main(raw_args=None):
             for n in subtels_out:
                 if len(n[1]) > 0:
                     f.write(f'>{n[0]}\n{n[1]}\n')
+            for n in interstitial_subtels:
+                if len(n[1]) > 0:
+                    f.write(f'>{n[0]}\n{n[1]}\n')
         #
         aln_log = ALIGNED_SUBTELS + '.log'
         aln_sam = ALIGNED_SUBTELS + '.sam'
@@ -1063,24 +1099,80 @@ def main(raw_args=None):
         #
         top_alns_by_cluster = {}
         best_mapq_by_readname = {}
+        interstial_anchors = {}
         for readname in ALIGNMENTS_BY_RNAME:
-            original_readname = '_'.join(readname.split('_')[2:])
-            sorted_choices = []
-            for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
-                dist_to_end = len(aln[7]) - max(aln[0], aln[1])
-                read_span = abs(aln[1] - aln[0])
-                my_mapq = aln[6]
-                sorted_choices.append((read_span, my_mapq, -dist_to_end, i))
-                if original_readname not in best_mapq_by_readname:
-                    best_mapq_by_readname[original_readname] = my_mapq
-                elif my_mapq > best_mapq_by_readname[original_readname]:
-                    best_mapq_by_readname[original_readname] = my_mapq
-            sorted_choices = sorted(sorted_choices, reverse=True)
-            top_i = sorted_choices[0][3]
-            my_cluster = int(readname.split('_')[0][8:])
-            if my_cluster not in top_alns_by_cluster:
-                top_alns_by_cluster[my_cluster] = []
-            top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
+            #
+            # parse interstitial telomere region anchors (possible fusions)
+            #
+            if readname[:12] == 'interstitial':
+                original_readname = '_'.join(readname.split('_')[2:])
+                original_readlen = int(readname.split('_')[1])
+                if original_readname not in interstial_anchors:
+                    interstial_anchors[original_readname] = [None, None]
+                sorted_choices = []
+                #print(readname)
+                for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
+                    my_refbuild = aln[2]
+                    if my_refbuild == '*':
+                        continue
+                    # check for known interstitial regions
+                    my_refpos = None
+                    l_vs_r = None
+                    if readname[:17] == 'interstitial-left':
+                        l_vs_r = 0
+                        my_refpos = aln[4]
+                    elif readname[:18] == 'interstitial-right':
+                        l_vs_r = 1
+                        my_refpos = aln[3]
+                    #print(aln[:7], annotate_interstitial_tel(my_refbuild, my_refpos))
+                    if annotate_interstitial_tel(my_refbuild, my_refpos) is False:
+                        read_span = abs(aln[1] - aln[0])
+                        my_mapq = aln[6]
+                        sorted_choices.append((my_mapq, read_span, (len(aln[7]), original_readlen), l_vs_r,
+                                               my_refbuild, my_refpos, copy.deepcopy(aln[:7]))) # sorting first by mapq, then by span
+                if sorted_choices:
+                    sorted_choices = sorted(sorted_choices, reverse=True)
+                    top_choice = sorted_choices[0]
+                    interstial_anchors[original_readname][top_choice[3]] = top_choice
+            #
+            # parse subtel anchors
+            #
+            elif readname[:7] == 'cluster':
+                original_readname = '_'.join(readname.split('_')[2:])
+                sorted_choices = []
+                for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
+                    dist_to_end = len(aln[7]) - max(aln[0], aln[1])
+                    read_span = abs(aln[1] - aln[0])
+                    my_mapq = aln[6]
+                    sorted_choices.append((read_span, my_mapq, -dist_to_end, i)) # sorting first by span, then by mapq
+                    if original_readname not in best_mapq_by_readname:
+                        best_mapq_by_readname[original_readname] = my_mapq
+                    elif my_mapq > best_mapq_by_readname[original_readname]:
+                        best_mapq_by_readname[original_readname] = my_mapq
+                sorted_choices = sorted(sorted_choices, reverse=True)
+                top_i = sorted_choices[0][3]
+                my_cluster = int(readname.split('_')[0][8:])
+                if my_cluster not in top_alns_by_cluster:
+                    top_alns_by_cluster[my_cluster] = []
+                top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
+        #
+        # annotate possible tel fusions
+        #
+        tel_fusion_plot_num = 0
+        for readname,anchor_dat in interstial_anchors.items():
+            if anchor_dat[0] is not None and anchor_dat[1] is not None:
+                # require both anchors have mapq > 0
+                if anchor_dat[0][0] > 0 and anchor_dat[1][0] > 0:
+                    #print(readname, readname in interstitial_khd_by_readname)
+                    #print(anchor_dat[0])
+                    #print(anchor_dat[1])
+                    if PLOT_TEL_FUSIONS:
+                        plot_fn = TEL_FUSION_DIR + 'fusion_' + str(tel_fusion_plot_num).zfill(5) + '.png'
+                        khd_tuple = (interstitial_khd_by_readname[readname], interstitial_khd_rev_by_readname[readname])
+                        plot_fusion(readname, anchor_dat[0], anchor_dat[1], khd_tuple, KMER_METADATA, plot_fn)
+                    tel_fusion_plot_num += 1
+        #
+        # subtel assignment
         #
         for clustnum in sorted(top_alns_by_cluster.keys()):
             chr_arm_scores = {}

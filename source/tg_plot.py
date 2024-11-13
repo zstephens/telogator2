@@ -59,7 +59,7 @@ def get_read_alignment_polygons(alignments, readlen):
     return (polygons, p_color, p_alpha, p_text, axis_val)
 
 
-def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, plot_for_paper=False):
+def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, interstitial_tels=[], plot_for_paper=False):
     #
     [td_p_e0, td_p_e1, td_q_e0, td_q_e1, p_vs_q_power, rlen, tel_window] = density_data
     #
@@ -118,30 +118,33 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, plot_for_pape
     mpl.yticks(pred_yt, pred_yl)
     mpl.ylim([-1.0, 1.0])
     #
+    polygons = []
+    p_color  = []
+    p_alpha  = []
+    yp = [-1, 1]
     if tl_vals is not None:
         [tl_p, tl_q] = tl_vals
-        polygons = []
-        p_color  = []
-        p_alpha  = []
         if tl_p > 0:
             xp = [0, tl_p]
-            yp = [-1, 1]
             polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
             p_color.append('red')
             p_alpha.append(0.5)
         if tl_q > 0:
             xp = [rlen - tl_q, rlen]
-            yp = [-1, 1]
             polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
             p_color.append('red')
             p_alpha.append(0.5)
-        if len(polygons):
-            ax = mpl.gca()
-            for i in range(len(polygons)):
-                ax.add_collection(PatchCollection([polygons[i]], color=p_color[i], alpha=p_alpha[i]))
+    for xp in interstitial_tels:
+        if xp is not None:
+            polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
+            p_color.append('purple')
+            p_alpha.append(0.5)
+    if len(polygons):
+        ax = mpl.gca()
+        for i in range(len(polygons)):
+            ax.add_collection(PatchCollection([polygons[i]], color=p_color[i], alpha=p_alpha[i]))
     #
     mpl.xlabel('read position')
-    #
     mpl.tight_layout()
     mpl.savefig(fig_name)
     mpl.close(fig)
@@ -176,7 +179,9 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
     X_STEP = stock_params['xstep']
     xlim   = stock_params['xlim']
     #
-    mpl.rcParams.update({'font.size':stock_params['font.size'], 'font.weight':stock_params['font.weight'], 'lines.linewidth':1.0})
+    mpl.rcParams.update({'font.size':stock_params['font.size'],
+                         'font.weight':stock_params['font.weight'],
+                         'lines.linewidth':1.0})
     #
     if clust_dat is None:
         read_clusters      = [list(range(n_reads))]
@@ -192,8 +197,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
     # plotting
     #
     vert_fig_size = max(3, total_rows_to_plot * 0.35)
-    vert_fig_size = min(vert_fig_size, (MAX_PLOT_SIZE / stock_params['dpi']) / 2)
-    ####print('[debug:], requesting vert_fig_size:', vert_fig_size, 'with dpi:', stock_params['dpi'])
+    vert_fig_size = min(vert_fig_size, MAX_PLOT_SIZE / stock_params['dpi'])
     if stock_params['fig_height'] is not None:
         vert_fig_size = stock_params['fig_height']
     #
@@ -218,7 +222,9 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             xtt = [n for n in range(0,max_tlen,X_STEP)]
             xtl = [n for n in range(0,max_tlen,X_STEP)]
     #
-    fig = mpl.figure(stock_params['mpl_fignum'], figsize=(stock_params['fig_width'],vert_fig_size), dpi=stock_params['dpi'])
+    fig = mpl.figure(stock_params['mpl_fignum'], figsize=(stock_params['fig_width'],vert_fig_size), dpi=stock_params['dpi'], layout="constrained")
+    fig.get_layout_engine().set(h_pad=0.0, hspace=0.0)
+    #
     reads_plotted_thus_far = 0
     for clust_i in range(len(read_clusters)):
         for i in range(len(read_clusters[clust_i])):
@@ -229,7 +235,11 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             if plot_i == 0:
                 ax1 = mpl.subplot(total_rows_to_plot, 1, plot_i+1)
                 if n_reads > 1:
-                    mpl.setp(ax1.get_xticklabels(), visible=False)
+                    for tick in ax1.xaxis.get_major_ticks():
+                        tick.tick1line.set_visible(False)
+                        tick.tick2line.set_visible(False)
+                        tick.label1.set_visible(False)
+                        tick.label2.set_visible(False)
                 if which_tel == 'p':
                     ax1.yaxis.set_label_position("right")
                     ax1.yaxis.tick_right()
@@ -244,35 +254,18 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             else:
                 ax2 = mpl.subplot(total_rows_to_plot, 1, plot_i+1, sharex=ax1)
                 if plot_i < total_rows_to_plot-1:
-                    mpl.setp(ax2.get_xticklabels(), visible=False)
+                    for tick in ax2.xaxis.get_major_ticks():
+                        tick.tick1line.set_visible(False)
+                        tick.tick2line.set_visible(False)
+                        tick.label1.set_visible(False)
+                        tick.label2.set_visible(False)
                 if which_tel == 'p':
                     ax2.yaxis.set_label_position("right")
                     ax2.yaxis.tick_right()
                 current_ax = ax2
             #
-            for ki in range(len(my_kmer_hits)):
-                if len(my_kmer_hits[ki]):
-                    if which_tel == 'p':
-                        if xlim is not None:
-                            adj = xlim[1]  - my_tlen - msa_adj + x_axis_adj + xlim[0]
-                        else:
-                            adj = max_tlen - my_tlen - msa_adj + x_axis_adj
-                    else:
-                        adj = 0 + msa_adj - x_axis_adj
-                    polygons = []
-                    p_color  = []
-                    p_alpha  = []
-                    for kmer_span in my_kmer_hits[ki]:
-                        xp = [kmer_span[0]+adj, kmer_span[1]+adj]
-                        yp = [-1, 1]
-                        polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
-                        #polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
-                        p_color.append(kmer_colors[ki])
-                        p_alpha.append(0.8)
-                    #
-                    ax = mpl.gca()
-                    for j in range(len(polygons)):
-                        ax.add_collection(PatchCollection([polygons[j]], color=p_color[j], alpha=p_alpha[j], linewidth=0))
+            my_adj_params = [my_tlen, max_tlen, msa_adj, x_axis_adj]
+            plot_kmer_hits_on_current_plot(my_kmer_hits, kmer_colors, my_adj_params, which_tel=which_tel, xlim=xlim)
             #
             if draw_boundaries is not None:
                 if which_tel == 'p':
@@ -282,7 +275,6 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
                         draw_x = max_tlen - draw_boundaries[clust_i] + x_axis_adj
                 else:
                     draw_x = draw_boundaries[clust_i] - x_axis_adj
-                #mpl.plot([draw_x, draw_x], [-1,1], '-k', linewidth=3)
                 current_ax.add_line(lines.Line2D([draw_x, draw_x], [1.0,1.5], color='black', linewidth=3, clip_on=False))
 
             #
@@ -306,8 +298,99 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
         mpl.xlabel('distance from subtelomere boundary (bp)')
     else:
         mpl.xlabel(stock_params['custom_xlabel'])
+    #
+    mpl.savefig(fig_name)
+    mpl.close(fig)
+
+
+def plot_kmer_hits_on_current_plot(kmer_hits, kmer_colors, adj_params, which_tel='q', xlim=None):
+    [my_tlen, max_tlen, msa_adj, x_axis_adj] = adj_params
+    for ki in range(len(kmer_hits)):
+        if len(kmer_hits[ki]):
+            if which_tel == 'p':
+                if xlim is not None:
+                    adj = xlim[1]  - my_tlen - msa_adj + x_axis_adj + xlim[0]
+                else:
+                    adj = max_tlen - my_tlen - msa_adj + x_axis_adj
+            else:
+                adj = 0 + msa_adj - x_axis_adj
+            polygons = []
+            p_color  = []
+            p_alpha  = []
+            for kmer_span in kmer_hits[ki]:
+                xp = [kmer_span[0]+adj, kmer_span[1]+adj]
+                yp = [-1, 1]
+                polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],yp[1]], [xp[1],yp[0]]]), closed=True))
+                #polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+                p_color.append(kmer_colors[ki])
+                p_alpha.append(0.8)
+            #
+            ax = mpl.gca()
+            for j in range(len(polygons)):
+                ax.add_collection(PatchCollection([polygons[j]], color=p_color[j], alpha=p_alpha[j], linewidth=0))
+
+
+def plot_fusion(readname, anchordat1, anchordat2, kmer_dat_tuple, kmer_metadata, fig_name):
+    (kmer_dat_fwd, kmer_dat_rev) = kmer_dat_tuple
+    [my_kmer_hits_fwd, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat_fwd
+    [my_kmer_hits_rev, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat_rev
+    [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = kmer_metadata
+    my_adj_params = [my_tlen, my_tlen, 0, 0]
+    #
+    mpl.rcParams.update({'font.size':12,
+                         'font.weight':'normal',
+                         'lines.linewidth':1.0})
+    #
+    polygons = []
+    p_color  = []
+    p_alpha  = []
+    p_text   = []
+    [rspan_start, rspan_end, refname, refspan_start, refspan_end, orientation, mapq] = anchordat1[6]
+    my_chr = refname.split('_')[-1]
+    xp = [rspan_start, rspan_end]
+    yp = [-1, 1]
+    polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+    p_color.append('purple')
+    p_alpha.append(float(mapq + 15) / (60 + 15))
+    p_text.append((xp[0], -0.05, f'{my_chr}:{refspan_start}-{refspan_end}'))
+    #
+    [rspan_start, rspan_end, refname, refspan_start, refspan_end, orientation, mapq] = anchordat2[6]
+    my_chr = refname.split('_')[-1]
+    offset_rightread = my_tlen - anchordat2[2][0]
+    xp = [rspan_start + offset_rightread, rspan_end + offset_rightread]
+    yp = [-1, 1]
+    polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+    p_color.append('purple')
+    p_alpha.append(float(mapq + 15) / (60 + 15))
+    p_text.append((xp[0], -0.05, f'{my_chr}:{refspan_start}-{refspan_end}'))
+    #
+    fig = mpl.figure(1, figsize=(16,4), dpi=200)
+    ax1 = mpl.subplot(311)
+    for i in range(len(polygons)):
+        ax1.add_collection(PatchCollection([polygons[i]], color=p_color[i], alpha=p_alpha[i], linewidth=0))
+    for i in range(len(p_text)):
+        mpl.text(p_text[i][0], p_text[i][1], p_text[i][2], ha='left', fontsize=9)
+    mpl.title(readname)
+    mpl.xticks([],[])
+    mpl.yticks([],[])
+    mpl.xlim([0, my_tlen])
+    mpl.ylim([-1,1])
+    #
+    mpl.subplot(312)
+    plot_kmer_hits_on_current_plot(my_kmer_hits_fwd, KMER_COLORS, my_adj_params)
+    mpl.xticks([],[])
+    mpl.yticks([],[])
+    mpl.xlim([0, my_tlen])
+    mpl.ylim([-1,1])
+    #
+    mpl.subplot(313)
+    plot_kmer_hits_on_current_plot(my_kmer_hits_rev, KMER_COLORS, my_adj_params)
+    mpl.xlim([0, my_tlen])
+    mpl.yticks([],[])
+    mpl.ylim([-1,1])
+    mpl.xlabel('read coordinate')
+    #
     mpl.tight_layout()
-    mpl.subplots_adjust(hspace=0.0)
     mpl.savefig(fig_name)
     mpl.close(fig)
 
@@ -789,12 +872,12 @@ def convert_colorvec_to_kmerhits(colorvecs, repeats_metadata):
     return out_kmerhits
 
 
-def plot_some_tvrs(tvrs, labels, repeats_metadata, plot_fn, custom_plot_params={}):
+def plot_some_tvrs(tvrs, labels, kmer_metadata, plot_fn, custom_plot_params={}):
     #
-    # helper function for quickly plotting a set of tvrs (assumes Q orientation)
+    # helper function for quickly plotting a set of tvrs (assumes 'q' orientation)
     #
-    [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = repeats_metadata
-    redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs, repeats_metadata)
+    [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = kmer_metadata
+    redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs, kmer_metadata)
     clust_khd = []
     for i in range(len(redrawn_tvrs)):
         clust_khd.append([redrawn_tvrs[i], len(tvrs[i]), 0, 'FWD', labels[i], 60, None])
