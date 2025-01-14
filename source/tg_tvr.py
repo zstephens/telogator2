@@ -342,6 +342,7 @@ def cluster_consensus_tvrs(sequences,
                            aln_mode='ms',
                            gap_bool=(True,True),
                            adjust_lens=False,
+                           tvr_truncate=-1,
                            rand_shuffle_count=3,
                            linkage_method='complete',
                            normalize_dist_matrix=True,
@@ -374,7 +375,10 @@ def cluster_consensus_tvrs(sequences,
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='consensus')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=gap_bool, which_type='tvr')
-        dist_matrix = get_dist_matrix_parallel(sequences, aligner, adjust_lens, False, rand_shuffle_count, max_running=num_processes, print_progress=print_matrix_progress)
+        sequences_for_dist = sequences
+        if tvr_truncate > 0:
+            sequences_for_dist = [n[:tvr_truncate] for n in sequences]
+        dist_matrix = get_dist_matrix_parallel(sequences_for_dist, aligner, adjust_lens, False, rand_shuffle_count, max_running=num_processes, print_progress=print_matrix_progress)
         if normalize_dist_matrix:
             dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:

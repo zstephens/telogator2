@@ -101,3 +101,16 @@ The reference sequence used for telomere anchoring currently contains the first 
 * `T2T-i002c` - https://github.com/LHG-GG/I002C
 
 More will be added as they become available.
+
+## Mouse reference
+
+Experimental support has been added for the [T2T-mouse genome](https://github.com/yulab-ql/mhaESC_genome):
+
+```bash
+python telogator2.py -i input.fq \ 
+                     -o results/ \ 
+                     -t resources/telogator-ref-mouse.fa.gz \ 
+                     --minimap2 /path/to/minimap2
+```
+
+Note that if you choose winnowmap as the aligner that you will also need to add `--winnowmap-k15 resources/telogator-ref-mouse-k15.txt`.

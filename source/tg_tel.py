@@ -109,7 +109,7 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
             splt = line.strip().split('\t')
             my_chr = splt[0].split(',')[0]
             #my_pos = int(splt[1].split(',')[0])
-            #my_t2t = splt[2].split(',')[0]
+            my_refbuild = splt[2].split(',')[0]
             my_aid = splt[3]
             if my_aid[-1] == 'i':
                 fail_dict['interstitial'] += 1
@@ -136,7 +136,7 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
                 fail_dict['min_reads'] += 1
                 continue
             consensus_tl = int(splt[4])
-            out_dat.append((my_chr, my_aid, allele_tls, consensus_tl, my_tvr))
+            out_dat.append((my_chr, my_refbuild, my_aid, allele_tls, consensus_tl, my_tvr))
     return out_dat, fail_dict
 
 

@@ -85,11 +85,12 @@ def main(raw_args=None):
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     parser.add_argument('--collapse-hom',   type=int, required=False, metavar='', default=-1,   help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
     #
-    parser.add_argument('--minimap2',  type=str, required=False, metavar='exe',    default='', help="/path/to/minimap2")
-    parser.add_argument('--winnowmap', type=str, required=False, metavar='exe',    default='', help="/path/to/winnowmap")
-    parser.add_argument('--pbmm2',     type=str, required=False, metavar='exe',    default='', help="/path/to/pbmm2")
-    parser.add_argument('--ref',       type=str, required=False, metavar='ref.fa', default='', help="Reference filename (only needed if input is cram)")
-    parser.add_argument('--rng',       type=int, required=False, metavar='-1',     default=-1, help="RNG seed value")
+    parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='', help="/path/to/minimap2")
+    parser.add_argument('--pbmm2',         type=str, required=False, metavar='exe',     default='', help="/path/to/pbmm2")
+    parser.add_argument('--winnowmap',     type=str, required=False, metavar='exe',     default='', help="/path/to/winnowmap")
+    parser.add_argument('--winnowmap-k15', type=str, required=False, metavar='k15.txt', default='', help="high freq kmers file (only needed for winnowmap)")
+    parser.add_argument('--ref',           type=str, required=False, metavar='ref.fa',  default='', help="Reference filename (only needed if input is cram)")
+    parser.add_argument('--rng',           type=int, required=False, metavar='-1',      default=-1, help="RNG seed value")
     #
     args = parser.parse_args()
     #
@@ -125,6 +126,7 @@ def main(raw_args=None):
     #
     MINIMAP2_EXE  = args.minimap2
     WINNOWMAP_EXE = args.winnowmap
+    WINNOWMAP_K15 = args.winnowmap_k15
     PBMM2_EXE     = args.pbmm2
 
     # debug params
@@ -271,7 +273,6 @@ def main(raw_args=None):
     #
     # reference seq
     #
-    WINNOWMAP_K15 = None
     if TELOGATOR_REF != '':
         fn_suffix = TELOGATOR_REF.split('/')[-1]
         print('using user-specified subtel reference:', fn_suffix)
@@ -280,6 +281,9 @@ def main(raw_args=None):
         sim_path  = pathlib.Path(__file__).resolve().parent
         TELOGATOR_REF = str(sim_path) + '/resources/telogator-ref.fa.gz'
         WINNOWMAP_K15 = str(sim_path) + '/resources/telogator-ref-k15.txt'
+    if WHICH_ALIGNER == 'winnowmap' and WINNOWMAP_K15 == '':
+        print('Error: winnowmap was chosen as aligner but no --winnowmap-k15 was provided.')
+        exit(1)
 
     #
     # parse telomere kmer data
@@ -1313,6 +1317,8 @@ def main(raw_args=None):
             my_tvr_len = int(atd[8])
             if my_chr in [fake_chr, blank_chr, unclust_chr]:
                 my_chr = 'unanchored'
+            if 'i' in atd[3]:
+                continue # don't include interstitial alleles in violin
             for i in range(len(atl_by_arm)):
                 if my_chr not in atl_by_arm[i]:
                     atl_by_arm[i][my_chr] = [my_tvr_len + int(n) for n in atd[5].split(',')]

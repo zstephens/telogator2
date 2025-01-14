@@ -349,7 +349,10 @@ def plot_fusion(readname, anchordat1, anchordat2, kmer_dat_tuple, kmer_metadata,
     my_chr = refname.split('_')[-1]
     xp = [rspan_start, rspan_end]
     yp = [-1, 1]
-    polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+    if refspan_end > refspan_start:
+        polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+    else:
+        polygons.append(Polygon(np.array([[xp[1],yp[0]], [xp[1],yp[1]], [xp[0],(yp[0]+yp[1])/2.0]]), closed=True))
     p_color.append('purple')
     p_alpha.append(float(mapq + 15) / (60 + 15))
     p_text.append((xp[0], -0.05, f'{my_chr}:{refspan_start}-{refspan_end}'))
@@ -359,7 +362,10 @@ def plot_fusion(readname, anchordat1, anchordat2, kmer_dat_tuple, kmer_metadata,
     offset_rightread = my_tlen - anchordat2[2][0]
     xp = [rspan_start + offset_rightread, rspan_end + offset_rightread]
     yp = [-1, 1]
-    polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+    if refspan_end > refspan_start:
+        polygons.append(Polygon(np.array([[xp[0],yp[0]], [xp[0],yp[1]], [xp[1],(yp[0]+yp[1])/2.0]]), closed=True))
+    else:
+        polygons.append(Polygon(np.array([[xp[1],yp[0]], [xp[1],yp[1]], [xp[0],(yp[0]+yp[1])/2.0]]), closed=True))
     p_color.append('purple')
     p_alpha.append(float(mapq + 15) / (60 + 15))
     p_text.append((xp[0], -0.05, f'{my_chr}:{refspan_start}-{refspan_end}'))
