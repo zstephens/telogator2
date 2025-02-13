@@ -52,15 +52,20 @@ Telogator2 may be unable to analyze older Nanopore data, as reads basecalled wit
 
 ## Test data
 
-Telomere reads for HG002 can be found in the `test_data/` directory.
+Telomere reads for HG002 can be found in the `test_data/` directory. These are full-sized datasets and may take several hours to run.
 
 ```
 HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
 ONT reads  (~25x): hg002-telreads_ont.fa.gz
 ```
 
-These are full-sized datasets and may take awhile to run. A smaller input dataset (e.g. for just checking that Telogator2 successfully runs) is also provided: `test_data/test.fa.gz`.
+A smaller dataset is also provided, which should take no more than a couple minutes to complete:
 
+```bash
+python telogator2.py -i test_data/hg002-ont-1p.fa.gz \ 
+                     -o results/ \ 
+                     -r ont
+```
 
 
 ## Output files

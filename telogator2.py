@@ -60,7 +60,7 @@ def main(raw_args=None):
     #
     parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] initial TVR clustering")
     parser.add_argument('-tt', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] cluster refinement [TVR]")
-    parser.add_argument('-ts', type=float, required=False, metavar='0.100', default=0.100, help="[TREECUT] cluster refinement [SUBTEL]")
+    parser.add_argument('-ts', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] cluster refinement [SUBTEL]")
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
@@ -1236,10 +1236,10 @@ def main(raw_args=None):
         sys.stdout.flush()
 
         #
-        # resort out allele dat by chr & pos
+        # resort out allele dat by chr & atl & pos
         #
-        sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
-        ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[3]] for n in sorted_ad_inds]
+        sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], -1 * int(n[4]), int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
+        ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[4]] for n in sorted_ad_inds]
 
     #
     # collapse homozygous alleles

@@ -388,9 +388,8 @@ def check_aligner_exe(fn):
 
 
 def exists_and_is_nonzero(fn):
-    if os.path.isfile(fn):
-        if os.path.getsize(fn) > 0:
-            return True
+    if os.path.isfile(fn) and os.path.getsize(fn) > 0:
+        return True
     return False
 
 
@@ -437,8 +436,7 @@ def get_file_type(fn):
             file_type = FILE_SUFFIX[k]
             break
     if file_type is None:
-        print('Error: unknown file suffix, cannot determine input type:')
-        print(fn)
+        print(f'Error: unknown file suffix, cannot determine input type: {fn}')
         exit(1)
     is_gzipped = (fnl[-3:] == '.gz')
     return (file_type, is_gzipped)
