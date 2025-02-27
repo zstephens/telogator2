@@ -211,7 +211,8 @@ def progressive_alignment(sequences, distance_matrix, aligner, num_processes=1):
     if n_sequences <= 0:
         print('Error: progressive_alignment() received empty alignment')
         exit(1)
-    if n_sequences == 1:
+    # we need at least 3 sequences to do anything meaningful
+    if n_sequences < 3:
         return sequences
     # find the two closest sequences
     min_distance = float('inf')
@@ -268,7 +269,8 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
     if n_sequences <= 0:
         print('Error: iterative_refinement() received empty alignment')
         exit(1)
-    if n_sequences == 1:
+    # we need at least 3 sequences to do anything meaningful
+    if n_sequences < 3:
         return initial_alignment
     current_alignment = initial_alignment
     current_score = sum(score_against_profile(seq, create_profile(current_alignment)) for seq in current_alignment)
@@ -306,7 +308,8 @@ def get_final_tvr_consensus(aligned, default_char=None, min_coverage=3, max_gap_
     if n_sequences <= 0:
         print('Error: get_final_tvr_consensus() received empty alignment')
         exit(1)
-    if n_sequences == 1:
+    # not enough sequences present, just pretend the first one is the consensus
+    if n_sequences < min_coverage:
         return aligned_rstrip[0]
     consensus = []
     for col in zip_longest(*aligned_rstrip, fillvalue=' '):

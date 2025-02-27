@@ -767,6 +767,8 @@ def main(raw_args=None):
                         # only use MAX_MSA_READCOUNT for creating the subtel consensus (choosing the longest sequences)
                         clustered_subtels = [n[1] for n in sorted([(len(my_subtels[n]), my_subtels[n]) for n in subclust_inds], reverse=True)[:MAX_MSA_READCOUNT]]
                         subtel_consensus_seq = get_nucl_consensus(clustered_subtels)
+                        subtel_consensus_prune = max(len(subtel_consensus_seq) - SUBTEL_TRUNCATE, 0)
+                        subtel_consensus_seq = subtel_consensus_seq[subtel_consensus_prune:]
                         zfcn_s = str(sci_s).zfill(3)
                         f.write(f'>subtel-consensus_{zfcn}_{zfcn_s}\n')
                         f.write(f'{subtel_consensus_seq}\n')
@@ -861,6 +863,9 @@ def main(raw_args=None):
                 f.write(f'>subtel-blank_{seq_i}\n{seq}\n')
         if ALWAYS_REPROCESS:
             rm(collapse_dist_fn)
+        for n in subs_to_compare:
+            print('RAWR', len(n))
+        print()
         clust3 = cluster_consensus_tvrs(subs_to_compare, KMER_METADATA, COLLAPSE_SUB_THRESH,
                                         dist_in=collapse_dist_fn,
                                         fig_name=collapse_fig_fn,
