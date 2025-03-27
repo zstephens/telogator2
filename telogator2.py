@@ -38,6 +38,8 @@ COLLAPSE_SUB_THRESH = 0.050
 #
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.20
+#
+HUMAN_GENOME_BP=3100000000
 
 
 def main(raw_args=None):
@@ -376,7 +378,7 @@ def main(raw_args=None):
         if sup_readcount:
             print(f' - skipped {sup_readcount} supplementary alignments')
         print(f' - {all_readcount} --> {tel_readcount} reads')
-        print(f' - ({total_bp_all} bp) --> ({total_bp_tel} bp)')
+        print(f' - ({total_bp_all} bp) [{int(total_bp_all/HUMAN_GENOME_BP + 0.5)}x] --> ({total_bp_tel} bp)')
         if tel_readcount <= 0:
             print('Error: No telomere reads found, stopping here...')
             exit(1)
@@ -863,8 +865,6 @@ def main(raw_args=None):
                 f.write(f'>subtel-blank_{seq_i}\n{seq}\n')
         if ALWAYS_REPROCESS:
             rm(collapse_dist_fn)
-        for n in subs_to_compare:
-            print('RAWR', len(n))
         print()
         clust3 = cluster_consensus_tvrs(subs_to_compare, KMER_METADATA, COLLAPSE_SUB_THRESH,
                                         dist_in=collapse_dist_fn,
@@ -1383,6 +1383,7 @@ def main(raw_args=None):
     readlens_all = in_npz['readlen_all']
     readlens_tel = in_npz['readlen_tel']
     readlen_plot(readlens_all, readlens_tel, readlens_final, QC_READLEN)
+    print(f'final telomere readcount: {len(readlens_final)}')
     #
     if len(tvrs_to_plot):
         redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
