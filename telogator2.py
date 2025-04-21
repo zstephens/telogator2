@@ -1348,6 +1348,7 @@ def main(raw_args=None):
     num_alleles_unmapped = 0
     num_pass_alleles = 0
     readlens_final = []
+    readcount_fail_final_filters = [0, 0, 0]
     for atd in ALLELE_TEL_DAT:
         my_id = atd[3]
         while my_id[-1].isdigit() is False:
@@ -1356,14 +1357,18 @@ def main(raw_args=None):
         my_rep_atl = int(atd[4])
         my_max_atl = max([int(n) for n in atd[5].split(',')])
         my_tvr_len = int(atd[8])
+        n_reads = len(atd[6].split(','))
         if atd[0] in [fake_chr, blank_chr, unclust_chr]:
             num_alleles_unmapped += 1
+            readcount_fail_final_filters[0] += n_reads
             continue
         if my_tvr_len + my_rep_atl < MIN_ATL_FOR_FINAL_PLOTTING:
             num_alleles_too_short += 1
+            readcount_fail_final_filters[1] += n_reads
             continue
         if 'i' in atd[3]:
             num_alleles_interstitial += 1
+            readcount_fail_final_filters[2] += n_reads
             continue
         num_pass_alleles += 1
         if int(atd[8]) <= 0:
@@ -1383,7 +1388,6 @@ def main(raw_args=None):
     readlens_all = in_npz['readlen_all']
     readlens_tel = in_npz['readlen_tel']
     readlen_plot(readlens_all, readlens_tel, readlens_final, QC_READLEN)
-    print(f'final telomere readcount: {len(readlens_final)}')
     #
     if len(tvrs_to_plot):
         redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)
@@ -1399,15 +1403,15 @@ def main(raw_args=None):
         plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
     else:
         print('no alleles to plot.')
-    print(f' - {num_pass_alleles} final telomere alleles')
-    print(f' - {num_alleles_unmapped} (unmapped)')
-    print(f' - {num_alleles_too_short} (atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp)')
-    print(f' - {num_alleles_interstitial} (interstitial)')
+    print(f' - {num_pass_alleles} final telomere alleles ({len(readlens_final)} reads)')
+    print(f' - {num_alleles_unmapped} alleles unmapped ({readcount_fail_final_filters[0]} reads)')
+    print(f' - {num_alleles_too_short} alleles with atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp ({readcount_fail_final_filters[1]} reads)')
+    print(f' - {num_alleles_interstitial} interstitial alelles ({readcount_fail_final_filters[2]} reads)')
     with open(QC_STATS, 'w') as f:
-        f.write(f' - {num_pass_alleles} final telomere alleles\n')
-        f.write(f' - {num_alleles_unmapped} (unmapped)\n')
-        f.write(f' - {num_alleles_too_short} (atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp)\n')
-        f.write(f' - {num_alleles_interstitial} (interstitial)\n')
+        f.write(f' - {num_pass_alleles} final telomere alleles ({len(readlens_final)} reads)\n')
+        f.write(f' - {num_alleles_unmapped} alleles unmapped ({readcount_fail_final_filters[0]} reads)\n')
+        f.write(f' - {num_alleles_too_short} alleles with atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp ({readcount_fail_final_filters[1]} reads)\n')
+        f.write(f' - {num_alleles_interstitial} interstitial alelles ({readcount_fail_final_filters[2]} reads)\n')
 
 
 if __name__ == '__main__':
