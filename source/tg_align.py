@@ -142,7 +142,7 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     return dist_out
 
 
-def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_running=4, max_pending=100, tasks_per_worker=5000, print_progress=False):
+def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, tasks_per_worker=5000, print_progress=False):
     n_seq = len(sequences)
     tasks = combinations(range(n_seq),2)
     dist_matrix = np.zeros((n_seq,n_seq), dtype='<f4')
@@ -151,10 +151,10 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
     while True:
         # create a new ProcessPoolExecutor periodically to force process recycling
         # -- this is inelegant, but needed because of a memory leak in PairwiseAligner
-        with ProcessPoolExecutor(max_workers=max_running) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             pending_futures = {}
             tasks_completed = 0
-            while tasks_completed < tasks_per_worker * max_running:
+            while tasks_completed < tasks_per_worker * max_workers:
                 while len(pending_futures) < max_pending:
                     try:
                         (i,j) = next(tasks)

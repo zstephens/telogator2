@@ -1,8 +1,10 @@
 import numpy as np
 
-from source.tg_kmer import get_telomere_kmer_density, get_telomere_regions
+from concurrent.futures import as_completed, FIRST_COMPLETED, ProcessPoolExecutor, wait
+
+from source.tg_kmer import get_nonoverlapping_kmer_hits, get_telomere_base_count, get_telomere_kmer_density, get_telomere_regions
 from source.tg_plot import plot_tel_signal
-from source.tg_util import posmax
+from source.tg_util import posmax, RC
 
 
 def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD, skip_negative_vals=False):
@@ -220,3 +222,157 @@ def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
     if my_tel_len is None or my_tel_len <= 0:
         return (0, 0, largest_interstitial_tel)
     return (my_tel_len, edge_nontel, largest_interstitial_tel)
+
+
+def gtrc_parallel_job(my_read_dat, tel_signal_plot_num, gtrc_params):
+    (my_rnm, my_rdat, my_qdat) = my_read_dat
+    [READ_TYPE, DUMMY_TEL_MAPQ,
+     KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING, CANONICAL_STRINGS, CANONICAL_STRINGS_REV,
+     TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH,
+     MIN_TEL_SCORE, FILT_TERM_TEL, FILT_TERM_NONTEL, FILT_TERM_SUBTEL,
+     PLOT_TEL_SIGNALS, TEL_SIGNAL_DIR,
+     MIN_INTERSTITIAL_TL, MIN_FUSION_ANCHOR] = gtrc_params
+    #
+    gtt_min_tel_score = MIN_TEL_SCORE
+    if FILT_TERM_TEL > 0:
+        gtt_min_tel_score = min(FILT_TERM_TEL, MIN_TEL_SCORE)
+    gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, gtt_min_tel_score]
+    #
+    result_khd = None
+    result_termtel = None
+    result_nontelend = None
+    result_isubtels = None
+    result_ikhd = None
+    result_ikhdrev = None
+    skipped_termtel = False
+    skipped_termunk = False
+    skipped_termsub = False
+    #
+    tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
+    tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
+    # put everything into q orientation
+    if tel_bc_fwd > tel_bc_rev:
+        my_rdat = RC(my_rdat)
+        if my_qdat is not None:
+            my_qdat = my_qdat[::-1]
+    if PLOT_TEL_SIGNALS:
+        tel_signal_plot_dat = (my_rnm, TEL_SIGNAL_DIR + 'signal_' + str(tel_signal_plot_num).zfill(5) + '.png')
+        tel_signal_plot_num += 1
+    else:
+        tel_signal_plot_dat = None
+    # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
+    # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
+    (my_terminating_tel, my_nontel_end, interstitial_tel) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
+    # some paranoid bounds checking
+    my_terminating_tel = min(my_terminating_tel, len(my_rdat))
+    my_nontel_end = min(my_nontel_end, len(my_rdat))
+    #
+    if my_terminating_tel == 0 and interstitial_tel is not None and interstitial_tel[1] - interstitial_tel[0] >= MIN_INTERSTITIAL_TL:
+        isubtel_left  = my_rdat[:interstitial_tel[0]]
+        isubtel_right = my_rdat[interstitial_tel[1]:]
+        if len(isubtel_left) >= MIN_FUSION_ANCHOR and len(isubtel_right) >= MIN_FUSION_ANCHOR:
+            result_isubtels = [(f'interstitial-left_{len(my_rdat)}_{my_rnm}', isubtel_left),
+                               (f'interstitial-right_{len(my_rdat)}_{my_rnm}', isubtel_right)]
+            result_ikhd = [get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST, KMER_ISSUBSTRING),
+                           len(my_rdat), 0, 'q', my_rnm.split(' ')[0], DUMMY_TEL_MAPQ, my_rdat]
+            result_ikhdrev = [get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST_REV, KMER_ISSUBSTRING),
+                              len(my_rdat), 0, 'q', my_rnm.split(' ')[0], DUMMY_TEL_MAPQ, my_rdat]
+    #
+    if FILT_TERM_TEL > 0 and my_terminating_tel < FILT_TERM_TEL:
+        skipped_termtel = True
+    if FILT_TERM_NONTEL > 0 and my_nontel_end > FILT_TERM_NONTEL:
+        skipped_termunk = True
+    # too little subtel sequence?
+    if FILT_TERM_SUBTEL > 0 and len(my_rdat) < my_terminating_tel + FILT_TERM_SUBTEL:
+        skipped_termsub = True
+    #
+    if all([n is False for n in [skipped_termtel, skipped_termunk, skipped_termsub]]):
+        my_subtel_end = max(len(my_rdat)-my_terminating_tel-FILT_TERM_SUBTEL, 0)
+        my_teltvr_seq = my_rdat[my_subtel_end:]
+        # if there's no terminating tel at all, then lets pretend entire read is tvr+tel
+        if len(my_teltvr_seq) == 0:
+            my_teltvr_seq = my_rdat
+        #
+        # a lot of these fields in kmer_hit_dat are holdovers from telogator1
+        # and no longer used, but still need to be populated with values.
+        #
+        result_khd = [get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
+                      len(my_teltvr_seq),   # atb, lets pretend entire read is tel
+                      0,                    # my_dbta
+                      'q',                  # my_type
+                      my_rnm.split(' ')[0], # my_rnm
+                      DUMMY_TEL_MAPQ,       # my_mapq
+                      my_rdat]              # read sequence
+        result_termtel = my_terminating_tel
+        result_nontelend = my_nontel_end
+    #
+    return [result_khd,
+            result_termtel,
+            result_nontelend,
+            result_isubtels,
+            result_ikhd,
+            result_ikhdrev,
+            skipped_termtel,
+            skipped_termunk,
+            skipped_termsub]
+
+
+def get_tel_repeat_comp_parallel(all_read_dat, gtrc_params, max_workers=4, max_pending=100):
+    kmer_hit_dat = []
+    all_terminating_tl = []
+    all_nontel_end = []
+    reads_removed_term_tel = 0
+    reads_removed_term_unk = 0
+    reads_removed_term_sub = 0
+    interstitial_subtels = []
+    interstitial_khd_by_readname = {}
+    interstitial_khd_rev_by_readname = {}
+    #
+    tasks = iter(range(len(all_read_dat)))
+    sorted_gtrc_results = []
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        pending_futures = {}
+        while True:
+            while len(pending_futures) < max_pending:
+                try:
+                    i = next(tasks)
+                    future = executor.submit(gtrc_parallel_job, all_read_dat[i], i, gtrc_params)
+                    pending_futures[future] = i
+                except StopIteration:
+                    break
+            if not pending_futures:
+                sorted_gtrc_results = sorted(sorted_gtrc_results)
+                for (i, [result_khd,
+                         result_termtel,
+                         result_nontelend,
+                         result_isubtels,
+                         result_ikhd,
+                         result_ikhdrev,
+                         skipped_termtel,
+                         skipped_termunk,
+                         skipped_termsub]) in sorted_gtrc_results:
+                    if result_khd is not None:
+                        kmer_hit_dat.append(result_khd)
+                        all_terminating_tl.append(result_termtel)
+                        all_nontel_end.append(result_nontelend)
+                    if result_isubtels is not None:
+                        my_rnm = all_read_dat[i][0]
+                        interstitial_subtels.append(result_isubtels)
+                        interstitial_khd_by_readname[my_rnm] = result_ikhd
+                        interstitial_khd_rev_by_readname[my_rnm] = result_ikhdrev
+                    reads_removed_term_tel += skipped_termtel * 1
+                    reads_removed_term_unk += skipped_termunk * 1
+                    reads_removed_term_sub += skipped_termsub * 1
+                return [kmer_hit_dat,
+                        all_terminating_tl,
+                        all_nontel_end,
+                        reads_removed_term_tel,
+                        reads_removed_term_unk,
+                        reads_removed_term_sub,
+                        interstitial_subtels,
+                        interstitial_khd_by_readname,
+                        interstitial_khd_rev_by_readname]
+            #
+            done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                sorted_gtrc_results.append((pending_futures.pop(future), future.result()))

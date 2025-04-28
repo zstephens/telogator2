@@ -149,7 +149,7 @@ def cluster_tvrs(kmer_dat,
         elif aln_mode == 'ds':
             scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
         aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
-        dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_running=num_processes, print_progress=print_matrix_progress)
+        dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_workers=num_processes, print_progress=print_matrix_progress)
         dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
             np.savez_compressed(dist_in, dist=dist_matrix)
@@ -378,7 +378,7 @@ def cluster_consensus_tvrs(sequences,
         sequences_for_dist = sequences
         if tvr_truncate > 0:
             sequences_for_dist = [n[:tvr_truncate] for n in sequences]
-        dist_matrix = get_dist_matrix_parallel(sequences_for_dist, aligner, adjust_lens, False, rand_shuffle_count, max_running=num_processes, print_progress=print_matrix_progress)
+        dist_matrix = get_dist_matrix_parallel(sequences_for_dist, aligner, adjust_lens, False, rand_shuffle_count, max_workers=num_processes, print_progress=print_matrix_progress)
         if normalize_dist_matrix:
             dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:

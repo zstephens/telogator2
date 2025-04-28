@@ -14,7 +14,7 @@ from source.tg_align  import get_nucl_consensus, MAX_MSA_READCOUNT, quick_compar
 from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
-from source.tg_tel    import get_allele_tsv_dat, get_terminating_tl, merge_allele_tsv_dat
+from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, get_terminating_tl, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
@@ -74,6 +74,8 @@ def main(raw_args=None):
     #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="[DEBUG] Plot denoised TVR instead of raw signal")
     parser.add_argument('--plot-initclust', required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during initial clustering")
+    parser.add_argument('--plot-tvrclust',  required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during TVR clustering")
+    parser.add_argument('--plot-finclust',  required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during final clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
     parser.add_argument('--plot-fusions',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel fusions for all reads")
     parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
@@ -142,6 +144,8 @@ def main(raw_args=None):
     PRINT_INIT_PROGRESS  = args.debug_progress
     PLOT_INIT_DENDRO     = args.debug_dendro
     PLOT_ALL_INITIAL     = args.plot_initclust
+    PLOT_ALL_TVR_CLUST   = args.plot_tvrclust
+    PLOT_ALL_FINAL_CLUST = args.plot_finclust
     PLOT_FILT_CVECS      = args.plot_filt_tvr
     PLOT_TEL_SIGNALS     = args.plot_signals
     PLOT_TEL_FUSIONS     = args.plot_fusions
@@ -313,6 +317,12 @@ def main(raw_args=None):
     #
     gatd_params = [ALLELE_TL_METHOD, MIN_READS_PER_PHASE]
     mtp_params  = [KMER_METADATA, KMER_COLORS, MIN_READS_PER_PHASE, PLOT_FILT_CVECS, DUMMY_TEL_MAPQ, DONT_OVERWRITE_PLOTS]
+    gtrc_params = [READ_TYPE, DUMMY_TEL_MAPQ,
+                   KMER_LIST, KMER_LIST_REV, KMER_ISSUBSTRING, CANONICAL_STRINGS, CANONICAL_STRINGS_REV,
+                   TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH,
+                   MIN_TEL_SCORE, FILT_TERM_TEL, FILT_TERM_NONTEL, FILT_TERM_SUBTEL,
+                   PLOT_TEL_SIGNALS, TEL_SIGNAL_DIR,
+                   MIN_INTERSTITIAL_TL, MIN_FUSION_ANCHOR]
     blank_chr   = 'chrBq'
     unclust_chr = 'chrUq'
     fake_chr    = 'chrFq'
@@ -403,82 +413,18 @@ def main(raw_args=None):
     sys.stdout.write('getting telomere repeat composition...')
     sys.stdout.flush()
     tt = time.perf_counter()
-    kmer_hit_dat = []
-    all_terminating_tl = []
-    all_nontel_end = []
     num_starting_reads = len(all_read_dat)
-    tel_signal_plot_num = 0
-    reads_removed_term_tel = 0
-    reads_removed_term_unk = 0
-    reads_removed_term_sub = 0
-    interstitial_subtels = []
-    interstitial_khd_by_readname = {}
-    interstitial_khd_rev_by_readname = {}
     #
-    gtt_min_tel_score = MIN_TEL_SCORE
-    if FILT_TERM_TEL > 0:
-        gtt_min_tel_score = min(FILT_TERM_TEL, MIN_TEL_SCORE)
-    gtt_params = [KMER_LIST, KMER_LIST_REV, TEL_WINDOW_SIZE, P_VS_Q_AMP_THRESH, gtt_min_tel_score]
-    #
-    for (my_rnm, my_rdat, my_qdat) in all_read_dat:
-        tel_bc_fwd = get_telomere_base_count(my_rdat, CANONICAL_STRINGS, mode=READ_TYPE)
-        tel_bc_rev = get_telomere_base_count(my_rdat, CANONICAL_STRINGS_REV, mode=READ_TYPE)
-        # put everything into q orientation
-        if tel_bc_fwd > tel_bc_rev:
-            my_rdat = RC(my_rdat)
-            if my_qdat is not None:
-                my_qdat = my_qdat[::-1]
-        if PLOT_TEL_SIGNALS:
-            tel_signal_plot_dat = (my_rnm, TEL_SIGNAL_DIR + 'signal_' + str(tel_signal_plot_num).zfill(5) + '.png')
-            tel_signal_plot_num += 1
-        else:
-            tel_signal_plot_dat = None
-        # make sure read actually ends in telomere (remove interstitial telomere regions now, if desired)
-        # - removing interstitial tel reads now is less accurate than keeping them and removing them after clustering
-        (my_terminating_tel, my_nontel_end, interstitial_tel) = get_terminating_tl(my_rdat, 'q', gtt_params, telplot_dat=tel_signal_plot_dat)
-        # some paranoid bounds checking
-        my_terminating_tel = min(my_terminating_tel, len(my_rdat))
-        my_nontel_end = min(my_nontel_end, len(my_rdat))
-        #
-        if my_terminating_tel == 0 and interstitial_tel is not None and interstitial_tel[1] - interstitial_tel[0] >= MIN_INTERSTITIAL_TL:
-            isubtel_left  = my_rdat[:interstitial_tel[0]]
-            isubtel_right = my_rdat[interstitial_tel[1]:]
-            if len(isubtel_left) >= MIN_FUSION_ANCHOR and len(isubtel_right) >= MIN_FUSION_ANCHOR:
-                interstitial_subtels.append((f'interstitial-left_{len(my_rdat)}_{my_rnm}', isubtel_left))
-                interstitial_subtels.append((f'interstitial-right_{len(my_rdat)}_{my_rnm}', isubtel_right))
-                interstitial_khd_by_readname[my_rnm] = [get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST, KMER_ISSUBSTRING),
-                                                        len(my_rdat), 0, 'q', my_rnm.split(' ')[0], DUMMY_TEL_MAPQ, my_rdat]
-                interstitial_khd_rev_by_readname[my_rnm] = [get_nonoverlapping_kmer_hits(my_rdat, KMER_LIST_REV, KMER_ISSUBSTRING),
-                                                            len(my_rdat), 0, 'q', my_rnm.split(' ')[0], DUMMY_TEL_MAPQ, my_rdat]
-        #
-        if FILT_TERM_TEL > 0 and my_terminating_tel < FILT_TERM_TEL:
-            reads_removed_term_tel += 1
-            continue
-        if FILT_TERM_NONTEL > 0 and my_nontel_end > FILT_TERM_NONTEL:
-            reads_removed_term_unk += 1
-            continue
-        # too little subtel sequence?
-        if FILT_TERM_SUBTEL > 0 and len(my_rdat) < my_terminating_tel + FILT_TERM_SUBTEL:
-            reads_removed_term_sub += 1
-            continue
-        my_subtel_end = max(len(my_rdat)-my_terminating_tel-FILT_TERM_SUBTEL, 0)
-        my_teltvr_seq = my_rdat[my_subtel_end:]
-        # if there's no terminating tel at all, then lets pretend entire read is tvr+tel
-        if len(my_teltvr_seq) == 0:
-            my_teltvr_seq = my_rdat
-        #
-        # a lot of these fields in kmer_hit_dat are holdovers from telogator1
-        # and no longer used, but still need to be populated with values.
-        #
-        kmer_hit_dat.append([get_nonoverlapping_kmer_hits(my_teltvr_seq, KMER_LIST_REV, KMER_ISSUBSTRING),
-                             len(my_teltvr_seq),   # atb, lets pretend entire read is tel
-                             0,                    # my_dbta
-                             'q',                  # my_type
-                             my_rnm.split(' ')[0], # my_rnm
-                             DUMMY_TEL_MAPQ,       # my_mapq
-                             my_rdat])             # read sequence
-        all_terminating_tl.append(my_terminating_tel)
-        all_nontel_end.append(my_nontel_end)
+    gtrc_results = get_tel_repeat_comp_parallel(all_read_dat, gtrc_params, max_workers=NUM_PROCESSES)
+    [kmer_hit_dat,
+     all_terminating_tl,
+     all_nontel_end,
+     reads_removed_term_tel,
+     reads_removed_term_unk,
+     reads_removed_term_sub,
+     interstitial_subtels,
+     interstitial_khd_by_readname,
+     interstitial_khd_rev_by_readname] = gtrc_results
     #
     num_ending_reads = len(kmer_hit_dat)
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
@@ -619,6 +565,8 @@ def main(raw_args=None):
 
     sys.stdout.write('refining clusters [TVR]...')
     sys.stdout.flush()
+    if PRINT_INIT_PROGRESS:
+        print()
     tt = time.perf_counter()
     clust_num = 0
     fail_tvr_clust = []
@@ -643,6 +591,11 @@ def main(raw_args=None):
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
             rm(dist_matrix_fn)
+        if PLOT_ALL_TVR_CLUST is False:
+            dendrogram_fn = None # skip dendrograms if we're not plotting kmer composition
+        #
+        if PRINT_INIT_PROGRESS:
+            print(f' - [INFO:] processing cluster {clust_num} ({len(current_clust_inds)} reads)')
         #
         subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
                                        aln_mode='ds',
@@ -658,7 +611,9 @@ def main(raw_args=None):
         submatrix = np.load(dist_matrix_fn)['dist']
         init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)] = submatrix
         #
-        make_tvr_plots(khd_subset, subset_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+        if PLOT_ALL_TVR_CLUST:
+            if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
+                make_tvr_plots(khd_subset, subset_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
         #
         for sci,subclust_inds in enumerate(subset_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
@@ -944,6 +899,8 @@ def main(raw_args=None):
         consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'   + zfcn + '.fa'
         if ALWAYS_REPROCESS:
             rm(consensus_fn)
+        if PLOT_ALL_FINAL_CLUST is False:
+            dendrogram_fn = None # skip dendrograms if we're not plotting kmer composition
         # get distance from init_dist_matrix (which was also updated during tvr step)
         my_dist_matrix = init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)]
         np.savez_compressed(dist_matrix_fn, dist=my_dist_matrix)
@@ -983,7 +940,10 @@ def main(raw_args=None):
         elif clust_num - prior_clustnum > 1:
             n_final_clusters_added += clust_num - prior_clustnum - 1
         #
-        make_tvr_plots(khd_subset, solo_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+        if PLOT_ALL_FINAL_CLUST:
+            if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
+                make_tvr_plots(khd_subset, solo_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+        #
         plot_num += 1
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
