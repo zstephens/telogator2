@@ -11,10 +11,10 @@ import sys
 import time
 
 from source.tg_align  import get_nucl_consensus, MAX_MSA_READCOUNT, quick_compare_tvrs
-from source.tg_kmer   import get_canonical_letter, get_nonoverlapping_kmer_hits, get_telomere_base_count, read_kmer_tsv
+from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
-from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, get_terminating_tl, merge_allele_tsv_dat
+from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
 
@@ -35,11 +35,13 @@ NONTEL_END_FILT_PARAMS = (190, 0.49)
 # treecut values for collapsing multiple (presumably false positive) clusters together
 COLLAPSE_TVR_THRESH = 0.050
 COLLAPSE_SUB_THRESH = 0.050
+# collapse-hom TVR thresh
+COLLAPSE_HOM_TVR_THRESH = 0.100
 #
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.20
 #
-HUMAN_GENOME_BP=3100000000
+HUMAN_GENOME_BP = 3100000000
 
 
 def main(raw_args=None):
@@ -1222,11 +1224,11 @@ def main(raw_args=None):
                     if all([ALLELE_TEL_DAT[i][0].split(',')[0] == ALLELE_TEL_DAT[j][0].split(',')[0],
                             ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[j][2].split(',')[0],
                             abs(int(ALLELE_TEL_DAT[i][1].split(',')[0]) - int(ALLELE_TEL_DAT[j][1].split(',')[0])) <= COLLAPSE_HOM_BP]):
-                        my_dist = COLLAPSE_TVR_THRESH * 2
+                        my_dist = COLLAPSE_HOM_TVR_THRESH * 2
                         tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
                         if len(tvr_i) and len(tvr_j):
                             my_dist = quick_compare_tvrs(tvr_i, tvr_j)
-                        if my_dist <= COLLAPSE_TVR_THRESH:
+                        if my_dist <= COLLAPSE_HOM_TVR_THRESH:
                             which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
                             if which_ind == 0:
                                 ALLELE_TEL_DAT[i] = merged_dat
