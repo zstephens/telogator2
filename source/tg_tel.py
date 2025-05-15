@@ -80,11 +80,13 @@ def merge_allele_tsv_dat(dat1, dat2, ALLELE_TL_METHOD):
     # (read_tls, read_lens, read_mapq, read_names)
     teldat1 = [[int(n) for n in dat1[5].split(',')], dat1[6].split(','), dat1[7].split(','), dat1[10].split(',')]
     teldat2 = [[int(n) for n in dat2[5].split(',')], dat2[6].split(','), dat2[7].split(','), dat2[10].split(',')]
-    my_chr, my_pos, my_ref, my_id = dat1[:4]
+    my_id = dat1[3] + ',' + dat2[3]
+    my_chr, my_pos, my_ref = dat1[:3]
     my_tvr_len, my_tvr = dat1[8], dat1[9]
     which_ind = 0
     if len(teldat2[0]) > len(teldat1[0]):
-        my_chr, my_pos, my_ref, my_id = dat2[:4]
+        my_id = dat2[3] + ',' + dat1[3]
+        my_chr, my_pos, my_ref = dat2[:3]
         my_tvr_len, my_tvr = dat2[8], dat2[9]
         which_ind = 1
     merged_dat = [teldat1[0] + teldat2[0], teldat1[1] + teldat2[1], teldat1[2] + teldat2[2], teldat1[3] + teldat2[3]]

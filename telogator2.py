@@ -10,34 +10,19 @@ import subprocess
 import sys
 import time
 
-from source.tg_align  import get_nucl_consensus, MAX_MSA_READCOUNT, quick_compare_tvrs
+from source.tg_align  import quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
-from source.tg_reader import quick_grab_all_reads, quick_grab_all_reads_nodup, TG_Reader
+from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
-from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string
+from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, FAKE_CHR, FAKE_POS
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
 MIN_TEL_SCORE = 100
 #
 DUMMY_TEL_MAPQ = 60
-# only compare up to this much tvr / subtel sequence for clustering
-TVR_TRUNCATE_INIT = 1500
-TVR_TRUNCATE = 3000
-SUBTEL_TRUNCATE = 3000
-# if >30% this fraction of reads have no terminating tel, skip the cluster
-TERM_TEL_ZERO_FRAC = 0.30
-# interstitial telomere filtering parameters:
-# - if the terminating content of reads is >190bp of non-telomere sequence for >49% of reads, skip this cluster
-NONTEL_END_FILT_PARAMS = (190, 0.49)
-# treecut values for collapsing multiple (presumably false positive) clusters together
-COLLAPSE_TVR_THRESH = 0.050
-COLLAPSE_SUB_THRESH = 0.050
-# collapse-hom TVR thresh
-COLLAPSE_HOM_TVR_THRESH = 0.100
-#
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.20
 #
@@ -46,6 +31,9 @@ HUMAN_GENOME_BP = 3100000000
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description='Telogator2', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    #
+    parser.add_argument('--version', action='version', version='%(prog)s 1.1.0')
+    #
     parser.add_argument('-i', type=str, required=True,  metavar='',             nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
     parser.add_argument('-o', type=str, required=True,  metavar='output/',                      help="* Path to output directory")
     parser.add_argument('-k', type=str, required=False, metavar='kmers.tsv',    default='',     help="Telomere kmers file")
@@ -58,13 +46,16 @@ def main(raw_args=None):
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('--filt-tel',    type=int, required=False, metavar='', default=500,  help="[FILTERING] Remove reads that end in < this much tel")
-    parser.add_argument('--filt-nontel', type=int, required=False, metavar='', default=200,  help="[FILTERING] Remove reads that end in > this much non-tel")
-    parser.add_argument('--filt-sub',    type=int, required=False, metavar='', default=1000, help="[FILTERING] Remove reads that end in < this much subtel")
+    parser.add_argument('--filt-tel',    type=int, required=False, metavar='400',  default=400,  help="[FILTERING] Remove reads that end in < this much tel")
+    parser.add_argument('--filt-nontel', type=int, required=False, metavar='100',  default=100,  help="[FILTERING] Remove reads that end in > this much non-tel")
+    parser.add_argument('--filt-sub',    type=int, required=False, metavar='1000', default=1000, help="[FILTERING] Remove reads that end in < this much subtel")
     #
-    parser.add_argument('-ti', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] initial TVR clustering")
-    parser.add_argument('-tt', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] cluster refinement [TVR]")
-    parser.add_argument('-ts', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] cluster refinement [SUBTEL]")
+    parser.add_argument('-t0', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] TVR clustering (iteration 0)")
+    parser.add_argument('-t1', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] TVR clustering (iteration 1)")
+    parser.add_argument('-t2', type=float, required=False, metavar='0.100', default=0.100, help="[TREECUT] TVR clustering (iteration 2)")
+    parser.add_argument('-tc', type=float, required=False, metavar='0.050', default=0.050, help="[TREECUT] TVR clustering (collapse)")
+    parser.add_argument('-ts', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] Subtel cluster refinement")
+    parser.add_argument('-th', type=float, required=False, metavar='0.050', default=0.050, help="[TREECUT] Collapsing aligned alleles")
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
@@ -75,28 +66,27 @@ def main(raw_args=None):
     parser.add_argument('-va-p', type=int, required=False, metavar='2',     default=2,     help="[VIOLIN_ATL.PNG] ploidy. i.e. number of alleles per arm")
     #
     parser.add_argument('--plot-filt-tvr',  required=False, action='store_true', default=False, help="[DEBUG] Plot denoised TVR instead of raw signal")
-    parser.add_argument('--plot-initclust', required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during initial clustering")
-    parser.add_argument('--plot-tvrclust',  required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during TVR clustering")
+    parser.add_argument('--plot-t1clust',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during TVR clustering (iteration 1)")
+    parser.add_argument('--plot-t2clust',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during TVR clustering (iteration 2)")
     parser.add_argument('--plot-finclust',  required=False, action='store_true', default=False, help="[DEBUG] Plot tel reads during final clustering")
     parser.add_argument('--plot-signals',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel signals for all reads")
     parser.add_argument('--plot-fusions',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel fusions for all reads")
     parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
     parser.add_argument('--debug-replot',   required=False, action='store_true', default=False, help="[DEBUG] Regenerate plots that already exist")
-    parser.add_argument('--debug-realign',  required=False, action='store_true', default=False, help="[DEBUG] Do not redo subtel alignment if bam exists")
     parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--debug-telreads', required=False, action='store_true', default=False, help="[DEBUG] Stop immediately after extracting tel reads")
     parser.add_argument('--debug-progress', required=False, action='store_true', default=False, help="[DEBUG] Print progress to screen during init matrix computation")
     parser.add_argument('--debug-dendro',   required=False, action='store_true', default=False, help="[DEBUG] Plot dendrogram during init clustering")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
-    parser.add_argument('--collapse-hom',   type=int, required=False, metavar='', default=-1,   help="[PERFORMANCE] Merge alleles mapped within this bp of each other")
     #
-    parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='', help="/path/to/minimap2")
-    parser.add_argument('--pbmm2',         type=str, required=False, metavar='exe',     default='', help="/path/to/pbmm2")
-    parser.add_argument('--winnowmap',     type=str, required=False, metavar='exe',     default='', help="/path/to/winnowmap")
-    parser.add_argument('--winnowmap-k15', type=str, required=False, metavar='k15.txt', default='', help="high freq kmers file (only needed for winnowmap)")
-    parser.add_argument('--ref',           type=str, required=False, metavar='ref.fa',  default='', help="Reference filename (only needed if input is cram)")
-    parser.add_argument('--rng',           type=int, required=False, metavar='-1',      default=-1, help="RNG seed value")
+    parser.add_argument('--collapse-hom',  type=int, required=False, metavar='',        default=1000, help="Merge similar alleles mapped <= this bp from each other")
+    parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='',   help="/path/to/minimap2")
+    parser.add_argument('--pbmm2',         type=str, required=False, metavar='exe',     default='',   help="/path/to/pbmm2")
+    parser.add_argument('--winnowmap',     type=str, required=False, metavar='exe',     default='',   help="/path/to/winnowmap")
+    parser.add_argument('--winnowmap-k15', type=str, required=False, metavar='k15.txt', default='',   help="high freq kmers file (only needed for winnowmap)")
+    parser.add_argument('--ref',           type=str, required=False, metavar='ref.fa',  default='',   help="Reference filename (only needed if input is cram)")
+    parser.add_argument('--rng',           type=int, required=False, metavar='-1',      default=-1,   help="RNG seed value")
     #
     args = parser.parse_args()
     #
@@ -116,9 +106,12 @@ def main(raw_args=None):
     CRAM_REF_FILE       = args.ref
     RNG_SEED            = args.rng
     #
-    TREECUT_INITIAL       = args.ti
+    TREECUT_TVR_ITER_0    = args.t0
+    TREECUT_TVR_ITER_1    = args.t1
+    TREECUT_TVR_ITER_2    = args.t2
+    TREECUT_TVR_COLLAPSE  = args.tc
     TREECUT_REFINE_SUBTEL = args.ts
-    TREECUT_REFINE_TVR    = args.tt
+    TREECUT_HOM_COLLAPSE  = args.th
     #
     VIOLIN_YMAX   = args.va_y
     VIOLIN_TICK   = args.va_t
@@ -137,25 +130,24 @@ def main(raw_args=None):
 
     # debug params
     #
-    DONT_OVERWRITE_PLOTS = not(args.debug_replot)     # (True = don't replot figures if they already exist)
-    ALWAYS_REPROCESS     = not(args.dont_reprocess)   # (True = don't write out .npz matrices, always recompute)
-    NO_SUBTEL_REALIGN    = args.debug_realign
-    SKIP_SUBTEL_REFINE   = args.debug_nosubtel
-    SKIP_ANCHORING       = args.debug_noanchor
-    STOP_AFTER_TELREADS  = args.debug_telreads
-    PRINT_INIT_PROGRESS  = args.debug_progress
-    PLOT_INIT_DENDRO     = args.debug_dendro
-    PLOT_ALL_INITIAL     = args.plot_initclust
-    PLOT_ALL_TVR_CLUST   = args.plot_tvrclust
-    PLOT_ALL_FINAL_CLUST = args.plot_finclust
-    PLOT_FILT_CVECS      = args.plot_filt_tvr
-    PLOT_TEL_SIGNALS     = args.plot_signals
-    PLOT_TEL_FUSIONS     = args.plot_fusions
-    FILT_TERM_TEL        = args.filt_tel         # reads must terminate in at least this much tel sequence
-    FILT_TERM_NONTEL     = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
-    FILT_TERM_SUBTEL     = args.filt_sub         # reads must terminate in at least this much subtel sequence
-    FAST_ALIGNMENT       = args.fast_aln
-    COLLAPSE_HOM_BP      = args.collapse_hom
+    DONT_OVERWRITE_PLOTS  = not(args.debug_replot)     # (True = don't replot figures if they already exist)
+    ALWAYS_REPROCESS      = not(args.dont_reprocess)   # (True = don't write out .npz matrices, always recompute)
+    SKIP_SUBTEL_REFINE    = args.debug_nosubtel
+    SKIP_ANCHORING        = args.debug_noanchor
+    STOP_AFTER_TELREADS   = args.debug_telreads
+    PRINT_PROGRESS        = args.debug_progress
+    PLOT_INIT_DENDRO      = args.debug_dendro
+    PLOT_TVR_CLUST_ITER_1 = args.plot_t1clust
+    PLOT_TVR_CLUST_ITER_2 = args.plot_t2clust
+    PLOT_FINAL_CLUST      = args.plot_finclust
+    PLOT_FILT_CVECS       = args.plot_filt_tvr
+    PLOT_TEL_SIGNALS      = args.plot_signals
+    PLOT_TEL_FUSIONS      = args.plot_fusions
+    FILT_TERM_TEL         = args.filt_tel         # reads must terminate in at least this much tel sequence
+    FILT_TERM_NONTEL      = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
+    FILT_TERM_SUBTEL      = args.filt_sub         # reads must terminate in at least this much subtel sequence
+    FAST_ALIGNMENT        = args.fast_aln
+    COLLAPSE_HOM_BP       = args.collapse_hom
 
     MIN_INTERSTITIAL_TL = 100
     MIN_FUSION_ANCHOR = 1000
@@ -194,31 +186,32 @@ def main(raw_args=None):
     #
     if OUT_DIR[-1] != '/':
         OUT_DIR += '/'
-    OUT_CLUST_DIR = OUT_DIR + 'temp/'
-    OUT_CDIR_INIT = OUT_CLUST_DIR + '01_initial/'
-    OUT_CDIR_TVR  = OUT_CLUST_DIR + '02_tvr/'
-    OUT_CDIR_SUB  = OUT_CLUST_DIR + '03_subtel/'
-    OUT_CDIR_COL  = OUT_CLUST_DIR + '04_collapse/'
-    OUT_CDIR_FIN  = OUT_CLUST_DIR + '05_final/'
-    OUT_CDIR_COL2 = OUT_CLUST_DIR + '06_collapse/'
-    OUT_QC_DIR    = OUT_DIR + 'qc/'
+    OUT_CLUST_DIR    = OUT_DIR + 'temp/'
+    OUT_DIR_INIT     = OUT_CLUST_DIR + '01_initial/'
+    OUT_DIR_UNCLUST  = OUT_CLUST_DIR + '02_unclust/'
+    OUT_DIR_COLLAPSE = OUT_CLUST_DIR + '03_collapse/'
+    OUT_DIR_SUBTEL   = OUT_CLUST_DIR + '04_subtel/'
+    OUT_DIR_FINAL    = OUT_CLUST_DIR + '05_final/'
+    OUT_DIR_ANCHOR   = OUT_CLUST_DIR + '06_anchoring/'
+    OUT_DIR_COL2     = OUT_CLUST_DIR + '07_collapse/'
+    OUT_QC_DIR       = OUT_DIR + 'qc/'
     makedir(OUT_DIR)
     if dir_exists(OUT_DIR) is False:
         print('Error: could not create output directory')
         exit(1)
     makedir(OUT_CLUST_DIR)
     makedir(OUT_QC_DIR)
-    for d in [OUT_CDIR_INIT, OUT_CDIR_TVR, OUT_CDIR_SUB, OUT_CDIR_FIN]:
+    for d in [OUT_DIR_INIT, OUT_DIR_UNCLUST, OUT_DIR_SUBTEL, OUT_DIR_FINAL]:
         makedir(d)
         makedir(d + 'dendro/')
         makedir(d + 'fa/')
         makedir(d + 'npz/')
         makedir(d + 'results/')
-    makedir(OUT_CDIR_COL)
+    makedir(OUT_DIR_COLLAPSE)
+    makedir(OUT_DIR_ANCHOR)
+    makedir(OUT_DIR_COL2)
 
     # optional dirs
-    if COLLAPSE_HOM_BP > 0:
-        makedir(OUT_CDIR_COL2)
     TEL_SIGNAL_DIR = OUT_DIR + 'tel_signal/'
     if PLOT_TEL_SIGNALS:
         makedir(TEL_SIGNAL_DIR)
@@ -227,17 +220,17 @@ def main(raw_args=None):
         makedir(TEL_FUSION_DIR)
 
     TELOMERE_READS = OUT_CLUST_DIR + 'tel_reads.fa.gz'
-    OUT_ALLELE_TL = OUT_DIR + 'tlens_by_allele.tsv'
-    OUT_UNANCHORED_SUBTELS = OUT_CLUST_DIR + 'unanchored_subtels.fa.gz'
-    ALIGNED_SUBTELS = OUT_CLUST_DIR + 'subtel_aln'
     VIOLIN_ATL = OUT_DIR + 'violin_atl.png'
     FINAL_TVRS = OUT_DIR + 'all_final_alleles.png'
-    READLEN_NPZ = OUT_CLUST_DIR + 'readlens.npz'
-    QC_READLEN = OUT_QC_DIR + 'qc_readlens.png'
-    QC_CMD     = OUT_QC_DIR + 'cmd.txt'
-    QC_STATS   = OUT_QC_DIR + 'stats.txt'
-    QC_RNG     = OUT_QC_DIR + 'rng.txt'
+    FINAL_TSV  = OUT_DIR + 'tlens_by_allele.tsv'
+    READLEN_NPZ = OUT_QC_DIR + 'readlens.npz'
+    QC_READLEN  = OUT_QC_DIR + 'qc_readlens.png'
+    QC_CMD      = OUT_QC_DIR + 'cmd.txt'
+    QC_STATS    = OUT_QC_DIR + 'stats.txt'
+    QC_RNG      = OUT_QC_DIR + 'rng.txt'
     UNCOMPRESSED_TELOGATOR_REF = OUT_CLUST_DIR + 'telogator-ref.fa'
+    UNANCHORED_SUBTELS = OUT_DIR_ANCHOR + 'unanchored_subtels.fa.gz'
+    ALIGNED_SUBTELS    = OUT_DIR_ANCHOR + 'subtel_aln'
 
     # rng
     if RNG_SEED <= -1:
@@ -246,12 +239,76 @@ def main(raw_args=None):
     with open(QC_RNG, 'w') as f:
         f.write(str(RNG_SEED) + '\n')
 
-    # random shuffle amounts
-    RAND_SHUFFLE = 3
-    RAND_SHUFFLE_INIT = 2
+    # only compare up to this much tvr / subtel sequence for clustering
+    TVR_TRUNCATE_ITER_0 = 1000
+    TVR_TRUNCATE_ITER_1 = 2000
+    TVR_TRUNCATE_ITER_2 = 3000
+    SUBTEL_TRUNCATE = 3000
+    RAND_SHUFFLE_ITER_0 = 2
+    RAND_SHUFFLE_ITER_1 = 3
+    RAND_SHUFFLE_ITER_2 = 3
+    TVR_REFINE_ITERATIONS = [1,2]
+    TVR_ITERATIONS_TO_PLOT = [1]*PLOT_TVR_CLUST_ITER_1 + [2]*PLOT_TVR_CLUST_ITER_2
     if FAST_ALIGNMENT:
-        RAND_SHUFFLE = 1
-        RAND_SHUFFLE_INIT = 1
+        RAND_SHUFFLE_ITER_0 = 1
+        RAND_SHUFFLE_ITER_1 = 1
+        RAND_SHUFFLE_ITER_2 = 1
+        TVR_REFINE_ITERATIONS = [2]
+
+    # TVR clustering parameters by iteration
+    tvr_clust_params = [None, None, None]
+    tvr_clust_params[0] = {'aln_mode':'ds',
+                           'tvr_truncate':TVR_TRUNCATE_ITER_0,
+                           'rand_shuffle_count':RAND_SHUFFLE_ITER_0,
+                           'tree_cut':TREECUT_TVR_ITER_0,
+                           'clustering_only':True,
+                           'num_processes':NUM_PROCESSES,
+                           'print_matrix_progress':PRINT_PROGRESS}
+    #
+    tvr_clust_params[1] = {'aln_mode':'ds',
+                           'tvr_truncate':TVR_TRUNCATE_ITER_1,
+                           'rand_shuffle_count':RAND_SHUFFLE_ITER_1,
+                           'tree_cut':TREECUT_TVR_ITER_1,
+                           'clustering_only':not(PLOT_TVR_CLUST_ITER_1),
+                           'num_processes':NUM_PROCESSES,
+                           'print_matrix_progress':False}
+    #
+    tvr_clust_params[2] = {'aln_mode':'ds',
+                           'tvr_truncate':TVR_TRUNCATE_ITER_2,
+                           'rand_shuffle_count':RAND_SHUFFLE_ITER_2,
+                           'tree_cut':TREECUT_TVR_ITER_2,
+                           'clustering_only':False,
+                           'num_processes':NUM_PROCESSES,
+                           'print_matrix_progress':False}
+    #
+    collapse_clust_params = {'aln_mode':'ms',
+                             'gap_bool':(True,False),      # allow grouping prefixes
+                             'adjust_lens':False,
+                             'rand_shuffle_count':3,
+                             'tree_cut':TREECUT_TVR_COLLAPSE,
+                             'linkage_method':'single',
+                             'normalize_dist_matrix':True,
+                             'num_processes':NUM_PROCESSES,
+                             'overwrite_figures':not(DONT_OVERWRITE_PLOTS),
+                             'dendrogram_xlim':[1.1,0]}
+    #
+    subtel_clust_params = {'aln_mode':'ms',
+                           'gap_bool':(True,False),
+                           'adjust_lens':False,
+                           'rand_shuffle_count':3,
+                           'tree_cut':TREECUT_REFINE_SUBTEL,
+                           'linkage_method':'ward',
+                           'normalize_dist_matrix':True,
+                           'num_processes':NUM_PROCESSES,
+                           'dendrogram_height':8,
+                           'overwrite_figures':not(DONT_OVERWRITE_PLOTS)}
+    #
+    final_clust_params = {'aln_mode':'ds',
+                          'tvr_truncate':1000,
+                          'rand_shuffle_count':1,
+                          'tree_cut':100.,                 # arbitrarily high
+                          'clustering_only':False,
+                          'num_processes':NUM_PROCESSES}
 
     #
     # check exes
@@ -325,10 +382,6 @@ def main(raw_args=None):
                    MIN_TEL_SCORE, FILT_TERM_TEL, FILT_TERM_NONTEL, FILT_TERM_SUBTEL,
                    PLOT_TEL_SIGNALS, TEL_SIGNAL_DIR,
                    MIN_INTERSTITIAL_TL, MIN_FUSION_ANCHOR]
-    blank_chr   = 'chrBq'
-    unclust_chr = 'chrUq'
-    fake_chr    = 'chrFq'
-    fake_pos    = 0
 
     #
     # write cmd out, for debugging purposes
@@ -337,11 +390,14 @@ def main(raw_args=None):
         stripped_strings = [strip_paths_from_string(n) for n in sys.argv]
         f.write(' '.join(stripped_strings) + '\n')
 
+    #=====================================================#
     #
-    # begin!
+    # [0a] GET TELOMERE READS
     #
+    #=====================================================#
+
     ALLELE_TEL_DAT = []
-    #
+
     if ALWAYS_REPROCESS or exists_and_is_nonzero(TELOMERE_READS) is False or exists_and_is_nonzero(READLEN_NPZ) is False:
         sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
         sys.stdout.flush()
@@ -411,7 +467,13 @@ def main(raw_args=None):
     if len(all_read_dat) <= 0:
         print('Error: No telomere reads remaining, stopping here...')
         exit(1)
+
+    #=====================================================#
     #
+    # [0b] GET TELOMERE REPEAT COMPOSITION
+    #
+    #=====================================================#
+
     sys.stdout.write('getting telomere repeat composition...')
     sys.stdout.flush()
     tt = time.perf_counter()
@@ -461,205 +523,179 @@ def main(raw_args=None):
     my_rlens = [len(n[6]) for n in kmer_hit_dat]
     my_rnames = [n[4] for n in kmer_hit_dat]
 
+    #=====================================================#
     #
-    # [1] INITIAL CLUSTERING
+    # [1a] INITIAL CLUSTERING
     #
+    #=====================================================#
 
-    sys.stdout.write('initial clustering of all reads...')
+    sys.stdout.write('initial clustering of all reads [iteration 0]...')
     sys.stdout.flush()
-    tt = time.perf_counter()
-    init_dendrogram_fn = None
-    if PLOT_INIT_DENDRO:
-        init_dendrogram_fn = OUT_CDIR_INIT + 'dendro/' + 'dendrogram.png'
-    init_dist_matrix_fn = OUT_CDIR_INIT + 'npz/' + 'dist-matrix.npz'
-    init_consensus_fn   = OUT_CDIR_INIT + 'fa/'  + 'consensus.fa'
-    if ALWAYS_REPROCESS:
-        rm(init_dist_matrix_fn)
-        rm(init_consensus_fn)
-    clustering_only = True
-    if PLOT_ALL_INITIAL:
-        clustering_only = False
-    #
-    read_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA, fake_chr, fake_pos, TREECUT_INITIAL,
-                                  aln_mode='ds',
-                                  tvr_truncate=TVR_TRUNCATE_INIT,
-                                  num_processes=NUM_PROCESSES,
-                                  rand_shuffle_count=RAND_SHUFFLE_INIT,
-                                  dist_in=init_dist_matrix_fn,
-                                  fig_name=init_dendrogram_fn,
-                                  clustering_only=clustering_only,
-                                  save_msa=init_consensus_fn,
-                                  print_matrix_progress=PRINT_INIT_PROGRESS)
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    n_clusters = len([n for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
-    n_reads = sum([len(n) for n in read_clust_dat[0] if len(n) >= MIN_READS_PER_PHASE])
-    print(f' - {n_clusters} clusters ({n_reads} reads)')
-    print(f' - (>= {MIN_READS_PER_PHASE} reads per cluster)')
-    #
-    if PLOT_ALL_INITIAL:
-        sys.stdout.write('plotting all tel reads in a single big plot...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
-        init_telcompplot_fn = OUT_CDIR_INIT + 'results/' + 'all_reads.png'
-        init_telcompcons_fn = OUT_CDIR_INIT + 'results/' + 'all_consensus.png'
-        make_tvr_plots(kmer_hit_dat, read_clust_dat, fake_chr, fake_pos, init_telcompplot_fn, init_telcompcons_fn, mtp_params, dpi=100)
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
-
-    # we're going to use these distances for all the remaining steps instead of recomputing it each time
-    init_dist_matrix = np.load(init_dist_matrix_fn)['dist']
-
-    #
-    # [1.5] INTERSTITIAL TEL FILTER
-    #
-
-    sys.stdout.write('removing interstitial telomeres...')
-    sys.stdout.flush()
-    tt = time.perf_counter()
-    unclustered_inds = []
-    pass_clust_inds_list = []
-    fail_clust_inds_list = []
-    for clust_i in range(len(read_clust_dat[0])):
-        current_clust_inds = read_clust_dat[0][clust_i]
-        # terminating-tel filters (to prevent interstitial tels from getting into fail/blank sets)
-        term_tel = [all_terminating_tl[n] for n in current_clust_inds]
-        term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
-        nt_end = [all_nontel_end[n] for n in current_clust_inds]
-        nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
-        passed_termtel = True
-        if term_zero_frac > TERM_TEL_ZERO_FRAC or nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
-            passed_termtel = False
-        # cluster filter: normal vs. interstitial
-        if passed_termtel:
-            if len(current_clust_inds) < MIN_READS_PER_PHASE:
-                unclustered_inds.extend(current_clust_inds)
-            else:
-                pass_clust_inds_list.append(read_clust_dat[0][clust_i])
-        else:
-            fail_clust_inds_list.append(read_clust_dat[0][clust_i])
-        #
-        if PLOT_ALL_INITIAL:
-            khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
-            clustdat_to_plot = [[list(range(len(current_clust_inds)))],
-                                [read_clust_dat[1][clust_i]],
-                                [read_clust_dat[2][clust_i]],
-                                [read_clust_dat[3][n] for n in current_clust_inds],
-                                [read_clust_dat[4][clust_i]],
-                                [read_clust_dat[5][clust_i]],
-                                [read_clust_dat[6][n] for n in current_clust_inds],
-                                [read_clust_dat[7][clust_i]]]
-            plot_type = 'pass'
-            if passed_termtel is False:
-                plot_type = 'fail'
-            plot_fn_reads = OUT_CDIR_INIT + 'results/' + 'reads-' + plot_type + '_' + str(clust_i).zfill(3) + '.png'
-            if DONT_OVERWRITE_PLOTS is False or exists_and_is_nonzero(plot_fn_reads) is False:
-                make_tvr_plots(khd_subset, clustdat_to_plot, fake_chr, fake_pos, plot_fn_reads, None, mtp_params)
-        #
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    print(f' - {len(fail_clust_inds_list)} clusters removed for not ending in enough tel sequence')
-    print(f' - ({len(unclustered_inds)} tel reads unclustered)')
-
-    #
-    # [2] TVR CLUSTERING
-    #
-
-    sys.stdout.write('refining clusters [TVR]...')
-    sys.stdout.flush()
-    if PRINT_INIT_PROGRESS:
+    if PRINT_PROGRESS:
         print()
     tt = time.perf_counter()
-    clust_num = 0
-    fail_tvr_clust = []
+    tvr_clust_params[0]['fig_name'] = None
+    tvr_clust_params[0]['dist_in'] = f'{OUT_DIR_INIT}npz/i0_dist-matrix.npz'
+    if PLOT_INIT_DENDRO:
+        tvr_clust_params[0]['fig_name'] = f'{OUT_DIR_INIT}dendro/i0_dendrogram.png'
+    if ALWAYS_REPROCESS:
+        rm(tvr_clust_params[0]['dist_in'])
+    #
+    init_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA,  **tvr_clust_params[0])
+    #
+    init_clusters = []
+    unclustered_inds = []
+    for clust_inds in init_clust_dat[0]:
+        if len(clust_inds) >= MIN_READS_PER_PHASE:
+            init_clusters.append(clust_inds)
+        else:
+            unclustered_inds.extend(clust_inds)
+    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+    sys.stdout.flush()
+    print(f' - {len(init_clusters)} clusters ({sum([len(n) for n in init_clusters])} reads)')
+    print(f' - {len(unclustered_inds)} unclustered reads')
+
+    #=====================================================#
+    #
+    # [1b] TVR CLUSTER REFINEMENT
+    #
+    #=====================================================#
+
+    def tvr_refinement(init_clusters, temp_dir, which_chr, message, print_stats=False):
+        #
+        out_unclustered_inds = []
+        out_blank_inds = []
+        out_clusters_with_tvrs = []
+        out_all_consensus_tvrs = []
+        #
+        current_iteration_clusters = init_clusters
+        for tvr_clust_iter in TVR_REFINE_ITERATIONS:
+            sys.stdout.write(f'{message} [iteration {tvr_clust_iter}]...')
+            sys.stdout.flush()
+            if PRINT_PROGRESS:
+                print()
+            tt = time.perf_counter()
+            next_iteration_clusters = []
+            for clust_i, current_clust_inds in enumerate(current_iteration_clusters):
+                khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
+                zfcn = str(clust_i).zfill(3)
+                tvr_clust_params[tvr_clust_iter]['fig_name'] = f'{temp_dir}dendro/i{tvr_clust_iter}_dendrogram_{zfcn}.png'
+                tvr_clust_params[tvr_clust_iter]['dist_in']  = f'{temp_dir}npz/i{tvr_clust_iter}_dist-matrix_{zfcn}.npz'
+                tvr_clust_params[tvr_clust_iter]['save_msa'] = f'{temp_dir}fa/i{tvr_clust_iter}_consensus_{zfcn}.fa'
+                if tvr_clust_iter == TVR_REFINE_ITERATIONS[-1]:
+                    tvr_clust_params[tvr_clust_iter]['clustering_only'] = False
+                if ALWAYS_REPROCESS:
+                    rm(tvr_clust_params[tvr_clust_iter]['dist_in'])
+                    rm(tvr_clust_params[tvr_clust_iter]['save_msa'])
+                #
+                init_refine_clust_dat = cluster_tvrs(khd_subset, KMER_METADATA, **tvr_clust_params[tvr_clust_iter])
+                #
+                telcompplot_fn = f'{temp_dir}results/i{tvr_clust_iter}_reads_{zfcn}.png'
+                telcompcons_fn = f'{temp_dir}results/i{tvr_clust_iter}_consensus_{zfcn}.png'
+                if tvr_clust_iter in TVR_ITERATIONS_TO_PLOT:
+                    if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
+                        make_tvr_plots(khd_subset, init_refine_clust_dat, which_chr, FAKE_POS, telcompplot_fn, telcompcons_fn, mtp_params)
+                #
+                num_pass_subclust_reads = []
+                for sub_clust in init_refine_clust_dat[0]:
+                    next_clust = [current_clust_inds[n] for n in sub_clust]
+                    if len(next_clust) >= MIN_READS_PER_PHASE:
+                        next_iteration_clusters.append([n for n in next_clust])
+                        num_pass_subclust_reads.append(len(next_clust))
+                    else:
+                        out_unclustered_inds.extend(next_clust)
+                #
+                if PRINT_PROGRESS:
+                    print(f' - processed cluster {zfcn} ({len(current_clust_inds)} reads) --> {len(num_pass_subclust_reads)} clusters ({sum(num_pass_subclust_reads)} reads)')
+                #
+                # if we're on the last iteration output the clusters for subsequent analyses
+                #
+                if tvr_clust_iter == TVR_REFINE_ITERATIONS[-1]:
+                    for sci,sub_clust in enumerate(init_refine_clust_dat[0]):
+                        next_clust = [current_clust_inds[n] for n in sub_clust]
+                        my_tvr_len = init_refine_clust_dat[7][sci]
+                        if my_tvr_len <= 0:
+                            out_blank_inds.extend(next_clust)
+                            continue
+                        if len(next_clust) < MIN_READS_PER_PHASE:
+                            continue
+                        tvrtel_lens = [init_refine_clust_dat[1][n] for n in sub_clust]
+                        my_subtels = []
+                        for tti,sri in enumerate(next_clust):
+                            my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
+                            my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
+                            my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
+                        out_clusters_with_tvrs.append((which_chr, [n for n in next_clust], my_subtels))
+                        out_all_consensus_tvrs.append(init_refine_clust_dat[4][sci][:my_tvr_len])
+            #
+            current_iteration_clusters = next_iteration_clusters
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.flush()
+            if print_stats:
+                print(f' - {len(current_iteration_clusters)} clusters ({sum([len(n) for n in current_iteration_clusters])} reads)')
+                print(f' - {len(out_blank_inds)} reads with blank TVR')
+                print(f' - {len(out_unclustered_inds)} unclustered reads')
+        #
+        return [out_unclustered_inds,
+                out_blank_inds,
+                out_clusters_with_tvrs,
+                out_all_consensus_tvrs]
+
+    [new_unclustered_inds,
+     blank_inds,
+     clusters_with_tvrs,
+     all_consensus_tvrs] = tvr_refinement(init_clusters, OUT_DIR_INIT, FAKE_CHR, 'initial clustering of all reads', print_stats=True)
+
+    # combine unclustered reads from initial clustering with refinement iterations
+    unclustered_inds += new_unclustered_inds
+
+    #=====================================================#
+    #
+    # [2] SALVAGE UNCLUSTERED READS
+    #
+    #=====================================================#
+
+    [salvaged_unclustered_inds,
+     salvaged_blank_inds,
+     salvaged_clusters_with_tvrs,
+     salvaged_all_consensus_tvrs] = tvr_refinement([unclustered_inds], OUT_DIR_UNCLUST, UNCLUST_CHR, 'reanalyzing unclustered reads')
+    print(f' - {len(salvaged_clusters_with_tvrs)} new candidate clusters found')
+
+    # combine salvaged inds
+    blank_inds += salvaged_blank_inds
+    clusters_with_tvrs += salvaged_clusters_with_tvrs
+    all_consensus_tvrs += salvaged_all_consensus_tvrs
+
+    #=====================================================#
+    #
+    # [3] COLLAPSE CLUSTERS WITH SIMILAR TVRS
+    #
+    #=====================================================#
+
+    sys.stdout.write(f'collapsing duplicates...')
+    sys.stdout.flush()
+    tt = time.perf_counter()
+    collapse_clust_params['dendro_name'] = OUT_DIR_COLLAPSE + 'tvrs_dendrogram.png'
+    collapse_clust_params['dist_in']     = OUT_DIR_COLLAPSE + 'tvrs_dist-matrix.npz'
+    collapse_clust_params['fig_name']    = OUT_DIR_COLLAPSE + 'tvrs_plot.png'
+    if ALWAYS_REPROCESS:
+        rm(collapse_clust_params['dist_in'])
+    #
+    clustered_consensus_tvrs = cluster_consensus_tvrs(all_consensus_tvrs, KMER_METADATA, **collapse_clust_params)
+    #
+    temp_clusters_with_tvrs = copy.deepcopy(clusters_with_tvrs)
     clusters_with_tvrs = []
-    all_consensus_tvrs = []
-    blank_inds = []
-    n_reads = 0
-    if len(unclustered_inds) >= MIN_READS_PER_PHASE:
-        pass_clust_inds_list += [unclustered_inds]
-    for current_clust_inds in pass_clust_inds_list:
-        my_chr = fake_chr
-        if current_clust_inds == unclustered_inds:
-            my_chr = unclust_chr
-        current_clust_inds = sorted(current_clust_inds)
-        khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
-        zfcn = str(clust_num).zfill(3)
-        telcompplot_fn = OUT_CDIR_TVR + 'results/' + 'reads_'       + zfcn + '.png'
-        telcompcons_fn = OUT_CDIR_TVR + 'results/' + 'consensus_'   + zfcn + '.png'
-        dendrogram_fn  = OUT_CDIR_TVR + 'dendro/'  + 'dendrogram_'  + zfcn + '.png'
-        dist_matrix_fn = OUT_CDIR_TVR + 'npz/'     + 'dist-matrix_' + zfcn + '.npz'
-        consensus_fn   = OUT_CDIR_TVR + 'fa/'      + 'consensus_'   + zfcn + '.fa'
-        if ALWAYS_REPROCESS:
-            rm(consensus_fn)
-            rm(dist_matrix_fn)
-        if PLOT_ALL_TVR_CLUST is False:
-            dendrogram_fn = None # skip dendrograms if we're not plotting kmer composition
-        #
-        if PRINT_INIT_PROGRESS:
-            print(f' - [INFO:] processing cluster {clust_num} ({len(current_clust_inds)} reads)')
-        #
-        subset_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
-                                       aln_mode='ds',
-                                       tvr_truncate=TVR_TRUNCATE,
-                                       num_processes=NUM_PROCESSES,
-                                       rand_shuffle_count=RAND_SHUFFLE,
-                                       dist_in=dist_matrix_fn,
-                                       fig_name=dendrogram_fn,
-                                       save_msa=consensus_fn)
-        #
-        # update init dist matrix with new (presumably better) values
-        #
-        submatrix = np.load(dist_matrix_fn)['dist']
-        init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)] = submatrix
-        #
-        if PLOT_ALL_TVR_CLUST:
-            if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
-                make_tvr_plots(khd_subset, subset_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
-        #
-        for sci,subclust_inds in enumerate(subset_clustdat[0]):
-            subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
-            my_tvr_len = subset_clustdat[7][sci]
-            # blank tvr? --> add to blank inds
-            if my_tvr_len <= 0:
-                blank_inds.extend(subclust_read_inds)
-                continue
-            # readcount filter
-            if len(subclust_read_inds) < MIN_READS_PER_PHASE:
-                continue
-            n_reads += len(subclust_read_inds)
-            #
-            # filters to try and remove interstitial telomere repeats
-            #
-            clust_failed = False
-            term_tel = [all_terminating_tl[n] for n in subclust_read_inds]
-            term_zero_frac = len([n for n in term_tel if n <= 0.0]) / len(term_tel)
-            if term_zero_frac > TERM_TEL_ZERO_FRAC:
-                clust_failed = True
-            nt_end = [all_nontel_end[n] for n in subclust_read_inds]
-            nontel_long_frac = len([n for n in nt_end if n > NONTEL_END_FILT_PARAMS[0]]) / len(nt_end)
-            if nontel_long_frac > NONTEL_END_FILT_PARAMS[1]:
-                clust_failed = True
-            if clust_failed:
-                fail_tvr_clust.append((term_zero_frac, nontel_long_frac, [n for n in subclust_read_inds]))
-                continue
-            #
-            # pass all checks? --> add to list for subsequent subtel clustering
-            #
-            tvrtel_lens = [subset_clustdat[1][n] for n in subclust_inds]
-            my_subtels = []
-            for tti,sri in enumerate(subclust_read_inds):
-                my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
-                my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
-                my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
-            #
-            clusters_with_tvrs.append((my_chr, [n for n in subclust_read_inds], my_subtels))
-            all_consensus_tvrs.append(subset_clustdat[4][sci][:my_tvr_len])
-        #
-        clust_num += 1
-    #
-    # add in the blanks
-    #
+    for tvr_clust in clustered_consensus_tvrs:
+        clusters_with_tvrs.append((FAKE_CHR, sum([temp_clusters_with_tvrs[n][1] for n in tvr_clust], []), sum([temp_clusters_with_tvrs[n][2] for n in tvr_clust], [])))
+    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+    sys.stdout.flush()
+    if len(temp_clusters_with_tvrs) == len(clusters_with_tvrs):
+        print(' - no duplicates found')
+    else:
+        print(f' - {len(temp_clusters_with_tvrs)} clusters --> {len(clusters_with_tvrs)} clusters')
+    del temp_clusters_with_tvrs
+
+    # get subtels for reads with blank tvrs
     if len(blank_inds) >= MIN_READS_PER_PHASE:
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in blank_inds]
         tvrtel_lens = quick_get_tvrtel_lens(khd_subset, KMER_METADATA)
@@ -668,19 +704,16 @@ def main(raw_args=None):
             my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
             my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
             my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
-        clusters_with_tvrs.append((blank_chr, [n for n in blank_inds], my_subtels))
-    #
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    print(f' - {len(clusters_with_tvrs)} clusters with tvrs ({n_reads} reads)')
-    print(f' - {len(fail_tvr_clust)} clusters removed for not ending in enough tel sequence')
-    print(f' - ({len(blank_inds)} tel reads with blank tvr)')
+        clusters_with_tvrs.append((BLANK_CHR, [n for n in blank_inds], my_subtels))
+        print('appending cluster of reads with blank TVR...')
+        print(f' - {len(clusters_with_tvrs)} clusters')
 
+    #=====================================================#
     #
-    # [3] SUBTEL CLUSTERING
+    # [4] SUBTEL CLUSTER REFINEMENT
     #
+    #=====================================================#
 
-    all_consensus_tvr_subtel_pairs = []
     if SKIP_SUBTEL_REFINE:
         print('skipping subtel cluster refinement...')
         final_clustered_read_inds = []
@@ -689,303 +722,114 @@ def main(raw_args=None):
     else:
         sys.stdout.write('refining clusters [SUBTEL]...')
         sys.stdout.flush()
+        if PRINT_PROGRESS:
+            print()
         tt = time.perf_counter()
         final_clustered_read_inds = []
         n_reads = 0
         for sci, (my_chr, subclust_read_inds, my_subtels) in enumerate(clusters_with_tvrs):
             zfcn = str(sci).zfill(3)
-            subtel_dendro_fn = OUT_CDIR_SUB + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
-            subtel_dist_fn   = OUT_CDIR_SUB + 'npz/'    + 'dist-matrix_' + zfcn + '.npz'
-            subtel_cons_fn   = OUT_CDIR_SUB + 'fa/'     + 'consensus_'   + zfcn
-            my_dendro_title  = zfcn
-            subtel_labels    = None
+            subtel_clust_params['dendro_name'] = OUT_DIR_SUBTEL + 'dendro/' + 'dendrogram_'  + zfcn + '.png'
+            subtel_clust_params['dist_in']     = OUT_DIR_SUBTEL + 'npz/'    + 'dist-matrix_' + zfcn + '.npz'
+            subtel_clust_params['samp_labels'] = None
+            subtel_clust_params['dendrogram_title'] = zfcn
             if ALWAYS_REPROCESS:
-                rm(subtel_dist_fn)
+                rm(subtel_clust_params['dist_in'])
             #
-            subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, TREECUT_REFINE_SUBTEL,
-                                                     num_processes=NUM_PROCESSES,
-                                                     aln_mode='ms',
-                                                     gap_bool=(True,False),
-                                                     rand_shuffle_count=RAND_SHUFFLE,
-                                                     adjust_lens=False,
-                                                     dist_in=subtel_dist_fn,
-                                                     dendro_name=subtel_dendro_fn,
-                                                     samp_labels=subtel_labels,
-                                                     linkage_method='ward',
-                                                     normalize_dist_matrix=True,
-                                                     dendrogram_title=my_dendro_title,
-                                                     dendrogram_height=8,
-                                                     overwrite_figures=not(DONT_OVERWRITE_PLOTS))
+            subtel_clustdat = cluster_consensus_tvrs(my_subtels, KMER_METADATA, **subtel_clust_params)
             #
-            if ALWAYS_REPROCESS or exists_and_is_nonzero(subtel_cons_fn + '.fa') is False:
-                with open(subtel_cons_fn + '.fa', 'w') as f:
-                    for sci_s,subclust_inds in enumerate(subtel_clustdat):
-                        subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
-                        if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
-                            continue
-                        # only use MAX_MSA_READCOUNT for creating the subtel consensus (choosing the longest sequences)
-                        clustered_subtels = [n[1] for n in sorted([(len(my_subtels[n]), my_subtels[n]) for n in subclust_inds], reverse=True)[:MAX_MSA_READCOUNT]]
-                        subtel_consensus_seq = get_nucl_consensus(clustered_subtels)
-                        subtel_consensus_prune = max(len(subtel_consensus_seq) - SUBTEL_TRUNCATE, 0)
-                        subtel_consensus_seq = subtel_consensus_seq[subtel_consensus_prune:]
-                        zfcn_s = str(sci_s).zfill(3)
-                        f.write(f'>subtel-consensus_{zfcn}_{zfcn_s}\n')
-                        f.write(f'{subtel_consensus_seq}\n')
-            my_cons_subtels = [n[1] for n in quick_grab_all_reads(subtel_cons_fn + '.fa')]
-            for cons_subtel in my_cons_subtels:
-                if my_chr != blank_chr:
-                    all_consensus_tvr_subtel_pairs.append((all_consensus_tvrs[sci], cons_subtel))
-                else:
-                    all_consensus_tvr_subtel_pairs.append((None, cons_subtel))
-            for sci_s,subclust_inds in enumerate(subtel_clustdat):
+            num_pass_subclust_reads = []
+            for subclust_inds in subtel_clustdat:
                 subsubclust_read_inds = [subclust_read_inds[n] for n in subclust_inds]
-                if len(subsubclust_read_inds) < MIN_READS_PER_PHASE:
-                    continue
-                n_reads += len(subsubclust_read_inds)
-                final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds], [my_subtels[n] for n in subclust_inds]))
+                if len(subsubclust_read_inds) >= MIN_READS_PER_PHASE:
+                    final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds], [my_subtels[n] for n in subclust_inds]))
+                    num_pass_subclust_reads.append(len(subsubclust_read_inds))
+            #
+            if PRINT_PROGRESS:
+                print(f' - processed cluster {zfcn} ({len(subclust_read_inds)} reads) --> {len(num_pass_subclust_reads)} clusters ({sum(num_pass_subclust_reads)} reads)')
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {len(final_clustered_read_inds)} clusters ({n_reads} reads)')
 
+    #=====================================================#
     #
-    # [4] COLLAPSE CLUSTERS WITH VERY SIMILAR CONSENSUS TVRS + VERY SIMILAR CONSENSUS SUBTELS
-    #     -- this is to mitigate false positives due to alleles that were split in initial clustering
-    #     -- since we have consensus sequences at this point, comparisons should be easier
+    # [5] FINAL RECLUSTERING
     #
-
-    sys.stdout.write(f'checking for duplicate alleles...')
-    sys.stdout.flush()
-    tt = time.perf_counter()
-    n_alleles_before_collapsing = len(final_clustered_read_inds)
-    # [4a]: TVRs
-    clust1 = []
-    tvrs_to_compare = [n[0] for n in all_consensus_tvr_subtel_pairs if n[0] is not None]
-    if tvrs_to_compare:
-        collapse_dendro_fn = OUT_CDIR_COL + 'tvrs_dendrogram.png'
-        collapse_dist_fn   = OUT_CDIR_COL + 'tvrs_dist-matrix.npz'
-        collapse_fig_fn    = OUT_CDIR_COL + 'tvrs_plot.png'
-        collapse_fa_fn     = OUT_CDIR_COL + 'tvrs.fa'
-        with open(collapse_fa_fn, 'w') as f:
-            for seq_i, seq in enumerate(tvrs_to_compare):
-                f.write(f'>tvr_{seq_i}\n{seq}\n')
-        if ALWAYS_REPROCESS:
-            rm(collapse_dist_fn)
-        clust1 = cluster_consensus_tvrs(tvrs_to_compare, KMER_METADATA, COLLAPSE_TVR_THRESH,
-                                        dist_in=collapse_dist_fn,
-                                        fig_name=collapse_fig_fn,
-                                        dendro_name=collapse_dendro_fn,
-                                        aln_mode='ms',
-                                        gap_bool=(True,False),      # allow grouping prefixes
-                                        adjust_lens=False,
-                                        rand_shuffle_count=3,
-                                        linkage_method='single',
-                                        normalize_dist_matrix=True,
-                                        num_processes=NUM_PROCESSES,
-                                        overwrite_figures=not(DONT_OVERWRITE_PLOTS),
-                                        dendrogram_xlim=[1.1,0])
-    # [4b]: subtels in clusters with TVRs
-    clust2 = []
-    subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is not None]
-    if subs_to_compare:
-        collapse_dendro_fn = OUT_CDIR_COL + 'subtels_dendrogram.png'
-        collapse_dist_fn   = OUT_CDIR_COL + 'subtels_dist-matrix.npz'
-        collapse_fig_fn    = OUT_CDIR_COL + 'subtels_plot.png'
-        collapse_fa_fn     = OUT_CDIR_COL + 'subtels.fa'
-        with open(collapse_fa_fn, 'w') as f:
-            for seq_i, seq in enumerate(subs_to_compare):
-                f.write(f'>subtel_{seq_i}\n{seq}\n')
-        if ALWAYS_REPROCESS:
-            rm(collapse_dist_fn)
-        clust2 = cluster_consensus_tvrs(subs_to_compare, KMER_METADATA, COLLAPSE_SUB_THRESH,
-                                        dist_in=collapse_dist_fn,
-                                        fig_name=collapse_fig_fn,
-                                        dendro_name=collapse_dendro_fn,
-                                        aln_mode='ms',
-                                        gap_bool=(True,False),
-                                        adjust_lens=False,
-                                        rand_shuffle_count=3,
-                                        linkage_method='single',
-                                        normalize_dist_matrix=True,
-                                        num_processes=NUM_PROCESSES,
-                                        overwrite_figures=not(DONT_OVERWRITE_PLOTS),
-                                        dendrogram_xlim=[1.1,0])
-    # [4c]: subtels in clusters without TVRs
-    clust3 = []
-    subs_to_compare = [n[1] for n in all_consensus_tvr_subtel_pairs if n[0] is None]
-    if subs_to_compare:
-        collapse_dendro_fn = OUT_CDIR_COL + 'subtels-blanktvr_dendrogram.png'
-        collapse_dist_fn   = OUT_CDIR_COL + 'subtels-blanktvr_dist-matrix.npz'
-        collapse_fig_fn    = OUT_CDIR_COL + 'subtels-blanktvr_plot.png'
-        collapse_fa_fn     = OUT_CDIR_COL + 'subtels-blanktvr.fa'
-        with open(collapse_fa_fn, 'w') as f:
-            for seq_i, seq in enumerate(subs_to_compare):
-                f.write(f'>subtel-blank_{seq_i}\n{seq}\n')
-        if ALWAYS_REPROCESS:
-            rm(collapse_dist_fn)
-        print()
-        clust3 = cluster_consensus_tvrs(subs_to_compare, KMER_METADATA, COLLAPSE_SUB_THRESH,
-                                        dist_in=collapse_dist_fn,
-                                        fig_name=collapse_fig_fn,
-                                        dendro_name=collapse_dendro_fn,
-                                        aln_mode='ms',
-                                        gap_bool=(True,False),
-                                        adjust_lens=False,
-                                        rand_shuffle_count=3,
-                                        linkage_method='single',
-                                        normalize_dist_matrix=True,
-                                        num_processes=NUM_PROCESSES,
-                                        overwrite_figures=not(DONT_OVERWRITE_PLOTS),
-                                        dendrogram_xlim=[1.1,0])
-        clust3 = [[n + len(tvrs_to_compare) for n in l3] for l3 in clust3]
-    #
-    intersections = []
-    for l1 in clust1:
-        for l2 in clust2:
-            lint = [n for n in l1 if n in l2]
-            if len(lint) > 1:
-                intersections.append(lint)
-    for l3 in clust3:
-        if len(l3) > 1:
-            intersections.append([n + len(tvrs_to_compare) for n in l3])
-    if intersections:
-        new_final_inds = []
-        final_inds_seen = {}
-        for i in range(len(final_clustered_read_inds)):
-            if i in final_inds_seen:
-                continue
-            intersection_ind = None
-            for j in range(len(intersections)):
-                if i in intersections[j]:
-                    intersection_ind = j
-                    break
-            if intersection_ind is not None:
-                new_final_inds.append((final_clustered_read_inds[intersections[intersection_ind][0]][0],
-                                       sum([final_clustered_read_inds[n][1] for n in intersections[intersection_ind]], []),
-                                       sum([final_clustered_read_inds[n][2] for n in intersections[intersection_ind]], [])))
-                for k in intersections[intersection_ind]:
-                    final_inds_seen[k] = True
-            else:
-                new_final_inds.append(final_clustered_read_inds[i])
-                final_inds_seen[i] = True
-        final_clustered_read_inds = new_final_inds
-    sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-    sys.stdout.flush()
-    if len(final_clustered_read_inds) != n_alleles_before_collapsing:
-        print(f' - {n_alleles_before_collapsing} clusters --> {len(final_clustered_read_inds)} clusters')
-    else:
-        print(' - no duplicates found')
-
-    #
-    # [5] FINAL RE-CLUSTERING
-    #
+    #=====================================================#
 
     sys.stdout.write('final reclustering to get TVRs and TLs for each allele...')
     sys.stdout.flush()
+    if PRINT_PROGRESS:
+        print()
     tt = time.perf_counter()
-    clust_num = 0
-    plot_num = 0
+
     subtels_out = []
     allele_outdat = []
     allele_consensus = []
-    n_final_clusters_added = 0
-    n_final_clusters_removed = 0
-    for (my_chr, current_clust_inds, rev_subtels) in final_clustered_read_inds:
+    for plot_num, (my_chr, current_clust_inds, rev_subtels) in enumerate(final_clustered_read_inds):
         current_clust_inds = sorted(current_clust_inds)
         khd_subset = [copy.deepcopy(kmer_hit_dat[n]) for n in current_clust_inds]
         rlens_subset = [my_rlens[n] for n in current_clust_inds]
+        #
         zfcn = str(plot_num).zfill(3)
-        telcompplot_fn = OUT_CDIR_FIN + 'results/' + 'reads_'       + zfcn + '.png'
-        telcompcons_fn = OUT_CDIR_FIN + 'results/' + 'consensus_'   + zfcn + '.png'
-        dendrogram_fn  = OUT_CDIR_FIN + 'dendro/'  + 'dendrogram_'  + zfcn + '.png'
-        dist_matrix_fn = OUT_CDIR_FIN + 'npz/'     + 'dist-matrix_' + zfcn + '.npz'
-        consensus_fn   = OUT_CDIR_FIN + 'fa/'      + 'consensus_'   + zfcn + '.fa'
+        final_clust_params['fig_name'] = f'{OUT_DIR_FINAL}dendro/dendrogram_{zfcn}.png'
+        final_clust_params['dist_in']  = f'{OUT_DIR_FINAL}npz/dist-matrix_{zfcn}.npz'
+        final_clust_params['save_msa'] = f'{OUT_DIR_FINAL}fa/consensus_{zfcn}.fa'
+        final_clust_params['my_chr']   = my_chr
         if ALWAYS_REPROCESS:
-            rm(consensus_fn)
-        if PLOT_ALL_FINAL_CLUST is False:
-            dendrogram_fn = None # skip dendrograms if we're not plotting kmer composition
-        # get distance from init_dist_matrix (which was also updated during tvr step)
-        my_dist_matrix = init_dist_matrix[np.ix_(current_clust_inds, current_clust_inds)]
-        np.savez_compressed(dist_matrix_fn, dist=my_dist_matrix)
+            rm(final_clust_params['dist_in'])
+            rm(final_clust_params['save_msa'])
         #
-        if my_chr == unclust_chr:
-            # if this cluster is from unclust_chr, we're allowed to scrutinize the TVRs
-            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, TREECUT_REFINE_TVR,
-                                         aln_mode='ds',
-                                         num_processes=NUM_PROCESSES,
-                                         rand_shuffle_count=RAND_SHUFFLE,
-                                         dist_in=dist_matrix_fn,
-                                         fig_name=dendrogram_fn,
-                                         save_msa=consensus_fn)
-        else:
-            # otherwise we're just reclustering to get tl boundaries so treecut can be set arbitrarily high
-            solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, my_chr, fake_pos, 100.,
-                                         aln_mode='ms',
-                                         num_processes=NUM_PROCESSES,
-                                         rand_shuffle_count=1,
-                                         dist_in=dist_matrix_fn,
-                                         fig_name=dendrogram_fn,
-                                         save_msa=consensus_fn)
+        solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, **final_clust_params)
         #
-        my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, my_chr, fake_pos, rlens_subset, gatd_params)
-        prior_clustnum = clust_num
+        my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, my_chr, FAKE_POS, rlens_subset, gatd_params)
         for sci,subclust_inds in enumerate(solo_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
-            if len(subclust_read_inds) < MIN_READS_PER_PHASE:
-                continue
             for i,sri in enumerate(subclust_read_inds):
                 subtels_out.append((f'cluster-{len(allele_outdat)}_read-{i}_{my_rnames[sri]}', rev_subtels[subclust_inds[i]][::-1]))
             allele_outdat.append(my_tsvdat[sci])
             allele_consensus.append(solo_clustdat[4][sci])
-            clust_num += 1
-        if clust_num == prior_clustnum:
-            n_final_clusters_removed += 1
-        elif clust_num - prior_clustnum > 1:
-            n_final_clusters_added += clust_num - prior_clustnum - 1
         #
-        if PLOT_ALL_FINAL_CLUST:
+        telcompplot_fn = f'{OUT_DIR_FINAL}results/reads_{zfcn}.png'
+        telcompcons_fn = f'{OUT_DIR_FINAL}results/consensus_{zfcn}.png'
+        if PLOT_FINAL_CLUST:
             if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
-                make_tvr_plots(khd_subset, solo_clustdat, my_chr, fake_pos, telcompplot_fn, telcompcons_fn, mtp_params)
+                make_tvr_plots(khd_subset, solo_clustdat, my_chr, FAKE_POS, telcompplot_fn, telcompcons_fn, mtp_params)
         #
-        plot_num += 1
+        if PRINT_PROGRESS:
+            print(f' - processed cluster {zfcn} ({len(current_clust_inds)} reads)')
+        #
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
 
-    #
     # fill out allele id fields (there are no multimapped alleles at this point)
-    # -- print out some TVR stats to console
-    #
     for i,atdat in enumerate(allele_outdat):
         ALLELE_TEL_DAT.append([n for n in atdat])
         ALLELE_TEL_DAT[-1][3] = str(i)
-    num_unique_alleles = len(set([n[3] for n in ALLELE_TEL_DAT]))
-    #num_blank_alleles  = len([n[0] for n in ALLELE_TEL_DAT if n[0] == blank_chr])
-    print(f' - {num_unique_alleles} unique alleles')
-    #print(f' - {num_blank_alleles} / {num_unique_alleles} alleles with blank tvrs')
-    print(f' - ({n_final_clusters_removed} clusters removed during tvr reanalysis)')
-    print(f' - ({n_final_clusters_added} clusters added during tvr reanalysis)')
 
+    #=====================================================#
     #
-    # SUBTEL ALIGNMENT
+    # [6] SUBTEL ANCHORING
     #
+    #=====================================================#
+
     if SKIP_ANCHORING is False:
-        #
-        with gzip.open(OUT_UNANCHORED_SUBTELS, 'wt') as f:
-            for n in subtels_out:
-                if len(n[1]) > 0:
-                    f.write(f'>{n[0]}\n{n[1]}\n')
-            for n in interstitial_subtels:
-                if len(n[1]) > 0:
-                    f.write(f'>{n[0]}\n{n[1]}\n')
-        #
         aln_log = ALIGNED_SUBTELS + '.log'
         aln_sam = ALIGNED_SUBTELS + '.sam'
         aln_bam = ALIGNED_SUBTELS + '.bam'
-        if exists_and_is_nonzero(aln_bam) and NO_SUBTEL_REALIGN:
-            pass
-        else:
+        if ALWAYS_REPROCESS or exists_and_is_nonzero(aln_bam) is False:
             sys.stdout.write('aligning subtels to reference...')
             sys.stdout.flush()
             tt = time.perf_counter()
+            #
+            with gzip.open(UNANCHORED_SUBTELS, 'wt') as f:
+                for n in subtels_out:
+                    if len(n[1]) > 0:
+                        f.write(f'>{n[0]}\n{n[1]}\n')
+                for n in interstitial_subtels:
+                    if len(n[1]) > 0:
+                        f.write(f'>{n[0]}\n{n[1]}\n')
+            #
             cmd = ''
             #
             if WHICH_ALIGNER == 'minimap2':
@@ -994,7 +838,7 @@ def main(raw_args=None):
                     aln_params = '-ax map-ont -Y'
                 elif READ_TYPE == 'hifi':
                     aln_params = '-ax map-hifi -Y'
-                cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+                cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + UNANCHORED_SUBTELS
             #
             elif WHICH_ALIGNER == 'winnowmap':
                 aln_params = ''
@@ -1002,7 +846,7 @@ def main(raw_args=None):
                     aln_params = '-ax map-ont -Y'
                 elif READ_TYPE == 'hifi':
                     aln_params = '-ax map-pb -Y'
-                cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS
+                cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + UNANCHORED_SUBTELS
             #
             elif WHICH_ALIGNER == 'pbmm2':
                 with gzip.open(TELOGATOR_REF,'rt') as f_tr: # pbmm2 wants an uncompressed reference
@@ -1010,7 +854,7 @@ def main(raw_args=None):
                         for line in f_tr:
                             f_utr.write(line)
                 pysam.faidx(UNCOMPRESSED_TELOGATOR_REF)
-                cmd = ALIGNER_EXE + ' align ' + UNCOMPRESSED_TELOGATOR_REF + ' ' + OUT_UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
+                cmd = ALIGNER_EXE + ' align ' + UNCOMPRESSED_TELOGATOR_REF + ' ' + UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
             if len(cmd):
                 with open(aln_log, 'w') as f:
                     try:
@@ -1046,9 +890,7 @@ def main(raw_args=None):
         #
         # get anchors from subtel alignment
         #
-        sys.stdout.write('getting anchors from alignment...')
-        sys.stdout.flush()
-        tt = time.perf_counter()
+        print('getting anchors from alignment...')
         ALIGNMENTS_BY_RNAME = {}
         samfile = pysam.AlignmentFile(aln_bam, "rb")
         refseqs = samfile.references
@@ -1198,19 +1040,17 @@ def main(raw_args=None):
                     else:
                         clust_mapq.append(0)
                 ALLELE_TEL_DAT[clustnum][7] = ','.join([str(n) for n in clust_mapq])
-        #
-        sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
-        sys.stdout.flush()
 
-        #
         # resort out allele dat by chr & atl & pos
-        #
         sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], -1 * int(n[4]), int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
         ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[4]] for n in sorted_ad_inds]
 
+    #=====================================================#
     #
-    # collapse homozygous alleles
+    # [7] COLLAPSE SIMILAR ALLELES MAPPED NEAR EACH OTHER
     #
+    #=====================================================#
+
     if COLLAPSE_HOM_BP > 0:
         sys.stdout.write(f'merging alleles mapped within {COLLAPSE_HOM_BP}bp of each other...')
         sys.stdout.flush()
@@ -1224,11 +1064,12 @@ def main(raw_args=None):
                     if all([ALLELE_TEL_DAT[i][0].split(',')[0] == ALLELE_TEL_DAT[j][0].split(',')[0],
                             ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[j][2].split(',')[0],
                             abs(int(ALLELE_TEL_DAT[i][1].split(',')[0]) - int(ALLELE_TEL_DAT[j][1].split(',')[0])) <= COLLAPSE_HOM_BP]):
-                        my_dist = COLLAPSE_HOM_TVR_THRESH * 2
+                        my_dist = TREECUT_HOM_COLLAPSE * 2
                         tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
                         if len(tvr_i) and len(tvr_j):
                             my_dist = quick_compare_tvrs(tvr_i, tvr_j)
-                        if my_dist <= COLLAPSE_HOM_TVR_THRESH:
+                        #print('DEBUG:', ALLELE_TEL_DAT[i][3], ALLELE_TEL_DAT[j][3], my_dist)
+                        if my_dist <= TREECUT_HOM_COLLAPSE:
                             which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
                             if which_ind == 0:
                                 ALLELE_TEL_DAT[i] = merged_dat
@@ -1236,7 +1077,7 @@ def main(raw_args=None):
                             else:
                                 ALLELE_TEL_DAT[j] = merged_dat
                                 del_ind = i
-                            plot_fn_col2 = OUT_CDIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
+                            plot_fn_col2 = OUT_DIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
                             if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
                                 plot_some_tvrs([tvr_i, tvr_j],
                                                [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])],
@@ -1255,11 +1096,14 @@ def main(raw_args=None):
         sys.stdout.flush()
         print(f' - {n_alleles_before_collapsing} --> {len(ALLELE_TEL_DAT)} alleles')
 
+    #=====================================================#
     #
-    # write out allele TLs
+    # [8] WRITE OUT THE FINAL RESULTS
     #
-    print('writing allele TL results to "' + OUT_ALLELE_TL.split('/')[-1] + '"...')
-    with open(OUT_ALLELE_TL, 'w') as f:
+    #=====================================================#
+
+    print('writing allele TL results to "' + FINAL_TSV.split('/')[-1] + '"...')
+    with open(FINAL_TSV, 'w') as f:
         f.write('#chr' + '\t' +
                 'position' + '\t' +
                 'ref_samp' + '\t' +
@@ -1282,7 +1126,7 @@ def main(raw_args=None):
         for atd in ALLELE_TEL_DAT:
             my_chr = atd[0].split(',')[0]
             my_tvr_len = int(atd[8])
-            if my_chr in [fake_chr, blank_chr, unclust_chr]:
+            if my_chr in [FAKE_CHR, BLANK_CHR, UNCLUST_CHR]:
                 my_chr = 'unanchored'
             if 'i' in atd[3]:
                 continue # don't include interstitial alleles in violin
@@ -1312,7 +1156,7 @@ def main(raw_args=None):
     readlens_final = []
     readcount_fail_final_filters = [0, 0, 0]
     for atd in ALLELE_TEL_DAT:
-        my_id = atd[3]
+        my_id = atd[3].split(',')[0]
         while my_id[-1].isdigit() is False:
             my_id = my_id[:-1]
         my_id = int(my_id)
@@ -1320,7 +1164,7 @@ def main(raw_args=None):
         my_max_atl = max([int(n) for n in atd[5].split(',')])
         my_tvr_len = int(atd[8])
         n_reads = len(atd[6].split(','))
-        if atd[0] in [fake_chr, blank_chr, unclust_chr]:
+        if atd[0] in [FAKE_CHR, BLANK_CHR, UNCLUST_CHR]:
             num_alleles_unmapped += 1
             readcount_fail_final_filters[0] += n_reads
             continue
@@ -1365,6 +1209,10 @@ def main(raw_args=None):
         plot_kmer_hits(clust_khd, KMER_COLORS, '', 0, FINAL_TVRS, clust_dat=clustdat_to_plot, plot_params=custom_plot_params)
     else:
         print('no alleles to plot.')
+
+    #
+    # stats
+    #
     print(f' - {num_pass_alleles} final telomere alleles ({len(readlens_final)} reads)')
     print(f' - {num_alleles_unmapped} alleles unmapped ({readcount_fail_final_filters[0]} reads)')
     print(f' - {num_alleles_too_short} alleles with atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp ({readcount_fail_final_filters[1]} reads)')

@@ -56,6 +56,11 @@ REF_CHAR  = 'MX=D'
 READ_CHAR = 'MX=I'
 CLIP_CHAR = 'SH'
 
+BLANK_CHR   = 'chrBq'
+UNCLUST_CHR = 'chrUq'
+FAKE_CHR    = 'chrFq'
+FAKE_POS    = 0
+
 INTERSTITIAL_TEL_REGIONS = [('t2t-chm13_chr1p',       304961, 305976, 'p-1015'),
                             ('t2t-chm13_chr2q',       203415, 207846, 'q-4431'),
                             ('t2t-chm13_chr3q',       297928, 299750, 'q-1822'),

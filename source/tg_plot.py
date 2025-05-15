@@ -413,7 +413,8 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
         for k in v_line_keys:
             if k in violin_parts_p:
                 violin_parts_p[k].set_color('black')
-                violin_parts_p[k].set_alpha(0.4)
+                violin_parts_p[k].set_alpha(0.3)
+        violin_parts_p['cbars'].set_alpha(0.0)
     #
     if len(dat_l_q) and len(dat_p_q):
         violin_parts_q = mpl.violinplot(dat_l_q, dat_p_q, points=200, widths=dat_w_q)
@@ -424,20 +425,21 @@ def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_p
         for k in v_line_keys:
             if k in violin_parts_q:
                 violin_parts_q[k].set_color('black')
-                violin_parts_q[k].set_alpha(0.4)
+                violin_parts_q[k].set_alpha(0.3)
+        violin_parts_q['cbars'].set_alpha(0.0)
     #
     if plot_means:
         for i in range(len(dat_l_p)):
             yval = np.mean(dat_l_p[i])
             xval = dat_p_p[i]
-            mpl.plot([xval - 0.3, xval + 0.3], [yval, yval], '-k', linewidth=2, alpha=0.4)
+            mpl.plot([xval - 0.3, xval + 0.3], [yval, yval], '-k', linewidth=2, alpha=0.3)
         for i in range(len(dat_l_q)):
             yval = np.mean(dat_l_q[i])
             xval = dat_p_q[i]
-            mpl.plot([xval - 0.3, xval + 0.3], [yval, yval], '-k', linewidth=2, alpha=0.4)
+            mpl.plot([xval - 0.3, xval + 0.3], [yval, yval], '-k', linewidth=2, alpha=0.3)
 
 
-def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_params={}):
+def tel_len_violin_plot(tel_len_dict_list, out_fn, custom_plot_params={}):
     #
     mpl.rcParams.update({'font.size': 18, 'font.weight':'normal'})
     plot_params = {'p_colors':[(70/255, 130/255, 180/255)], # steelblue
@@ -451,6 +453,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
                    'norm_by_readcount':True,
                    'skip_plot':[],
                    'include_unanchored':False,
+                   'violin_plotmeans':True,
                    'boxplot':False,
                    'boxfliers':False,
                    'custom_yticks':None,
@@ -560,7 +563,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
             box_params = {'linewidth':1, 'facecolor':plot_params['q_color']}
             mpl.boxplot(dat_l_q, vert=True, positions=dat_p_q, widths=dat_w_q, patch_artist=True, showfliers=plot_params['boxfliers'], boxprops=box_params, medianprops=mean_params, whiskerprops=line_params, capprops=line_params, flierprops=flier_params)
         else:
-            violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means)
+            violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means=plot_params['violin_plotmeans'])
     #
     xt_packed = [(xtck[i]+0.5*(alleles_per_arm-1), xlab[i]) for i in range(len(xtck)) if len(xlab[i])]
     num_blank = len([n for n in xlab if len(n) == 0])
@@ -584,7 +587,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, plot_means=True, custom_plot_
     if plot_params['custom_title']:
         mpl.title(plot_params['custom_title'])
     if samp_names:
-        mpl.legend(samp_names, prop={'size':12})
+        mpl.legend(samp_names, prop={'size':11}, loc=4)
     mpl.grid(linestyle='--', alpha=0.5)
     mpl.tight_layout()
     mpl.savefig(out_fn)

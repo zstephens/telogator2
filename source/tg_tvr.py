@@ -7,7 +7,7 @@ from scipy.spatial.distance  import squareform
 from source.tg_align  import get_aligner_object, get_dist_matrix_parallel, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_MSA_READCOUNT, MAX_SEQ_DIST, progressive_alignment, UNKNOWN
 from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_some_tvrs
 from source.tg_reader import TG_Reader
-from source.tg_util   import exists_and_is_nonzero
+from source.tg_util   import exists_and_is_nonzero, FAKE_CHR, FAKE_POS
 
 
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
@@ -32,9 +32,9 @@ TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.250,  50)
 
 def cluster_tvrs(kmer_dat,
                  repeats_metadata,
-                 my_chr,
-                 my_pos,
                  tree_cut,
+                 my_chr=FAKE_CHR,
+                 my_pos=FAKE_POS,
                  aln_mode='ds',
                  rand_shuffle_count=3,
                  dist_in=None,
