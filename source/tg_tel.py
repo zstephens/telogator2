@@ -1,6 +1,6 @@
 import numpy as np
 
-from concurrent.futures import as_completed, FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 from source.tg_kmer import get_nonoverlapping_kmer_hits, get_telomere_base_count, get_telomere_kmer_density, get_telomere_regions
 from source.tg_plot import plot_tel_signal
@@ -114,12 +114,12 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
             my_chr = splt[0].split(',')[0]
             #my_pos = int(splt[1].split(',')[0])
             my_refbuild = splt[2].split(',')[0]
-            my_aid = splt[3]
-            if my_aid[-1] == 'i':
+            my_aid = splt[3].split(',')
+            if any([n[-1] == 'i' for n in my_aid]):
                 fail_dict['interstitial'] += 1
                 continue
             else:
-                my_aid = int(my_aid)
+                my_aid = int(my_aid[0])
             tvr_len = int(splt[8])
             if tvr_len < min_tvr:
                 fail_dict['min_tvr'] += 1

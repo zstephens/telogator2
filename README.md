@@ -44,9 +44,11 @@ Sequencing platforms have different sequencing error types, as such we recommend
 **PacBio Sequel II (10x)** - `-r hifi -n 3`  
 **Nanopore R10 (30x)** - `-r ont -n 4`  
 
-For Nanopore reads generated using telomere enrichment methods, such as those described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431), we recommend using `-r ont -n 5 -tt 0.100 --collapse-hom 1000`.  
-
 Telogator2 may be unable to analyze older Nanopore data, as reads basecalled with Guppy have prohibitively high sequencing error rates in telomere regions.
+
+For large datasets, such as data from enrichment methods described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431) or [Schmidt et al.](https://www.nature.com/articles/s41467-024-48917-7), higher thresholds may be needed to reduce false positives: `-r ont -n 10`.  
+
+By default Telogator2 is run with 4 processes. Runtime can be greatly reduced by specifying more, e.g. `-p 8` or `-p 16`, based on your system's available CPU resources.
 
 
 

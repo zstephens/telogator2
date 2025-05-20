@@ -24,21 +24,21 @@ MIN_TEL_SCORE = 100
 #
 DUMMY_TEL_MAPQ = 60
 MAX_QUAL_SCORE = 60
-ANCHORING_ASSIGNMENT_FRAC = 0.20
+ANCHORING_ASSIGNMENT_FRAC = 0.150
 #
 HUMAN_GENOME_BP = 3100000000
 
 
 def main(raw_args=None):
-    parser = argparse.ArgumentParser(description='Telogator2', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    parser = argparse.ArgumentParser(description='Telogator', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     #
-    parser.add_argument('--version', action='version', version='%(prog)s 1.1.0')
+    parser.add_argument('--version', action='version', version='%(prog)s 2.2.0')
     #
     parser.add_argument('-i', type=str, required=True,  metavar='',             nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
     parser.add_argument('-o', type=str, required=True,  metavar='output/',                      help="* Path to output directory")
     parser.add_argument('-k', type=str, required=False, metavar='kmers.tsv',    default='',     help="Telomere kmers file")
     parser.add_argument('-t', type=str, required=False, metavar='telogator.fa', default='',     help="Telogator reference fasta")
-    parser.add_argument('-r', type=str, required=False, metavar='hifi',         default='hifi', help="Read type: hifi / ont")
+    parser.add_argument('-r', type=str, required=False, metavar='ont',          default='ont',  help="Read type: hifi / ont")
     parser.add_argument('-l', type=int, required=False, metavar='4000',         default=4000,   help="Minimum read length")
     parser.add_argument('-c', type=int, required=False, metavar='8',            default=8,      help="Minimum hits to tandem canonical kmer")
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
@@ -293,6 +293,7 @@ def main(raw_args=None):
                              'dendrogram_xlim':[1.1,0]}
     #
     subtel_clust_params = {'aln_mode':'ms',
+                           'tvr_truncate':SUBTEL_TRUNCATE,
                            'gap_bool':(True,False),
                            'adjust_lens':False,
                            'rand_shuffle_count':3,
@@ -624,7 +625,7 @@ def main(raw_args=None):
                         for tti,sri in enumerate(next_clust):
                             my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
                             my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
-                            my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
+                            my_subtels.append(my_subtel_seq_rev)
                         out_clusters_with_tvrs.append((which_chr, [n for n in next_clust], my_subtels))
                         out_all_consensus_tvrs.append(init_refine_clust_dat[4][sci][:my_tvr_len])
             #
@@ -703,7 +704,7 @@ def main(raw_args=None):
         for tti,sri in enumerate(blank_inds):
             my_subtel_len = len(kmer_hit_dat[sri][6])-tvrtel_lens[tti]
             my_subtel_seq_rev = kmer_hit_dat[sri][6][:my_subtel_len][::-1]
-            my_subtels.append(my_subtel_seq_rev[:SUBTEL_TRUNCATE])
+            my_subtels.append(my_subtel_seq_rev)
         clusters_with_tvrs.append((BLANK_CHR, [n for n in blank_inds], my_subtels))
         print('appending cluster of reads with blank TVR...')
         print(f' - {len(clusters_with_tvrs)} clusters')
@@ -782,7 +783,7 @@ def main(raw_args=None):
         #
         solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, **final_clust_params)
         #
-        my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, my_chr, FAKE_POS, rlens_subset, gatd_params)
+        my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, UNCLUST_CHR, FAKE_POS, rlens_subset, gatd_params)
         for sci,subclust_inds in enumerate(solo_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
             for i,sri in enumerate(subclust_read_inds):
