@@ -78,6 +78,7 @@ def main(raw_args=None):
     parser.add_argument('--debug-telreads', required=False, action='store_true', default=False, help="[DEBUG] Stop immediately after extracting tel reads")
     parser.add_argument('--debug-progress', required=False, action='store_true', default=False, help="[DEBUG] Print progress to screen during init matrix computation")
     parser.add_argument('--debug-dendro',   required=False, action='store_true', default=False, help="[DEBUG] Plot dendrogram during init clustering")
+    parser.add_argument('--debug-collapse', required=False, action='store_true', default=False, help="[DEBUG] Plot TVR distances during final collapse")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     #
     parser.add_argument('--collapse-hom',  type=int, required=False, metavar='',        default=1000, help="Merge similar alleles mapped <= this bp from each other")
@@ -137,6 +138,7 @@ def main(raw_args=None):
     STOP_AFTER_TELREADS   = args.debug_telreads
     PRINT_PROGRESS        = args.debug_progress
     PLOT_INIT_DENDRO      = args.debug_dendro
+    DEBUG_COLLAPSE        = args.debug_collapse
     PLOT_TVR_CLUST_ITER_1 = args.plot_t1clust
     PLOT_TVR_CLUST_ITER_2 = args.plot_t2clust
     PLOT_FINAL_CLUST      = args.plot_finclust
@@ -1071,7 +1073,12 @@ def main(raw_args=None):
                         tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
                         if len(tvr_i) and len(tvr_j):
                             my_dist = quick_compare_tvrs(tvr_i, tvr_j)
-                        #print('DEBUG:', ALLELE_TEL_DAT[i][3], ALLELE_TEL_DAT[j][3], my_dist)
+                        if DEBUG_COLLAPSE:
+                            print(tvr_i)
+                            print(tvr_j)
+                            print()
+                            print(f'DEBUG: ({ALLELE_TEL_DAT[i][3]}) vs. ({ALLELE_TEL_DAT[j][3]}): {my_dist} <= {TREECUT_HOM_COLLAPSE} : {my_dist <= TREECUT_HOM_COLLAPSE}')
+                            print()
                         if my_dist <= TREECUT_HOM_COLLAPSE:
                             which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
                             if which_ind == 0:
