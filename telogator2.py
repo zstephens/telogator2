@@ -16,7 +16,7 @@ from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
 from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
-from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, FAKE_CHR, FAKE_POS
+from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -236,6 +236,8 @@ def main(raw_args=None):
     if RNG_SEED <= -1:
         RNG_SEED = random.randint(1, 99999999)
     random.seed(RNG_SEED)
+    np.random.seed(RNG_SEED)
+    np.random.default_rng(RNG_SEED)
     with open(QC_RNG, 'w') as f:
         f.write(str(RNG_SEED) + '\n')
 
@@ -595,7 +597,7 @@ def main(raw_args=None):
                 telcompcons_fn = f'{temp_dir}results/i{tvr_clust_iter}_consensus_{zfcn}.png'
                 if tvr_clust_iter in TVR_ITERATIONS_TO_PLOT:
                     if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
-                        make_tvr_plots(khd_subset, init_refine_clust_dat, which_chr, FAKE_POS, telcompplot_fn, telcompcons_fn, mtp_params)
+                        make_tvr_plots(khd_subset, init_refine_clust_dat, which_chr, UNCLUST_POS, telcompplot_fn, telcompcons_fn, mtp_params)
                 #
                 num_pass_subclust_reads = []
                 for sub_clust in init_refine_clust_dat[0]:
@@ -645,7 +647,7 @@ def main(raw_args=None):
     [new_unclustered_inds,
      blank_inds,
      clusters_with_tvrs,
-     all_consensus_tvrs] = tvr_refinement(init_clusters, OUT_DIR_INIT, FAKE_CHR, 'initial clustering of all reads', print_stats=True)
+     all_consensus_tvrs] = tvr_refinement(init_clusters, OUT_DIR_INIT, UNCLUST_CHR, 'initial clustering of all reads', print_stats=True)
 
     # combine unclustered reads from initial clustering with refinement iterations
     unclustered_inds += new_unclustered_inds
@@ -687,7 +689,7 @@ def main(raw_args=None):
     temp_clusters_with_tvrs = copy.deepcopy(clusters_with_tvrs)
     clusters_with_tvrs = []
     for tvr_clust in clustered_consensus_tvrs:
-        clusters_with_tvrs.append((FAKE_CHR, sum([temp_clusters_with_tvrs[n][1] for n in tvr_clust], []), sum([temp_clusters_with_tvrs[n][2] for n in tvr_clust], [])))
+        clusters_with_tvrs.append((UNCLUST_CHR, sum([temp_clusters_with_tvrs[n][1] for n in tvr_clust], []), sum([temp_clusters_with_tvrs[n][2] for n in tvr_clust], [])))
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     if len(temp_clusters_with_tvrs) == len(clusters_with_tvrs):
@@ -783,7 +785,7 @@ def main(raw_args=None):
         #
         solo_clustdat = cluster_tvrs(khd_subset, KMER_METADATA, **final_clust_params)
         #
-        my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, UNCLUST_CHR, FAKE_POS, rlens_subset, gatd_params)
+        my_tsvdat = get_allele_tsv_dat(khd_subset, solo_clustdat, UNCLUST_CHR, UNCLUST_POS, rlens_subset, gatd_params)
         for sci,subclust_inds in enumerate(solo_clustdat[0]):
             subclust_read_inds = [current_clust_inds[n] for n in subclust_inds]
             for i,sri in enumerate(subclust_read_inds):
@@ -795,7 +797,7 @@ def main(raw_args=None):
         telcompcons_fn = f'{OUT_DIR_FINAL}results/consensus_{zfcn}.png'
         if PLOT_FINAL_CLUST:
             if DONT_OVERWRITE_PLOTS is False or (exists_and_is_nonzero(telcompplot_fn) is False and exists_and_is_nonzero(telcompcons_fn) is False):
-                make_tvr_plots(khd_subset, solo_clustdat, my_chr, FAKE_POS, telcompplot_fn, telcompcons_fn, mtp_params)
+                make_tvr_plots(khd_subset, solo_clustdat, my_chr, UNCLUST_POS, telcompplot_fn, telcompcons_fn, mtp_params)
         #
         if PRINT_PROGRESS:
             print(f' - processed cluster {zfcn} ({len(current_clust_inds)} reads)')
@@ -1103,6 +1105,10 @@ def main(raw_args=None):
     #
     #=====================================================#
 
+    # change chrB to chrU if any blank clusters are unanchored, to simplify output
+    for i in range(len(ALLELE_TEL_DAT)):
+        ALLELE_TEL_DAT[i][0] = ALLELE_TEL_DAT[i][0].replace(BLANK_CHR, UNCLUST_CHR)
+
     print('writing allele TL results to "' + FINAL_TSV.split('/')[-1] + '"...')
     with open(FINAL_TSV, 'w') as f:
         f.write('#chr' + '\t' +
@@ -1127,7 +1133,7 @@ def main(raw_args=None):
         for atd in ALLELE_TEL_DAT:
             my_chr = atd[0].split(',')[0]
             my_tvr_len = int(atd[8])
-            if my_chr in [FAKE_CHR, BLANK_CHR, UNCLUST_CHR]:
+            if my_chr in [UNCLUST_CHR, BLANK_CHR]:
                 my_chr = 'unanchored'
             if 'i' in atd[3]:
                 continue # don't include interstitial alleles in violin
@@ -1162,10 +1168,10 @@ def main(raw_args=None):
             my_id = my_id[:-1]
         my_id = int(my_id)
         my_rep_atl = int(atd[4])
-        my_max_atl = max([int(n) for n in atd[5].split(',')])
+        #my_max_atl = max([int(n) for n in atd[5].split(',')])
         my_tvr_len = int(atd[8])
         n_reads = len(atd[6].split(','))
-        if atd[0] in [FAKE_CHR, BLANK_CHR, UNCLUST_CHR]:
+        if atd[0] in [UNCLUST_CHR, BLANK_CHR]:
             num_alleles_unmapped += 1
             readcount_fail_final_filters[0] += n_reads
             continue

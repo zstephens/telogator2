@@ -58,8 +58,9 @@ CLIP_CHAR = 'SH'
 
 BLANK_CHR   = 'chrBq'
 UNCLUST_CHR = 'chrUq'
-FAKE_CHR    = 'chrFq'
-FAKE_POS    = 0
+UNCLUST_POS = 0
+
+SMALL_NUMBER = 1e-6
 
 INTERSTITIAL_TEL_REGIONS = [('t2t-chm13_chr1p',       304961, 305976, 'p-1015'),
                             ('t2t-chm13_chr2q',       203415, 207846, 'q-4431'),

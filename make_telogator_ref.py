@@ -25,9 +25,11 @@ def main(raw_args=None):
     parser = argparse.ArgumentParser(description='make_telogator_ref.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, required=True,                 metavar='* input.fa',   help="* Input T2T reference")
     parser.add_argument('-o', type=str, required=True,                 metavar='* output.fa',  help="* Output Telogator reference")
-    parser.add_argument('-s', type=str, required=True,                 metavar='sampname',     help="Sample name (prepends contig names)")
+    parser.add_argument('-s', type=str, required=True,                 metavar='* sampname',   help="Sample name (prepends contig names)")
     parser.add_argument('-c', type=str, required=False, default='',    metavar='chr1,chr2,..', help="Sorted list of contigs (comma-delimited)")
+    parser.add_argument('-r', type=str, required=False, default='',    metavar='chr1,chr2,..', help="Remap sorted contig names to this (comma-delimited)")
     parser.add_argument('-k', type=str, required=False, default='',    metavar='kmers.tsv',    help="Telomere kmers")
+    parser.add_argument('-m', type=int, required=False, default=0,     metavar='0',            help="Minimum required TL at contig ends")
     parser.add_argument('--add-tel',    required=False, default=False, action='store_true',    help="Include masked tels as separate contigs")
     parser.add_argument('--plot',       required=False, default=False, action='store_true',    help="Output tel signal plots")
     args = parser.parse_args()
@@ -35,15 +37,24 @@ def main(raw_args=None):
     IN_REF     = args.i
     OUT_REF    = args.o
     CHR_LIST   = args.c
+    CHR_REMAP  = args.r
     KMER_FILE  = args.k
+    MIN_END_TL = args.m
     SAMP_NAME  = args.s
     APPEND_TEL = args.add_tel
     MAKE_PLOTS = args.plot
 
-    if CHR_LIST != '':
+    if CHR_LIST:
         SORTED_CHR = CHR_LIST.split(',')
+        if CHR_REMAP:
+            remap_names = CHR_REMAP.split(',')
+            if len(SORTED_CHR) != len(remap_names):
+                print('Error: number of contigs specified in -c and -r must be the same')
+                exit(1)
+            CHR_REMAP_DICT = {SORTED_CHR[n]:remap_names[n] for n in range(len(SORTED_CHR))}
     else:
         SORTED_CHR = DEFAULT_CHR
+        CHR_REMAP_DICT = {SORTED_CHR[n]:SORTED_CHR[n] for n in range(len(SORTED_CHR))}
 
     if SAMP_NAME != '':
         if '_' in SAMP_NAME:
@@ -91,6 +102,7 @@ def main(raw_args=None):
                 #
                 my_score = []
                 my_tel_len = None
+                tl_vals = [0,0]
                 if pq == 'p':
                     for i in range(len(tel_regions)):
                         my_s = (tel_regions[i][1] - tel_regions[i][0])
@@ -130,13 +142,16 @@ def main(raw_args=None):
                     plot_tel_signal(density_data, plot_title, plot_fn, tl_vals=tl_vals)
             #
             for pqt in pq_tlens:
-                print(f' -- {SAMP_NAME}{chr_name}{pqt[0]} masked tel = {pqt[1]}bp')
-                if pqt[0] == 'p':
-                    out_sequences.append((f'{SAMP_NAME}{chr_name}p', 'N'*pqt[1] + p_arm[pqt[1]:]))
-                    tel_sequences.append((f'{SAMP_NAME}tel-{chr_name}p', p_arm[:pqt[1]]))
-                elif pqt[0] == 'q':
-                    out_sequences.append((f'{SAMP_NAME}{chr_name}q', q_arm[:len(q_arm)-pqt[1]] + 'N'*pqt[1]))
-                    tel_sequences.append((f'{SAMP_NAME}tel-{chr_name}q', q_arm[len(q_arm)-pqt[1]:]))
+                if pqt[1] < MIN_END_TL:
+                    print(f' -- {SAMP_NAME}{chr_name}{pqt[0]} masked tel = {pqt[1]}bp [skipped]')
+                else:
+                    print(f' -- {SAMP_NAME}{chr_name}{pqt[0]} masked tel = {pqt[1]}bp')
+                    if pqt[0] == 'p':
+                        out_sequences.append((f'{SAMP_NAME}{CHR_REMAP_DICT[chr_name]}p', 'N'*pqt[1] + p_arm[pqt[1]:]))
+                        tel_sequences.append((f'{SAMP_NAME}tel-{CHR_REMAP_DICT[chr_name]}p', p_arm[:pqt[1]]))
+                    elif pqt[0] == 'q':
+                        out_sequences.append((f'{SAMP_NAME}{CHR_REMAP_DICT[chr_name]}q', q_arm[:len(q_arm)-pqt[1]] + 'N'*pqt[1]))
+                        tel_sequences.append((f'{SAMP_NAME}tel-{CHR_REMAP_DICT[chr_name]}q', q_arm[len(q_arm)-pqt[1]:]))
     tel_sequences.append(('tel-TAACCC', 'TAACCC'*10000))
 
     with open(OUT_REF, 'w') as f:

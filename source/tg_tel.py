@@ -99,6 +99,14 @@ def merge_allele_tsv_dat(dat1, dat2, ALLELE_TL_METHOD):
     return which_ind, [my_chr, my_pos, my_ref, my_id, str(int(consensus_atl)), allele_tlen_str, rlen_str, mapq_str, my_tvr_len, my_tvr, rname_str]
 
 
+def split_allele_tsv_dat_by_readnames(dat, readname_list):
+    # (read_tls, read_lens, read_mapq, read_names)
+    teldat = [[int(n) for n in dat[5].split(',')], dat[6].split(','), dat[7].split(','), dat[10].split(',')]
+    ind_is_in_readlist = [n in readname_list for n in teldat[3]]
+    print(dat[0:3])
+    print(ind_is_in_readlist.count(True), '/', len(ind_is_in_readlist))
+
+
 def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_maxatl=100, print_warnings=False):
     out_dat = []
     fail_dict = {'interstitial':0,

@@ -1,4 +1,4 @@
-name: telogator2
+name: telogator2-test
 channels:
   - bioconda
   - conda-forge
@@ -9,5 +9,5 @@ dependencies:
   - matplotlib
   - numpy
   - scipy
-  - pysam
+  - pysam<=0.22.0
   - pywavelets

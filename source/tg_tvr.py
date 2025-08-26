@@ -7,7 +7,7 @@ from scipy.spatial.distance  import squareform
 from source.tg_align  import get_aligner_object, get_dist_matrix_parallel, get_final_tvr_consensus, get_scoring_matrix, iterative_refinement, MAX_MSA_READCOUNT, MAX_SEQ_DIST, progressive_alignment, UNKNOWN
 from source.tg_plot   import DEFAULT_DPI, MAX_PLOT_SIZE, plot_some_tvrs
 from source.tg_reader import TG_Reader
-from source.tg_util   import exists_and_is_nonzero, FAKE_CHR, FAKE_POS
+from source.tg_util   import exists_and_is_nonzero, UNCLUST_CHR, UNCLUST_POS
 
 
 MAX_TVR_LEN       = 8000    # ignore variant repeats past this point when finding TVR boundary
@@ -33,8 +33,8 @@ TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.250,  50)
 def cluster_tvrs(kmer_dat,
                  repeats_metadata,
                  tree_cut,
-                 my_chr=FAKE_CHR,
-                 my_pos=FAKE_POS,
+                 my_chr=UNCLUST_CHR,
+                 my_pos=UNCLUST_POS,
                  aln_mode='ds',
                  rand_shuffle_count=3,
                  dist_in=None,
@@ -180,6 +180,7 @@ def cluster_tvrs(kmer_dat,
             mpl.title(my_chr + ' : ' + str(my_pos))
             mpl.savefig(fig_name)
             mpl.close(fig)
+            mpl.rcdefaults()
         #
         assignments = fcluster(Zread, tree_cut, 'distance').tolist()
         by_class = {}
@@ -424,6 +425,7 @@ def cluster_consensus_tvrs(sequences,
         if dendro_name is not None and (exists_and_is_nonzero(dendro_name) is False or overwrite_figures is True):
             mpl.savefig(dendro_name, dpi=200)  # default figure dpi = 100
         mpl.close(fig)
+        mpl.rcdefaults()
         #
         if fig_name is not None:
             if exists_and_is_nonzero(fig_name) is False or overwrite_figures is True:

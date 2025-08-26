@@ -83,9 +83,6 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, interstitial_
     ax1 = mpl.subplot(subplot_nums[0])
     mpl.plot(np.arange(len(td_p_e1))+x_off, td_p_e1, '-m', alpha=0.5)
     mpl.plot(np.arange(len(td_p_e0))+x_off, td_p_e0, '-k', alpha=0.8)
-    #mpl.rcParams.update({'text.usetex': True})
-    #mpl.legend(['$p_1(i)$', '$p_0(i)$'], loc=1)
-    #mpl.rcParams.update({'text.usetex': False})
     mpl.legend(['p1(i)', 'p0(i)'], loc=1)
     mpl.xlim([0,rlen])
     mpl.yticks(dens_yt, dens_yl)
@@ -98,9 +95,6 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, interstitial_
     mpl.subplot(subplot_nums[1], sharex=ax1)
     mpl.plot(np.arange(len(td_q_e1))+x_off, td_q_e1, '-m', alpha=0.5)
     mpl.plot(np.arange(len(td_q_e0))+x_off, td_q_e0, '-k', alpha=0.8)
-    #mpl.rcParams.update({'text.usetex': True})
-    #mpl.legend(['$q_1(i)$', '$q_0(i)$'], loc=1)
-    #mpl.rcParams.update({'text.usetex': False})
     mpl.legend(['q1(i)', 'q0(i)'], loc=1)
     mpl.yticks(dens_yt, dens_yl)
     mpl.ylim([0,1])
@@ -109,9 +103,6 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, interstitial_
     #
     mpl.subplot(subplot_nums[2], sharex=ax1)
     mpl.plot(np.arange(len(p_vs_q_power))+x_off, p_vs_q_power, '-k')
-    #mpl.rcParams.update({'text.usetex': True})
-    #mpl.legend(['$S(i)$'], loc=1)
-    #mpl.rcParams.update({'text.usetex': False})
     mpl.legend(['S(i)'], loc=1)
     mpl.grid(linestyle='--', alpha=0.5)
     mpl.ylabel('tel score')
@@ -148,6 +139,7 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, interstitial_
     mpl.tight_layout()
     mpl.savefig(fig_name)
     mpl.close(fig)
+    mpl.rcdefaults()
 
 
 def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=None, draw_boundaries=None, plot_params={}):
@@ -301,6 +293,7 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
     #
     mpl.savefig(fig_name)
     mpl.close(fig)
+    mpl.rcdefaults()
 
 
 def plot_kmer_hits_on_current_plot(kmer_hits, kmer_colors, adj_params, which_tel='q', xlim=None):
@@ -399,6 +392,7 @@ def plot_fusion(readname, anchordat1, anchordat2, kmer_dat_tuple, kmer_metadata,
     mpl.tight_layout()
     mpl.savefig(fig_name)
     mpl.close(fig)
+    mpl.rcdefaults()
 
 
 def violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means=True):
@@ -592,101 +586,7 @@ def tel_len_violin_plot(tel_len_dict_list, out_fn, custom_plot_params={}):
     mpl.tight_layout()
     mpl.savefig(out_fn)
     mpl.close(fig)
-
-
-def tel_len_violin_single_chr_multiple_samples(tel_len_by_samp, out_fn, plot_means=True, ground_truth_by_samp=[], custom_plot_params={}):
-    #
-    # tel_len_by_samp[i] = (samp_name, 'p'/'q', tlen_list)
-    #
-    # ground_truth_by_samp[i] = (samp_name, 'p'/'q', tlen)
-    #
-    mpl.rcParams.update({'font.size': 18, 'font.weight':'bold'})
-    plot_params = {'p_color':'blue',
-                   'q_color':'red',
-                   'xlabel_rot':0,
-                   'y_label':'<-- q   telomere length   p -->',
-                   'p_ymax':20000,
-                   'q_ymax':20000,
-                   'y_step':5000,
-                   'fig_size':(16,6)}
-    for k in custom_plot_params.keys():
-        plot_params[k] = custom_plot_params[k]
-    #
-    xlab = []
-    for n in tel_len_by_samp:
-        if n[0] not in xlab:
-            xlab.append(n[0])
-    xtck = list(range(1,len(xlab)+1))
-    ydel = plot_params['y_step']
-    (p_ymax, q_ymax) = (plot_params['p_ymax'], plot_params['q_ymax'])
-    ytck = list(range(-q_ymax, p_ymax+ydel, ydel))
-    ylab = []
-    for n in ytck:
-        if n == 0:
-            ylab.append('')
-        else:
-            ylab.append(str(abs(n)//1000) + 'k')
-    #
-    samp_2_x = {xlab[i]:xtck[i] for i in range(len(xlab))}
-    #
-    if len(tel_len_by_samp):
-        readcount_denom = max([len(n[2]) for n in tel_len_by_samp])
-    else:
-        readcount_denom = 1
-    width_max = 1.0
-    width_min = 0.1
-    #
-    # read in lengths and create data structures needed for violin plot
-    #
-    (dat_l_p, dat_l_q) = ([], [])
-    (dat_p_p, dat_p_q) = ([], [])
-    (dat_w_p, dat_w_q) = ([], [])
-    for (samp_name, pq, tlen_list) in tel_len_by_samp:
-        if len(tlen_list) == 0:
-            continue
-        my_width = min([width_max, max([width_min, width_max*(float(len(tlen_list))/readcount_denom)])])
-        if pq == 'p':
-            dat_p_p.append(samp_2_x[samp_name])
-            dat_l_p.append([])
-            dat_w_p.append(my_width)
-        elif pq == 'q':
-            dat_p_q.append(samp_2_x[samp_name])
-            dat_l_q.append([])
-            dat_w_q.append(my_width)
-        for n in tlen_list:
-            if pq == 'p':
-                dat_l_p[-1].append(n)
-            elif pq == 'q':
-                dat_l_q[-1].append(-n)
-    #
-    # violin plot
-    #
-    fig = mpl.figure(1,figsize=plot_params['fig_size'])
-    #
-    violin_plotting(dat_p_p, dat_l_p, dat_w_p, dat_p_q, dat_l_q, dat_w_q, plot_params, plot_means)
-    #
-    # use the ground-truth plotting function to compare against other tl methods (e.g. denovo assembly)
-    #
-    for i in range(len(ground_truth_by_samp)):
-        xval = samp_2_x[ground_truth_by_samp[i][0]]
-        if ground_truth_by_samp[i][1] == 'p':
-            yval = ground_truth_by_samp[i][2]
-        elif ground_truth_by_samp[i][1] == 'q':
-            yval = -ground_truth_by_samp[i][2]
-        else:
-            continue
-        mpl.plot([xval - 0.35, xval + 0.35], [yval, yval], '-k', linewidth=2, alpha=1.0)
-    #
-    mpl.plot([0,len(xlab)+1], [0,0], '-k', linewidth=3)
-    mpl.xticks(xtck, xlab, rotation=plot_params['xlabel_rot'])
-    mpl.xlim([0,len(xlab)+1])
-    mpl.yticks(ytck, ylab)
-    mpl.ylim([-q_ymax, p_ymax])
-    mpl.ylabel(plot_params['y_label'])
-    mpl.grid(linestyle='--', alpha=0.5)
-    mpl.tight_layout()
-    mpl.savefig(out_fn)
-    mpl.close(fig)
+    mpl.rcdefaults()
 
 
 def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
@@ -799,6 +699,7 @@ def tel_len_bar_plot(tel_len_dict, out_fn, custom_plot_params={}):
     mpl.tight_layout()
     mpl.savefig(out_fn)
     mpl.close(fig)
+    mpl.rcdefaults()
 
 
 def make_tvr_plots(kmer_hit_dat, read_clust_dat, my_chr, my_pos, telcompplot_fn, telcompcons_fn, mtp_params, dpi=None):
@@ -925,3 +826,4 @@ def readlen_plot(readlens_all, readlens_tel, readlens_final, plot_fn, xlim=(1000
     mpl.tight_layout()
     mpl.savefig(plot_fn)
     mpl.close(fig)
+    mpl.rcdefaults()
