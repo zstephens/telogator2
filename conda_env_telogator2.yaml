@@ -1,4 +1,4 @@
-name: telogator2-test
+name: telogator2
 channels:
   - bioconda
   - conda-forge
