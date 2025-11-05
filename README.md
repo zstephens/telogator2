@@ -109,15 +109,25 @@ The reference sequence used for telomere anchoring currently contains the first 
 
 More will be added as they become available.
 
-## Mouse reference
+## Non-human references
 
-Experimental support has been added for the [T2T-mouse genome](https://github.com/yulab-ql/mhaESC_genome):
+Experimental support has been added for some non-human references, e.g. the [T2T-mouse genome](https://github.com/yulab-ql/mhaESC_genome):
 
 ```bash
 python telogator2.py -i input.fq \ 
                      -o results/ \ 
-                     -t resources/telogator-ref-mouse.fa.gz \ 
+                     -t resources/non-human/telogator-ref-mouse.fa.gz \ 
                      --minimap2 /path/to/minimap2
 ```
 
-Note that if you choose winnowmap as the aligner that you will also need to add `--winnowmap-k15 resources/telogator-ref-mouse-k15.txt`.
+Or [T2T-maize genome](https://www.nature.com/articles/s41588-023-01419-6):
+
+```bash
+python telogator2.py -i input.fq \ 
+                     -o results/ \ 
+                     -t resources/non-human/telogator-ref-maize.fa.gz \ 
+                     -k resources/non-human/kmers_maize.tsv \ 
+                     --minimap2 /path/to/minimap2
+```
+
+Note that if you choose winnowmap as the aligner that you will also need to add its associated k15 file, e.g.: `--winnowmap-k15 resources/telogator-ref-mouse-k15.txt`.
