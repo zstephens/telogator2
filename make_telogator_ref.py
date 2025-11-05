@@ -52,6 +52,8 @@ def main(raw_args=None):
                 print('Error: number of contigs specified in -c and -r must be the same')
                 exit(1)
             CHR_REMAP_DICT = {SORTED_CHR[n]:remap_names[n] for n in range(len(SORTED_CHR))}
+        else:
+            CHR_REMAP_DICT = {SORTED_CHR[n]:SORTED_CHR[n] for n in range(len(SORTED_CHR))}
     else:
         SORTED_CHR = DEFAULT_CHR
         CHR_REMAP_DICT = {SORTED_CHR[n]:SORTED_CHR[n] for n in range(len(SORTED_CHR))}
