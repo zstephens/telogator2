@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telogator2"
+version = "2.2.0"
+authors = [
+    { name="Zachary Stephens", email="stephens.zachary@mayo.edu" },
+    { name="Jean-Pierre Kocher" },
+]
+description = "A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads."
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "biopython>=1.82",
+    "matplotlib>=3.3.4",
+    "numpy>=1.19.0",
+    "pysam>=0.16.0,<=0.22.0",
+    "pywavelets>=1.1.1",
+    "scipy>=1.6.0",
+]
+
+[project.scripts]
+telogator2 = "telogator2:main"
+
+[tool.setuptools]
+py-modules = ["telogator2"]
+packages = ["source"]
+
+[tool.setuptools.package-data]
+telogator2 = ["resources/**", "resources/non-human/**"]
