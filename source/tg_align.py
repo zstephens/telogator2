@@ -70,7 +70,6 @@ def get_scoring_matrix(canon_char, which_type='tvr'):
 def get_aligner_object(scoring_matrix=None, gap_bool=(True,True), which_type='tvr'):
     aligner = PairwiseAligner()
     aligner.mode = 'global'
-    aligner.alphabet = ''.join(AMINO) + GAP_CHR
     if which_type == 'tvr':
         gap_open = -4.
         gap_extend = -4.
