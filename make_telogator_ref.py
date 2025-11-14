@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import argparse
+import importlib.resources as ir
 import numpy as np
-import pathlib
 import pysam
 
 from source.tg_kmer import get_telomere_kmer_density, get_telomere_regions, read_kmer_tsv
@@ -68,8 +68,7 @@ def main(raw_args=None):
 
     if KMER_FILE == '':
         print('using default telomere kmers.')
-        sim_path  = pathlib.Path(__file__).resolve().parent
-        KMER_FILE = str(sim_path) + '/resources/kmers.tsv'
+        KMER_FILE = str(ir.files("source").joinpath('resources/kmers.tsv'))
     elif exists_and_is_nonzero(KMER_FILE):
         fn_suffix = KMER_FILE.split('/')[-1]
         print('using user-specified kmer list:', fn_suffix)

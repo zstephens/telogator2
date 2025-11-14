@@ -1,0 +1,72 @@
+name: Test Telogator2
+
+on:
+  push:
+    branches: [ main, add-pyproject-file ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+      fail-fast: false
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        auto-update-conda: true
+        python-version: ${{ matrix.python-version }}
+        channels: bioconda,conda-forge,defaults
+
+    - name: Install minimap2 via conda
+      shell: bash -el {0}
+      run: |
+        conda install -y -c bioconda minimap2
+
+    - name: Install Python dependencies
+      shell: bash -el {0}
+      run: |
+        pip install -e .
+
+    - name: Verify installation
+      shell: bash -el {0}
+      run: |
+        python --version
+        telogator2 --version
+        minimap2 --version
+
+    - name: Test with ONT data (quick test)
+      shell: bash -el {0}
+      run: |
+        telogator2 -i test_data/hg002-ont-1p.fa.gz \
+                   -o result_ont \
+                   -r ont
+
+    - name: Test with PacBio HiFi data
+      shell: bash -el {0}
+      run: |
+        telogator2 -i test_data/hg002-telreads_pacbio.sub.fa.gz \
+                   -o result_hifi \
+                   -r hifi
+
+    - name: Test with non-human ref
+      shell: bash -el {0}
+      run: |
+        telogator2 -i test_data/hg002-ont-1p.fa.gz -o result_nonhuman -r ont -t resources/non-human/telogator-ref-maize.fa.gz
+
+    - name: Upload results as artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-py${{ matrix.python-version }}
+        path: |
+          result_ont/
+          result_hifi/

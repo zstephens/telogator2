@@ -2,8 +2,9 @@
 import argparse
 import copy
 import gzip
+import importlib.resources as ir
 import numpy as np
-import pathlib
+import os
 import pysam
 import random
 import subprocess
@@ -345,12 +346,19 @@ def main(raw_args=None):
     #
     if TELOGATOR_REF != '':
         fn_suffix = TELOGATOR_REF.split('/')[-1]
-        print('using user-specified subtel reference:', fn_suffix)
+        # Check if the file exists at the given path
+        if not os.path.exists(TELOGATOR_REF):
+            # Try to find it using importlib.resources
+            resource_path = str(ir.files("source").joinpath(TELOGATOR_REF))
+            if os.path.exists(resource_path):
+                TELOGATOR_REF = resource_path
+            else:
+                raise FileNotFoundError(f'Provided TELOGATOR_REF could not be found: {TELOGATOR_REF} also couldn\'t be found at {resource_path}')
+        print(f'using user-specified subtel reference: {fn_suffix}, found at {TELOGATOR_REF}')
     else:
         print('using default telogator subtel reference')
-        sim_path  = pathlib.Path(__file__).resolve().parent
-        TELOGATOR_REF = str(sim_path) + '/resources/telogator-ref.fa.gz'
-        WINNOWMAP_K15 = str(sim_path) + '/resources/telogator-ref-k15.txt'
+        TELOGATOR_REF = str(ir.files("source").joinpath('resources/telogator-ref.fa.gz'))
+        WINNOWMAP_K15 = str(ir.files("source").joinpath('resources/telogator-ref-k15.txt'))
     if WHICH_ALIGNER == 'winnowmap' and WINNOWMAP_K15 == '':
         print('Error: winnowmap was chosen as aligner but no --winnowmap-k15 was provided.')
         exit(1)
@@ -363,8 +371,7 @@ def main(raw_args=None):
         print('using user-specified kmer list:', fn_suffix)
     else:
         print('using default telomere kmers')
-        sim_path  = pathlib.Path(__file__).resolve().parent
-        KMER_FILE = str(sim_path) + '/resources/kmers.tsv'
+        KMER_FILE = str(ir.files("source").joinpath('resources/kmers.tsv'))
     (KMER_METADATA, KMER_ISSUBSTRING, CANONICAL_STRINGS) = read_kmer_tsv(KMER_FILE, READ_TYPE)
     [KMER_LIST, KMER_COLORS, KMER_LETTER, KMER_FLAGS] = KMER_METADATA
     KMER_LIST_REV         = [RC(n) for n in KMER_LIST]

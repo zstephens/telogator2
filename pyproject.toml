@@ -12,14 +12,14 @@ authors = [
 description = "A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads."
 readme = "README.md"
 license = { file="LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "biopython>=1.82",
+    "biopython>=1.86",
     "matplotlib>=3.3.4",
     "numpy>=1.19.0",
     "pysam>=0.16.0,<=0.22.0",
@@ -33,6 +33,7 @@ telogator2 = "telogator2:main"
 [tool.setuptools]
 py-modules = ["telogator2"]
 packages = ["source"]
+include-package-data = true
 
 [tool.setuptools.package-data]
-telogator2 = ["resources/**", "resources/non-human/**"]
+source = ["resources/**", "resources/non-human/**"]
