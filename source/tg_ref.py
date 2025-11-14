@@ -20,12 +20,12 @@ class ReferenceFasta:
             # reading entire reference into memory, this is suboptimal but indexing gzipped files seems complicated
             with gzip.open(self.ref_fn, 'rt') as ref_file:
                 fr = ref_file.read()
-            my_dat = fr[int(self.ref_inds[my_ri][1]):int(self.ref_inds[my_ri][2])].replace('\n','')
+            my_dat = fr[int(self.ref_inds[my_ri][1]):int(self.ref_inds[my_ri][2])].replace('\n','').upper()
         else:
             with open(self.ref_fn,'r') as ref_file:
                 ref_file = open(self.ref_fn,'r')
                 ref_file.seek(self.ref_inds[my_ri][1])
-            my_dat = ref_file.read(int(self.ref_inds[my_ri][2]) - int(self.ref_inds[my_ri][1])).replace('\n','')
+            my_dat = ref_file.read(int(self.ref_inds[my_ri][2]) - int(self.ref_inds[my_ri][1])).replace('\n','').upper()
         return my_dat
 
     def index_ref(self, verbose=False):

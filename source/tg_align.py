@@ -88,17 +88,17 @@ def get_aligner_object(scoring_matrix=None, gap_bool=(True,True), which_type='tv
     if scoring_matrix is not None:
         aligner.substitution_matrix = scoring_matrix
     if gap_bool[0]:
-        aligner.extend_left_gap_score = gap_open
+        aligner.open_left_gap_score   = gap_open
         aligner.extend_left_gap_score = gap_extend
     else:
-        aligner.extend_left_gap_score = 0.0
+        aligner.open_left_gap_score   = 0.0
         aligner.extend_left_gap_score = 0.0
     if gap_bool[1]:
-        aligner.open_right_gap_score = gap_open
-        aligner.open_right_gap_score = gap_extend
+        aligner.open_right_gap_score   = gap_open
+        aligner.extend_right_gap_score = gap_extend
     else:
-        aligner.open_right_gap_score = 0.0
-        aligner.open_right_gap_score = 0.0
+        aligner.open_right_gap_score   = 0.0
+        aligner.extend_right_gap_score = 0.0
     return aligner
 
 
