@@ -5,9 +5,10 @@ channels:
   - defaults
 dependencies:
   - python>=3.9
-  - biopython>=1.82
+  - biopython>=1.86
   - matplotlib
   - numpy
   - scipy
   - pysam<=0.22.0
   - pywavelets
+  - minimap2

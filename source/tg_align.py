@@ -1,10 +1,11 @@
 import numpy as np
+import random
 import time
 
 from Bio.Align          import PairwiseAligner, substitution_matrices
 from collections        import Counter, defaultdict
 from concurrent.futures import as_completed, FIRST_COMPLETED, ProcessPoolExecutor, wait
-from itertools          import combinations, zip_longest
+from itertools          import combinations, count, zip_longest
 
 from source.tg_util import shuffle_seq
 
@@ -83,25 +84,34 @@ def get_aligner_object(scoring_matrix=None, gap_bool=(True,True), which_type='tv
     aligner.mismatch_score = -4.
     aligner.open_gap_score = gap_open
     aligner.extend_gap_score = gap_extend
-    #
+
     if scoring_matrix is not None:
         aligner.substitution_matrix = scoring_matrix
-    if gap_bool[0]:
-        aligner.open_left_gap_score   = gap_open
-        aligner.extend_left_gap_score = gap_extend
-    else:
-        aligner.open_left_gap_score   = 0.0
-        aligner.extend_left_gap_score = 0.0
-    if gap_bool[1]:
-        aligner.open_right_gap_score   = gap_open
-        aligner.extend_right_gap_score = gap_extend
-    else:
-        aligner.open_right_gap_score   = 0.0
-        aligner.extend_right_gap_score = 0.0
+
+    def set_gap_score(side, open_val, extend_val):
+        # try new attribute names (1.86+), fall back to old names (1.82-1.85)
+        try:
+            setattr(aligner, f'open_{side}_gap_score', open_val)
+            setattr(aligner, f'extend_{side}_gap_score', extend_val)
+        except AttributeError:
+            setattr(aligner, f'{side}_open_gap_score', open_val)
+            setattr(aligner, f'{side}_extend_gap_score', extend_val)
+
+    for side, apply_penalty in zip(['left', 'right'], gap_bool):
+        if apply_penalty:
+            set_gap_score(side, gap_open, gap_extend)
+        else:
+            set_gap_score(side, 0.0, 0.0)
+
     return aligner
 
 
-def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, randshuffle=3):
+def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, randshuffle=3, rng_seed=None):
+    if rng_seed is not None:
+        random.seed(rng_seed)
+        np.random.seed(rng_seed)
+        np.random.default_rng(rng_seed)
+    #
     if adjust_lens:
         min_len = min(len(tvr_i), len(tvr_j))
         if min_viable:
@@ -141,15 +151,16 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     return dist_out
 
 
-def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, tasks_per_worker=5000, print_progress=False):
+def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, tasks_per_worker=5000, rng_seed=12345, print_progress=False):
     n_seq = len(sequences)
     tasks = combinations(range(n_seq),2)
+    seeds = count(rng_seed)
     dist_matrix = np.zeros((n_seq,n_seq), dtype='<f4')
     tt = time.perf_counter()
     current_i = -1
     while True:
         # create a new ProcessPoolExecutor periodically to force process recycling
-        # -- this is inelegant, but needed because of a memory leak in PairwiseAligner
+        # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             pending_futures = {}
             tasks_completed = 0
@@ -157,7 +168,8 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
                 while len(pending_futures) < max_pending:
                     try:
                         (i,j) = next(tasks)
-                        future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count)
+                        seed = next(seeds)
+                        future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
                         pending_futures[future] = (i,j)
                     except StopIteration:
                         break

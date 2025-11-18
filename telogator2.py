@@ -268,6 +268,7 @@ def main(raw_args=None):
                            'tree_cut':TREECUT_TVR_ITER_0,
                            'clustering_only':True,
                            'num_processes':NUM_PROCESSES,
+                           'rng_seed':RNG_SEED,
                            'print_matrix_progress':PRINT_PROGRESS}
     #
     tvr_clust_params[1] = {'aln_mode':'ds',
@@ -276,6 +277,7 @@ def main(raw_args=None):
                            'tree_cut':TREECUT_TVR_ITER_1,
                            'clustering_only':not(PLOT_TVR_CLUST_ITER_1),
                            'num_processes':NUM_PROCESSES,
+                           'rng_seed':RNG_SEED,
                            'print_matrix_progress':False}
     #
     tvr_clust_params[2] = {'aln_mode':'ds',
@@ -284,6 +286,7 @@ def main(raw_args=None):
                            'tree_cut':TREECUT_TVR_ITER_2,
                            'clustering_only':False,
                            'num_processes':NUM_PROCESSES,
+                           'rng_seed':RNG_SEED,
                            'print_matrix_progress':False}
     #
     collapse_clust_params = {'aln_mode':'ms',
@@ -294,6 +297,7 @@ def main(raw_args=None):
                              'linkage_method':'single',
                              'normalize_dist_matrix':True,
                              'num_processes':NUM_PROCESSES,
+                             'rng_seed':RNG_SEED,
                              'overwrite_figures':not(DONT_OVERWRITE_PLOTS),
                              'dendrogram_xlim':[1.1,0]}
     #
@@ -306,6 +310,7 @@ def main(raw_args=None):
                            'linkage_method':'ward',
                            'normalize_dist_matrix':True,
                            'num_processes':NUM_PROCESSES,
+                           'rng_seed':RNG_SEED,
                            'dendrogram_height':8,
                            'overwrite_figures':not(DONT_OVERWRITE_PLOTS)}
     #
@@ -314,7 +319,8 @@ def main(raw_args=None):
                           'rand_shuffle_count':1,
                           'tree_cut':100.,                 # arbitrarily high
                           'clustering_only':False,
-                          'num_processes':NUM_PROCESSES}
+                          'num_processes':NUM_PROCESSES,
+                          'rng_seed':RNG_SEED}
 
     #
     # check exes
