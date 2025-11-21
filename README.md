@@ -50,6 +50,8 @@ python telogator2.py -i input.fq \
 
 An aligner executable must be specified, via either `--minimap2`, `--winnowmap`, or `--pbmm2`.
 
+
+
 ## Recommended settings
 
 Sequencing platforms have different sequencing error types, as such we recommend running Telogator2 with different options based on which platform was used:
