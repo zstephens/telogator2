@@ -21,6 +21,22 @@ conda env create -f conda_env_telogator2.yaml
 conda activate telogator2
 ```
 
+## Install Telogator2 using pip
+
+```bash
+python3.12 -m venv venv
+source activate venv/bin/activate
+pip install git+https://github.com/zstephens/telogator2.git@v2.2.2
+
+# Test run the tool
+# human
+telogator2 -i test_data/hg002-telreads_pacbio.sub.fa.gz -o result_hifi -r hifi
+telogator2 -i test_data/hg002-ont-1p.fa.gz -o result_ont -r ont
+
+# nonhuman, if resources isn't found in the working directory telogator2 will look in the installed folder
+telogator2 -i test_data/hg002-telreads_pacbio.sub.fa.gz  -o results/ -t resources/non-human/telogator-ref-mouse.fa.gz
+```
+**Note** please make sure that the dependencies has been installed, minimap2, pbmm2, etc.
 
 ## Running Telogator2:
 
@@ -33,8 +49,6 @@ python telogator2.py -i input.fq \
 `-i` accepts fa, fa.gz, fq, fq.gz, or bam (multiple can be provided, e.g. `-i reads1.fa reads2.fa`). For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
 
 An aligner executable must be specified, via either `--minimap2`, `--winnowmap`, or `--pbmm2`.
-
-
 
 ## Recommended settings
 
