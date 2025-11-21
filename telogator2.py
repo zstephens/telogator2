@@ -374,7 +374,14 @@ def main(raw_args=None):
     #
     if KMER_FILE != '':
         fn_suffix = KMER_FILE.split('/')[-1]
-        print('using user-specified kmer list:', fn_suffix)
+        if not os.path.exists(KMER_FILE):
+            # Try to find it using importlib.resources
+            kmer_path = str(ir.files("source").joinpath(KMER_FILE))
+            if os.path.exists(kmer_path):
+                KMER_FILE = kmer_path
+            else:
+                raise FileNotFoundError(f'Provided KMER_FILE could not be found: {KMER_FILE} also couldn\'t be found at {kmer_path}')
+        print(f'using user-specified subtel reference: {fn_suffix}, found at {KMER_FILE}')
     else:
         print('using default telomere kmers')
         KMER_FILE = str(ir.files("source").joinpath('resources/kmers.tsv'))
