@@ -29,9 +29,10 @@ dependencies = [
 
 [project.scripts]
 telogator2 = "telogator2:main"
+make_telogator_ref = "make_telogator_ref:main"
 
 [tool.setuptools]
-py-modules = ["telogator2"]
+py-modules = ["telogator2", "make_telogator_ref"]
 packages = ["source"]
 include-package-data = true
 
