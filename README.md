@@ -35,6 +35,10 @@ telogator2 -i test_data/hg002-ont-1p.fa.gz -o result_ont -r ont
 
 # nonhuman, if resources isn't found in the working directory telogator2 will look in the installed folder
 telogator2 -i test_data/hg002-telreads_pacbio.sub.fa.gz  -o results/ -t resources/non-human/telogator-ref-mouse.fa.gz
+
+# create a new reference
+make_telogator_ref -i source/resources/telogator-ref.fa.gzg  -o testReference.fa -s testReference -c t2t-chm13_chr1p,t2t-chm13_chr1q
+
 ```
 **Note** please make sure that the dependencies has been installed, minimap2, pbmm2, etc.
 
