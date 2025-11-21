@@ -57,6 +57,13 @@ jobs:
                    -o result_hifi \
                    -r hifi
 
+    - name: Test with more than one input
+      shell: bash -el {0}
+      run: |
+        telogator2 -i ~/workspace/telogator2/test_data/hg002-telreads_ont.sub.fa.gz ~/workspace/telogator2/test_data/hg002-ont-1p.fa.gz \
+                   -o result_hifi \
+                   -r ont
+
     - name: Test with non-human ref
       shell: bash -el {0}
       run: |
