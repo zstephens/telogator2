@@ -762,6 +762,7 @@ def main(raw_args=None):
                 if len(subsubclust_read_inds) >= MIN_READS_PER_PHASE:
                     final_clustered_read_inds.append((my_chr, [n for n in subsubclust_read_inds], [my_subtels[n] for n in subclust_inds]))
                     num_pass_subclust_reads.append(len(subsubclust_read_inds))
+                    n_reads += len(subsubclust_read_inds)
             #
             if PRINT_PROGRESS:
                 print(f' - processed cluster {zfcn} ({len(subclust_read_inds)} reads) --> {len(num_pass_subclust_reads)} clusters ({sum(num_pass_subclust_reads)} reads)')
@@ -905,6 +906,7 @@ def main(raw_args=None):
             if exists_and_is_nonzero(aln_bam) is False:
                 print('Error: failed to create subtel bam')
                 exit(1)
+
         #
         # get anchors from subtel alignment
         #
@@ -1008,25 +1010,30 @@ def main(raw_args=None):
         for clustnum in sorted(top_alns_by_cluster.keys()):
             chr_arm_scores = {}
             anchors_by_ref = {}
-            for n in top_alns_by_cluster[clustnum]:
-                my_ref = n[1][2]
-                my_refspan = abs(n[1][3] - n[1][4])
-                my_anchor = n[1][4] # second refpos is always anchor coord?
-                #my_orr = n[1][5]
-                my_mapq = n[1][6]
+            readnames_by_ref = {}
+            for (readname,aln) in top_alns_by_cluster[clustnum]:
+                my_ref = aln[2]
+                my_refspan = abs(aln[3] - aln[4])
+                my_anchor = aln[4] # second refpos is always anchor coord?
+                #my_orr = aln[5]
+                my_mapq = aln[6]
                 if my_ref != '*':
                     if my_ref not in chr_arm_scores:
                         chr_arm_scores[my_ref] = 0.
                         anchors_by_ref[my_ref] = []
+                        readnames_by_ref[my_ref] = []
                     chr_arm_scores[my_ref] += my_refspan * ((my_mapq + 1) / (MAX_QUAL_SCORE + 1))
                     anchors_by_ref[my_ref].append(my_anchor)
+                    readnames_by_ref[my_ref].append(readname)
             total_score = sum(chr_arm_scores.values())
+            #
             my_anchors = []
             if total_score > 0:
                 sorted_chr_scores = sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)
                 my_anchors = [n[1] for n in sorted_chr_scores if n[0] >= ANCHORING_ASSIGNMENT_FRAC]
             else:
                 pass # all unmapped
+            #
             if len(my_anchors):
                 anchor_pos = []
                 ref_builds = []
@@ -1220,7 +1227,10 @@ def main(raw_args=None):
     in_npz = np.load(READLEN_NPZ)
     readlens_all = in_npz['readlen_all']
     readlens_tel = in_npz['readlen_tel']
+    np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'), readlen_tel_final=np.array(readlens_final,dtype='<i8'))
     readlen_plot(readlens_all, readlens_tel, readlens_final, QC_READLEN)
+    del readlens_all
+    del readlens_tel
     #
     if len(tvrs_to_plot):
         redrawn_tvrs = convert_colorvec_to_kmerhits(tvrs_to_plot, KMER_METADATA)

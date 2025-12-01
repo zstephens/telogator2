@@ -821,7 +821,7 @@ def readlen_plot(readlens_all, readlens_tel, readlens_final, plot_fn, xlim=(1000
     mpl.grid(which='both', linestyle='--', alpha=0.5)
     mpl.xlabel('length (bp)')
     mpl.ylabel('read count')
-    mpl.legend([f'{len(readlens_tel)} initial tel reads', f'{len(readlens_final)} final tel reads'])
+    mpl.legend([f'{len(readlens_tel)} initial tel reads', f'{len(readlens_final)} final tel reads'], loc='upper right')
     #
     mpl.tight_layout()
     mpl.savefig(plot_fn)
