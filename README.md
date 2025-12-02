@@ -1,4 +1,5 @@
 # Telogator2
+
 A method for measuring allele-specific TL and characterizing telomere variant repeat (TVR) sequences from long reads.
 
 If this software has been useful for your work, please cite us at:
@@ -8,55 +9,47 @@ Stephens, Z., & Kocher, J. P. (2024). Characterization of telomere variant repea
 https://link.springer.com/article/10.1186/s12859-024-05807-5
 
 
-
-## Dependencies:
+## Installation (conda env):
 
 Telogator2 dependencies can be easily installed via conda:
 
 ```bash
-# create conda environment
-conda env create -f conda_env_telogator2.yaml
+git clone https://github.com/zstephens/telogator2.git && cd telogator2/
 
-# activate environment
+# create & activate conda environment
+conda env create -f conda_env_telogator2.yaml
 conda activate telogator2
+
+# run test data
+python telogator2.py -i test_data/hg002-ont-1p.fa.gz \ 
+                     -o results/ \ 
+                     -r ont
 ```
 
-## Install Telogator2 using pip
+
+## Installation (pip):
 
 ```bash
 python3.12 -m venv venv
 source activate venv/bin/activate
 pip install git+https://github.com/zstephens/telogator2.git@v2.2.2
 
-# Test run the tool
-# human
-telogator2 -i test_data/hg002-telreads_pacbio.sub.fa.gz -o result_hifi -r hifi
-telogator2 -i test_data/hg002-ont-1p.fa.gz -o result_ont -r ont
-
-# nonhuman, if resources isn't found in the working directory telogator2 will look in the installed folder
-telogator2 -i test_data/hg002-telreads_pacbio.sub.fa.gz  -o results/ -t resources/non-human/telogator-ref-mouse.fa.gz
-
-# create a new reference
-make_telogator_ref -i source/resources/telogator-ref.fa.gzg  -o testReference.fa -s testReference -c t2t-chm13_chr1p,t2t-chm13_chr1q
-
-```
-**Note** please make sure that the dependencies has been installed, minimap2, pbmm2, etc.
-
-## Running Telogator2:
-
-```bash
-python telogator2.py -i input.fq \ 
-                     -o results/ \ 
-                     --minimap2 /path/to/minimap2
+# run test data
+telogator2 -i test_data/hg002-ont-1p.fa.gz \ 
+           -o results/ \ 
+           -r ont \ 
+           --minimap2 /path/to/minimap2
 ```
 
-`-i` accepts fa, fa.gz, fq, fq.gz, or bam (multiple can be provided, e.g. `-i reads1.fa reads2.fa`). For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input to Telogator2.
+
+## Notes:
 
 An aligner executable must be specified, via either `--minimap2`, `--winnowmap`, or `--pbmm2`.
 
+`-i` accepts fa, fa.gz, fq, fq.gz, or bam (multiple can be provided, e.g. `-i reads1.fa reads2.fa`). For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input.
 
 
-## Recommended settings
+## Recommended settings:
 
 Sequencing platforms have different sequencing error types, as such we recommend running Telogator2 with different options based on which platform was used:
 
@@ -71,22 +64,13 @@ For large datasets, such as data from enrichment methods described by [Karimian 
 By default Telogator2 is run with 4 processes. Runtime can be greatly reduced by specifying more, e.g. `-p 8` or `-p 16`, based on your system's available CPU resources.
 
 
+## Larger test data:
 
-## Test data
-
-Telomere reads for HG002 can be found in the `test_data/` directory. These are full-sized datasets and may take several hours to run.
+These are full-sized datasets and may take several hours to run:
 
 ```
 HiFi reads (~70x): hg002-telreads_pacbio.fa.gz
 ONT reads  (~25x): hg002-telreads_ont.fa.gz
-```
-
-A smaller dataset is also provided, which should take no more than a couple minutes to complete:
-
-```bash
-python telogator2.py -i test_data/hg002-ont-1p.fa.gz \ 
-                     -o results/ \ 
-                     -r ont
 ```
 
 
@@ -115,10 +99,9 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 * `supporting_reads` readnames of each read in the cluster
 
 
+## Human subtelomere references
 
-## Telogator reference
-
-The reference sequence used for telomere anchoring currently contains the first and last 500kb of sequences from the following T2T assemblies:
+The reference sequence used for telomere anchoring currently contains the first and last 500kb of each chromosome from the following T2T assemblies:
 
 * `T2T-chm13` - https://github.com/marbl/CHM13
 * `T2T-yao` - https://ngdc.cncb.ac.cn/bioproject/browse/PRJCA017932
@@ -127,27 +110,24 @@ The reference sequence used for telomere anchoring currently contains the first 
 * `T2T-ksa001` - https://github.com/bio-ontology-research-group/KSA001
 * `T2T-i002c` - https://github.com/LHG-GG/I002C
 
-More will be added as they become available.
+More subtelomere contigs may be added as they become available.
+
 
 ## Non-human references
 
-Experimental support has been added for some non-human references, e.g. the [T2T-mouse genome](https://github.com/yulab-ql/mhaESC_genome):
+Experimental support has been added for some non-human references, e.g. [mouse](https://github.com/yulab-ql/mhaESC_genome):
 
 ```bash
-python telogator2.py -i input.fq \ 
+python telogator2.py -i input.fa \ 
                      -o results/ \ 
-                     -t resources/non-human/telogator-ref-mouse.fa.gz \ 
-                     --minimap2 /path/to/minimap2
+                     -t source/resources/non-human/telogator-ref-mouse.fa.gz \ 
 ```
 
-Or [T2T-maize genome](https://www.nature.com/articles/s41588-023-01419-6):
+Or [maize](https://www.nature.com/articles/s41588-023-01419-6):
 
 ```bash
-python telogator2.py -i input.fq \ 
+python telogator2.py -i input.fa \ 
                      -o results/ \ 
-                     -t resources/non-human/telogator-ref-maize.fa.gz \ 
-                     -k resources/non-human/kmers_maize.tsv \ 
-                     --minimap2 /path/to/minimap2
+                     -t source/resources/non-human/telogator-ref-maize.fa.gz \ 
+                     -k source/resources/non-human/kmers_maize.tsv \ 
 ```
-
-Note that if you choose winnowmap as the aligner that you will also need to add its associated k15 file, e.g.: `--winnowmap-k15 resources/telogator-ref-mouse-k15.txt`.

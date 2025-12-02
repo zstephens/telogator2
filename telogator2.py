@@ -348,21 +348,21 @@ def main(raw_args=None):
         exit(1)
 
     #
-    # reference seq
+    # find subtel reference seq
     #
     if TELOGATOR_REF != '':
         fn_suffix = TELOGATOR_REF.split('/')[-1]
-        # Check if the file exists at the given path
         if not os.path.exists(TELOGATOR_REF):
-            # Try to find it using importlib.resources
+            # try to find it using importlib.resources
             resource_path = str(ir.files("source").joinpath(TELOGATOR_REF))
             if os.path.exists(resource_path):
                 TELOGATOR_REF = resource_path
             else:
-                raise FileNotFoundError(f'Provided TELOGATOR_REF could not be found: {TELOGATOR_REF} also couldn\'t be found at {resource_path}')
-        print(f'using user-specified subtel reference: {fn_suffix}, found at {TELOGATOR_REF}')
+                raise FileNotFoundError(f'Provided subtel reference (-t) could not be found: {TELOGATOR_REF} or at {resource_path}')
+        print(f'using user-specified subtel reference: {fn_suffix}')
+        print(f' - found at {TELOGATOR_REF}')
     else:
-        print('using default telogator subtel reference')
+        print('using default subtel reference')
         TELOGATOR_REF = str(ir.files("source").joinpath('resources/telogator-ref.fa.gz'))
         WINNOWMAP_K15 = str(ir.files("source").joinpath('resources/telogator-ref-k15.txt'))
     if WHICH_ALIGNER == 'winnowmap' and WINNOWMAP_K15 == '':
@@ -374,7 +374,15 @@ def main(raw_args=None):
     #
     if KMER_FILE != '':
         fn_suffix = KMER_FILE.split('/')[-1]
-        print('using user-specified kmer list:', fn_suffix)
+        if not os.path.exists(KMER_FILE):
+            # try to find it using importlib.resources
+            kmer_path = str(ir.files("source").joinpath(KMER_FILE))
+            if os.path.exists(kmer_path):
+                KMER_FILE = kmer_path
+            else:
+                raise FileNotFoundError(f'Provided telomere kmers (-k) could not be found: {KMER_FILE} or at {kmer_path}')
+        print(f'using user-specified telomere kmers: {fn_suffix}')
+        print(f' - found at {KMER_FILE}')
     else:
         print('using default telomere kmers')
         KMER_FILE = str(ir.files("source").joinpath('resources/kmers.tsv'))

@@ -60,12 +60,19 @@ jobs:
     - name: Test with non-human ref
       shell: bash -el {0}
       run: |
-        telogator2 -i test_data/hg002-ont-1p.fa.gz -o result_nonhuman -r ont -t resources/non-human/telogator-ref-maize.fa.gz
+        telogator2 -i test_data/hg002-ont-1p.fa.gz \
+                   -o result_nonhuman \
+                   -r ont \
+                   -t resources/non-human/telogator-ref-maize.fa.gz \
+                   -k resources/non-human/kmers_maize.tsv
 
     - name: Test build reference
       shell: bash -el {0}
       run: |
-        make_telogator_ref -i source/resources/telogator-ref.fa.gz  -o test.fa -s test -c t2t-chm13_chr1p,t2t-chm13_chr1q
+        make_telogator_ref -i source/resources/telogator-ref.fa.gz \
+                           -o test.fa \
+                           -s test \
+                           -c t2t-chm13_chr1p,t2t-chm13_chr1q
 
     - name: Upload results as artifacts
       uses: actions/upload-artifact@v4
