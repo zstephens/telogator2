@@ -126,8 +126,9 @@ python telogator2.py -i input.fa \
 Or [maize](https://www.nature.com/articles/s41588-023-01419-6):
 
 ```bash
-python telogator2.py -i input.fa \ 
+python telogator2.py -i test_data/ZMMo17-hifi-7p8p.fa.gz \ 
                      -o results/ \ 
+                     -r hifi \ 
                      -t source/resources/non-human/telogator-ref-maize.fa.gz \ 
                      -k source/resources/non-human/kmers_maize.tsv \ 
 ```

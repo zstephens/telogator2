@@ -60,9 +60,9 @@ jobs:
     - name: Test with non-human ref
       shell: bash -el {0}
       run: |
-        telogator2 -i test_data/hg002-ont-1p.fa.gz \
+        telogator2 -i test_data/ZMMo17-hifi-7p8p.fa.gz \
                    -o result_nonhuman \
-                   -r ont \
+                   -r hifi \
                    -t resources/non-human/telogator-ref-maize.fa.gz \
                    -k resources/non-human/kmers_maize.tsv
 
