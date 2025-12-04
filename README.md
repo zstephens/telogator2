@@ -132,3 +132,40 @@ python telogator2.py -i test_data/ZMMo17-hifi-7p8p.fa.gz \
                      -t source/resources/non-human/telogator-ref-maize.fa.gz \ 
                      -k source/resources/non-human/kmers_maize.tsv \ 
 ```
+
+## Kmer File Format
+
+The kmer file is a **TSV (tab-separated values) file** used to define telomeric sequences for non-human organisms. For human samples, the built-in default kmer file is used automatically.
+
+### Format Requirements
+
+- **No header row**
+- **4 columns**, tab-separated
+- At least one kmer must be marked as `canonical`
+
+### Column Descriptions
+
+| Column | Name | Description | Example Values | Usage |
+|--------|------|-------------|----------------|-------|
+| 1 | Kmer Sequence | DNA kmer string (typically 6-8 bases) | `CCCTAAA`, `CCCTAAAA` | Core sequence matching |
+| 2 | Color | Color code for visualization | `blue`, `red`, `green`, `darkblue`, `darkcyan` | Plot coloring in output PNGs |
+| 3 | Letter ID | Single letter identifier representing the repeat | `C`, `D`, `E`, `F`, `G` | Internal data conversion |
+| 4 | Flags | Comma-separated tags | `canonical`, `tvr`, `denoise`, `pacbio_only`, `nanopore_only` | Filtering and classification |
+
+### Flag Descriptions
+
+- **`canonical`** - Required for at least one kmer; identifies canonical telomeric sequences
+- **`tvr`** - Telomere variant repeat
+- **`denoise`** - Used for noise reduction during analysis
+- **`pacbio_only`** - Only used when analyzing PacBio HiFi data
+- **`nanopore_only`** - Only used when analyzing Oxford Nanopore data
+
+Flags can be combined with commas (e.g., `denoise,tvr`).
+
+  canonical - Required for at least one kmer; identifies canonical telomeric sequences
+  tvr - Telomere variant repeat
+  denoise - Used for noise reduction during analysis
+  pacbio_only - Only used when analyzing PacBio HiFi data
+  nanopore_only - Only used when analyzing Oxford Nanopore data
+
+Flags can be combined with commas (e.g., denoise,tvr).
