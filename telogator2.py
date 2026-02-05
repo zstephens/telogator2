@@ -15,9 +15,9 @@ from source.tg_align  import quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
-from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat
+from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
-from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
+from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -229,7 +229,7 @@ def main(raw_args=None):
     READLEN_NPZ = OUT_QC_DIR + 'readlens.npz'
     QC_READLEN  = OUT_QC_DIR + 'qc_readlens.png'
     QC_CMD      = OUT_QC_DIR + 'cmd.txt'
-    QC_STATS    = OUT_QC_DIR + 'stats.txt'
+    QC_STATS    = OUT_QC_DIR + 'stats.tsv'
     QC_RNG      = OUT_QC_DIR + 'rng.txt'
     UNCOMPRESSED_TELOGATOR_REF = OUT_CLUST_DIR + 'telogator-ref.fa'
     UNANCHORED_SUBTELS = OUT_DIR_ANCHOR + 'unanchored_subtels.fa.gz'
@@ -1262,11 +1262,30 @@ def main(raw_args=None):
     print(f' - {num_alleles_unmapped} alleles unmapped ({readcount_fail_final_filters[0]} reads)')
     print(f' - {num_alleles_too_short} alleles with atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp ({readcount_fail_final_filters[1]} reads)')
     print(f' - {num_alleles_interstitial} interstitial alelles ({readcount_fail_final_filters[2]} reads)')
+    #
+    out_metrics = []
+    metric_allele_tls = []
+    metric_readlens = []
+    tvr_list, fail_dict = parse_tsv(FINAL_TSV, min_tvr=-1, min_reads=MIN_READS_PER_PHASE, min_maxatl=MIN_ATL_FOR_FINAL_PLOTTING)
+    for (my_chr, my_refbuild, my_aid, allele_tls, consensus_tl, my_tvr, readlens) in tvr_list:
+        metric_allele_tls.append(consensus_tl)
+        metric_readlens.extend(readlens)
+    #
+    out_metrics.append(('num_alleles', len(tvr_list)))
+    out_metrics.append(('num_alleles_fail', sum(fail_dict.values())))
+    out_metrics.append(('tl_mean', int(np.mean(metric_allele_tls))))
+    out_metrics.append(('tl_median', int(np.median(metric_allele_tls))))
+    out_metrics.append(('tl_short', len([n for n in metric_allele_tls if n < 1000])))
+    out_metrics.append(('num_telreads', len(metric_readlens)))
+    out_metrics.append(('telread_mean_length', int(np.mean(metric_readlens))))
+    out_metrics.append(('telread_n50_length', int(compute_n50(metric_readlens))))
+    out_metrics.append(('fail_reads_unmapped', readcount_fail_final_filters[0]))
+    out_metrics.append(('fail_reads_maxatl', readcount_fail_final_filters[1]))
+    out_metrics.append(('fail_reads_interstitial', readcount_fail_final_filters[2]))
+    #
     with open(QC_STATS, 'w') as f:
-        f.write(f' - {num_pass_alleles} final telomere alleles ({len(readlens_final)} reads)\n')
-        f.write(f' - {num_alleles_unmapped} alleles unmapped ({readcount_fail_final_filters[0]} reads)\n')
-        f.write(f' - {num_alleles_too_short} alleles with atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp ({readcount_fail_final_filters[1]} reads)\n')
-        f.write(f' - {num_alleles_interstitial} interstitial alelles ({readcount_fail_final_filters[2]} reads)\n')
+        f.write('\t'.join([str(n[0]) for n in out_metrics]) + '\n')
+        f.write('\t'.join([str(n[1]) for n in out_metrics]) + '\n')
 
 
 if __name__ == '__main__':

@@ -148,7 +148,8 @@ def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_ma
                 fail_dict['min_reads'] += 1
                 continue
             consensus_tl = int(splt[4])
-            out_dat.append((my_chr, my_refbuild, my_aid, allele_tls, consensus_tl, my_tvr))
+            readlens = [int(n) for n in splt[6].split(',')]
+            out_dat.append((my_chr, my_refbuild, my_aid, allele_tls, consensus_tl, my_tvr, readlens))
     return out_dat, fail_dict
 
 

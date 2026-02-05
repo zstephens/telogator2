@@ -676,3 +676,15 @@ def posmax(seq):
             m = x
             index = i
     return index
+
+
+def compute_n50(readlens):
+    sorted_lengths = sorted(readlens, reverse=True)
+    total_length = sum(sorted_lengths)
+    threshold = total_length * 0.5
+    cumulative_sum = 0
+    for length in sorted_lengths:
+        cumulative_sum += length
+        if cumulative_sum >= threshold:
+            return length
+    return None
