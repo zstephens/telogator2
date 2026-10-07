@@ -161,9 +161,11 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
     while True:
         # create a new ProcessPoolExecutor periodically to force process recycling
         # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
+        #
+        # unrelated bugfix as of oct 7 2026:
+        # -- drain every submitted task before recycling worker pools
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             pending_futures = {}
-            # Drain every submitted task before recycling this worker pool.
             tasks_submitted = 0
             tasks_exhausted = False
             while True:

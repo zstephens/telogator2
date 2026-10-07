@@ -45,7 +45,7 @@ def main(raw_args=None):
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
     parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for choosing ATL: mean / median / p75 / max")
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
-    parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use, including initial read screening")
+    parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
     parser.add_argument('--filt-tel',    type=int, required=False, metavar='400',  default=400,  help="[FILTERING] Remove reads that end in < this much tel")
     parser.add_argument('--filt-nontel', type=int, required=False, metavar='100',  default=100,  help="[FILTERING] Remove reads that end in > this much non-tel")
@@ -444,8 +444,8 @@ def main(raw_args=None):
         print(f' - {all_readcount} --> {tel_readcount} reads')
         print(f' - ({total_bp_all} bp) [{int(total_bp_all/HUMAN_GENOME_BP + 0.5)}x] --> ({total_bp_tel} bp)')
         if tel_readcount <= 0:
-            print('Error: No telomere reads found, stopping here...')
-            exit(1)
+            print('Warning: No telomere reads found, stopping here...')
+            exit(0)
     else:
         print('found telomere reads from a previous run, using them instead of reprocessing input file')
     #
@@ -461,8 +461,8 @@ def main(raw_args=None):
     sys.stdout.flush()
     print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
     if len(all_read_dat) <= 0:
-        print('Error: No telomere reads remaining, stopping here...')
-        exit(1)
+        print('Warning: No telomere reads remaining, stopping here...')
+        exit(0)
 
     #=====================================================#
     #
@@ -498,8 +498,8 @@ def main(raw_args=None):
         print(f' - ({reads_removed_term_sub} reads removed for ending in < {FILT_TERM_SUBTEL}bp subtel sequence)')
     #
     if num_ending_reads <= 0:
-        print('Error: No telomere reads remaining, stopping here...')
-        exit(1)
+        print('Warning: No telomere reads remaining, stopping here...')
+        exit(0)
     #
     if DOWNSAMPLE_READS > 0 and len(kmer_hit_dat) > DOWNSAMPLE_READS:
         sys.stdout.write('downsampling reads...')
@@ -1243,12 +1243,12 @@ def main(raw_args=None):
     #
     out_metrics.append(('num_alleles', len(tvr_list)))
     out_metrics.append(('num_alleles_fail', sum(fail_dict.values())))
-    out_metrics.append(('tl_mean', int(np.mean(metric_allele_tls))))
-    out_metrics.append(('tl_median', int(np.median(metric_allele_tls))))
+    out_metrics.append(('tl_mean', int(np.mean(metric_allele_tls)) if metric_allele_tls else 0))
+    out_metrics.append(('tl_median', int(np.median(metric_allele_tls)) if metric_allele_tls else 0))
     out_metrics.append(('tl_short', len([n for n in metric_allele_tls if n < 1000])))
     out_metrics.append(('num_telreads', len(metric_readlens)))
-    out_metrics.append(('telread_mean_length', int(np.mean(metric_readlens))))
-    out_metrics.append(('telread_n50_length', int(compute_n50(metric_readlens))))
+    out_metrics.append(('telread_mean_length', int(np.mean(metric_readlens)) if metric_readlens else 0))
+    out_metrics.append(('telread_n50_length', int(compute_n50(metric_readlens)) if metric_readlens else 0))
     out_metrics.append(('fail_reads_unmapped', readcount_fail_final_filters[0]))
     out_metrics.append(('fail_reads_maxatl', readcount_fail_final_filters[1]))
     out_metrics.append(('fail_reads_interstitial', readcount_fail_final_filters[2]))

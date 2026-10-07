@@ -15,8 +15,7 @@ _BGZF_EOF = bytes.fromhex('1f8b08040000000000ff0600424302001b0003000000000000000
 
 
 class TG_Reader:
-    def __init__(self, input_filename, replace_tabs_with_spaces=True, verbose=True,
-                 ref_fasta='', bam_threads=1):
+    def __init__(self, input_filename, replace_tabs_with_spaces=True, verbose=True, ref_fasta='', bam_threads=1):
         self.replace_tabs_with_spaces = replace_tabs_with_spaces
         self.verbose = verbose
         fnl = input_filename.lower()
@@ -38,8 +37,7 @@ class TG_Reader:
             if self.verbose:
                 print('getting reads from ' + self.filetype + '...')
             if self.filetype == 'BAM':
-                # pysam cannot combine threaded decoding with ignore_truncation.
-                # Keep the original tolerant reader for BAMs without an EOF block.
+                # can't use threads=N with ignore_truncation
                 if bam_threads > 1:
                     try:
                         with open(input_filename, 'rb') as bam:
@@ -48,8 +46,7 @@ class TG_Reader:
                                 bam_threads = 1
                     except OSError:
                         bam_threads = 1
-                self.f = pysam.AlignmentFile(input_filename, "rb", ignore_truncation=bam_threads == 1,
-                                             check_sq=False, threads=bam_threads)
+                self.f = pysam.AlignmentFile(input_filename, "rb", ignore_truncation=bam_threads == 1, check_sq=False, threads=bam_threads)
             else:
                 if ref_fasta == '': # cram without reference will almost certainly break, but try anyway
                     print()
@@ -118,8 +115,7 @@ class TG_Reader:
         elif self.filetype in ['BAM', 'CRAM']:
             try:
                 aln = next(self.alns)
-                return (aln.qname, aln.query_sequence,
-                        aln.qual if with_quality else '', aln.is_supplementary)
+                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary)
             # we reached the end of file
             except StopIteration:
                 return ('','','',False)
@@ -174,24 +170,24 @@ def quick_grab_all_reads_nodup(fn, min_len=None):
 
 
 def _find_telomere_reads(sequences, kmer, reverse_kmer, min_hits):
-    """Return one match flag per sequence, using the original non-overlapping count."""
-    return [seq.count(kmer) >= min_hits or seq.count(reverse_kmer) >= min_hits
-            for seq in sequences]
+    #
+    # return one match flag per sequence, using the original non-overlapping count
+    #
+    return [seq.count(kmer) >= min_hits or seq.count(reverse_kmer) >= min_hits for seq in sequences]
 
 
 def _screen_and_compress(reads, kmer, reverse_kmer, min_hits):
-    matches = _find_telomere_reads(
-        [sequence for _, sequence in reads], kmer, reverse_kmer, min_hits)
-    selected = ''.join(f'>{name}\n{sequence}\n' for (name, sequence), matched
-                       in zip(reads, matches) if matched)
-    # Concatenated gzip members can be read as one file by gzip and TG_Reader.
+    matches = _find_telomere_reads([sequence for _, sequence in reads], kmer, reverse_kmer, min_hits)
+    selected = ''.join(f'>{name}\n{sequence}\n' for (name, sequence), matched in zip(reads, matches) if matched)
+    # concatenated gzip members can be read as one file by gzip and TG_Reader.
     compressed = gzip.compress(selected.encode(), compresslevel=6, mtime=0) if selected else b''
     return matches, compressed
 
 
-def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer,
-                           min_hits, num_processes=1, ref_fasta=''):
-    """Stream the initial repeat screen in bounded, ordered batches."""
+def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hits, num_processes=1, ref_fasta=''):
+    #
+    # stream the initial repeat screen in bounded, ordered batches
+    #
     all_readcount = tel_readcount = sup_readcount = 0
     total_bp_all = total_bp_tel = 0
     readlens_all, readlens_tel = [], []
@@ -214,16 +210,13 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer,
     def submit_batch(executor, output):
         nonlocal batch, batch_bp
         if executor is None:
-            matches = _find_telomere_reads(
-                [read[1] for read in batch], kmer, reverse_kmer, min_hits)
+            matches = _find_telomere_reads([read[1] for read in batch], kmer, reverse_kmer, min_hits)
             for (name, sequence), matched in zip(batch, matches):
                 if matched:
                     output.write(f'>{name}\n{sequence}\n')
             record_batch([len(sequence) for _, sequence in batch], matches)
         else:
-            pending.append(([len(sequence) for _, sequence in batch], executor.submit(
-                _screen_and_compress, batch,
-                kmer, reverse_kmer, min_hits)))
+            pending.append(([len(sequence) for _, sequence in batch], executor.submit(_screen_and_compress, batch, kmer, reverse_kmer, min_hits)))
             if len(pending) >= max_pending:
                 lengths, future = pending.popleft()
                 matches, compressed = future.result()
@@ -233,12 +226,10 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer,
         batch_bp = 0
 
     pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 else nullcontext()
-    output_file_handle = (open(output_file, 'wb') if num_processes > 1
-                          else gzip.open(output_file, 'wt'))
+    output_file_handle = (open(output_file, 'wb') if num_processes > 1 else gzip.open(output_file, 'wt'))
     with pool as executor, output_file_handle as output:
         for input_file in input_files:
-            reader = TG_Reader(input_file, verbose=False, ref_fasta=ref_fasta,
-                               bam_threads=num_processes)
+            reader = TG_Reader(input_file, verbose=False, ref_fasta=ref_fasta, bam_threads=num_processes)
             try:
                 while True:
                     name, sequence, _, is_supplementary = reader.get_next_read(with_quality=False)
@@ -265,8 +256,7 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer,
         if executor is not None and tel_readcount == 0:
             output.write(gzip.compress(b'', mtime=0))
 
-    return (all_readcount, tel_readcount, sup_readcount, total_bp_all,
-            total_bp_tel, readlens_all, readlens_tel)
+    return (all_readcount, tel_readcount, sup_readcount, total_bp_all, total_bp_tel, readlens_all, readlens_tel)
 
 
 if __name__ == '__main__':
