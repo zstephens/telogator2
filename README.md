@@ -61,7 +61,7 @@ Telogator2 may be unable to analyze older Nanopore data, as reads basecalled wit
 
 For large datasets, such as data from enrichment methods described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431) or [Schmidt et al.](https://www.nature.com/articles/s41467-024-48917-7), higher thresholds may be needed to reduce false positives: `-r ont -n 10`.  
 
-By default Telogator2 is run with 4 processes. Runtime can be greatly reduced by specifying more, e.g. `-p 8` or `-p 16`, based on your system's available CPU resources.
+By default Telogator2 is run with 4 processes, including during the initial telomere-read screen. Runtime can be greatly reduced by specifying more, e.g. `-p 8` or `-p 16`, based on your system's available CPU resources.
 
 
 ## Larger test data:

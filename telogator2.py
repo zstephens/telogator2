@@ -14,7 +14,7 @@ import time
 from source.tg_align  import quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
-from source.tg_reader import quick_grab_all_reads_nodup, TG_Reader
+from source.tg_reader import extract_telomere_reads, quick_grab_all_reads_nodup
 from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
@@ -45,7 +45,7 @@ def main(raw_args=None):
     parser.add_argument('-n', type=int, required=False, metavar='3',            default=3,      help="Minimum number of reads per cluster")
     parser.add_argument('-m', type=str, required=False, metavar='p75',          default='p75',  help="Method for choosing ATL: mean / median / p75 / max")
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
-    parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
+    parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use, including initial read screening")
     #
     parser.add_argument('--filt-tel',    type=int, required=False, metavar='400',  default=400,  help="[FILTERING] Remove reads that end in < this much tel")
     parser.add_argument('--filt-nontel', type=int, required=False, metavar='100',  default=100,  help="[FILTERING] Remove reads that end in > this much non-tel")
@@ -428,40 +428,10 @@ def main(raw_args=None):
         sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        all_readcount = 0
-        tel_readcount = 0
-        sup_readcount = 0
-        total_bp_all = 0
-        total_bp_tel = 0
-        readlens_all = []
-        readlens_tel = []
-        with gzip.open(TELOMERE_READS+'.temp', 'wt') as f:
-            for ifn in INPUT_ALN:
-                my_reader = TG_Reader(ifn, verbose=False, ref_fasta=CRAM_REF_FILE)
-                while True:
-                    (my_name, my_rdat, my_qdat, my_issup) = my_reader.get_next_read()
-                    if not my_name:
-                        break
-                    if not my_rdat:
-                        # this can happen in aligned bam if sequence is not present (because read is multimapped maybe?)
-                        continue
-                    if my_issup:
-                        sup_readcount += 1
-                        continue
-                    count_fwd = my_rdat.count(KMER_INITIAL)
-                    count_rev = 0
-                    if count_fwd < MINIMUM_CANON_HITS:  # don't need to do this is we already have enough fwd hits
-                        count_rev = my_rdat.count(KMER_INITIAL_RC)
-                    all_readcount += 1
-                    my_rlen = len(my_rdat)
-                    total_bp_all += my_rlen
-                    readlens_all.append(my_rlen)
-                    if count_fwd >= MINIMUM_CANON_HITS or count_rev >= MINIMUM_CANON_HITS:
-                        f.write(f'>{my_name}\n{my_rdat}\n')
-                        tel_readcount += 1
-                        total_bp_tel += my_rlen
-                        readlens_tel.append(my_rlen)
-                my_reader.close()
+        (all_readcount, tel_readcount, sup_readcount, total_bp_all,
+         total_bp_tel, readlens_all, readlens_tel) = extract_telomere_reads(
+            INPUT_ALN, TELOMERE_READS+'.temp', KMER_INITIAL, KMER_INITIAL_RC,
+            MINIMUM_CANON_HITS, NUM_PROCESSES, CRAM_REF_FILE)
         mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
         np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
         del readlens_all

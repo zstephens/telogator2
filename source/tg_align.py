@@ -4,7 +4,7 @@ import time
 
 from Bio.Align          import PairwiseAligner, substitution_matrices
 from collections        import Counter, defaultdict
-from concurrent.futures import as_completed, FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from itertools          import combinations, count, zip_longest
 
 from source.tg_util import shuffle_seq
@@ -163,25 +163,32 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
         # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             pending_futures = {}
-            tasks_completed = 0
-            while tasks_completed < tasks_per_worker * max_workers:
-                while len(pending_futures) < max_pending:
+            # Drain every submitted task before recycling this worker pool.
+            tasks_submitted = 0
+            tasks_exhausted = False
+            while True:
+                while (len(pending_futures) < max_pending and
+                       tasks_submitted < tasks_per_worker * max_workers and
+                       not tasks_exhausted):
                     try:
                         (i,j) = next(tasks)
                         seed = next(seeds)
                         future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
                         pending_futures[future] = (i,j)
+                        tasks_submitted += 1
                     except StopIteration:
+                        tasks_exhausted = True
                         break
                 if not pending_futures:
-                    return dist_matrix
+                    if tasks_exhausted:
+                        return dist_matrix
+                    break
                 #
                 done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
                 for future in done:
                     my_tvr_dist = future.result()
                     (i,j) = pending_futures.pop(future)
                     dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
-                    tasks_completed += 1
                     #
                     if i > current_i:
                         current_i = i
@@ -212,7 +219,7 @@ def progressive_alignment(sequences, distance_matrix, aligner, num_processes=1):
     def align_to_profile_parallel(sequence, profile):
         with ProcessPoolExecutor(max_workers=num_processes) as executor:
             future_alignments = [executor.submit(pairwise_align, seq, sequence, aligner) for seq, _ in profile]
-            alignments = [future.result() for future in as_completed(future_alignments)]
+            alignments = [future.result() for future in future_alignments]
         max_len = max(len(n[0]) for n in alignments)
         padded_profile = [(a[0].ljust(max_len, '-'), idx) for (a, idx) in zip(alignments, [idx for _, idx in profile])]
         padded_profile.append((alignments[0][1].ljust(max_len, '-'), len(sequences) - 1))
