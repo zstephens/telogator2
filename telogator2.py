@@ -227,6 +227,7 @@ def main(raw_args=None):
     FINAL_TVRS = OUT_DIR + 'all_final_alleles.png'
     FINAL_TSV  = OUT_DIR + 'tlens_by_allele.tsv'
     READLEN_NPZ = OUT_QC_DIR + 'readlens.npz'
+    METHYL_NPZ  = OUT_QC_DIR + 'methylation.npz'
     QC_READLEN  = OUT_QC_DIR + 'qc_readlens.png'
     QC_CMD      = OUT_QC_DIR + 'cmd.txt'
     QC_STATS    = OUT_QC_DIR + 'stats.tsv'
@@ -428,14 +429,20 @@ def main(raw_args=None):
         sys.stdout.write(f'getting reads with at least {MINIMUM_CANON_HITS} matches to {KMER_INITIAL}...')
         sys.stdout.flush()
         tt = time.perf_counter()
-        (all_readcount, tel_readcount, sup_readcount, total_bp_all,
-         total_bp_tel, readlens_all, readlens_tel) = extract_telomere_reads(
-            INPUT_ALN, TELOMERE_READS+'.temp', KMER_INITIAL, KMER_INITIAL_RC,
-            MINIMUM_CANON_HITS, NUM_PROCESSES, CRAM_REF_FILE)
+        etr_out = extract_telomere_reads(INPUT_ALN,
+                                         TELOMERE_READS+'.temp',
+                                         KMER_INITIAL,
+                                         KMER_INITIAL_RC,
+                                         MINIMUM_CANON_HITS,
+                                         NUM_PROCESSES,
+                                         CRAM_REF_FILE)
+        (all_readcount, tel_readcount, sup_readcount, total_bp_all, total_bp_tel, readlens_all, readlens_tel, methyl_rnames, methyl_dat) = etr_out
         mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
         np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
         del readlens_all
         del readlens_tel
+        if methyl_dat:
+            np.savez_compressed(METHYL_NPZ, rnames=np.array(methyl_rnames, dtype=object), **{k: np.array(v, dtype='<f4') for k, v in methyl_dat.items()})
         #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
@@ -463,6 +470,18 @@ def main(raw_args=None):
     if len(all_read_dat) <= 0:
         print('Warning: No telomere reads remaining, stopping here...')
         exit(0)
+
+    #
+    # load methylation data (if present)
+    #
+    methyl_by_rname = {}
+    if exists_and_is_nonzero(METHYL_NPZ):
+        in_methyl = np.load(METHYL_NPZ, allow_pickle=True)
+        methyl_rnames = list(in_methyl['rnames'])
+        for i, rname in enumerate(methyl_rnames):
+            methyl_by_rname[rname] = [list(in_methyl[f'{i}_5mc']), list(in_methyl[f'{i}_5hmc'])]
+    reads_with_methyl_count = sum([1 for read_dat in all_read_dat if read_dat[0] in methyl_by_rname])
+    print(f' - {reads_with_methyl_count} reads with methylation data')
 
     #=====================================================#
     #
@@ -910,7 +929,7 @@ def main(raw_args=None):
         #
         top_alns_by_cluster = {}
         best_mapq_by_readname = {}
-        interstial_anchors = {}
+        interstitial_anchors = {}
         for readname in ALIGNMENTS_BY_RNAME:
             #
             # parse interstitial telomere region anchors (possible fusions)
@@ -918,8 +937,8 @@ def main(raw_args=None):
             if readname[:12] == 'interstitial':
                 original_readname = '_'.join(readname.split('_')[2:])
                 original_readlen = int(readname.split('_')[1])
-                if original_readname not in interstial_anchors:
-                    interstial_anchors[original_readname] = [None, None]
+                if original_readname not in interstitial_anchors:
+                    interstitial_anchors[original_readname] = [None, None]
                 sorted_choices = []
                 #print(readname)
                 for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
@@ -944,7 +963,7 @@ def main(raw_args=None):
                 if sorted_choices:
                     sorted_choices = sorted(sorted_choices, reverse=True)
                     top_choice = sorted_choices[0]
-                    interstial_anchors[original_readname][top_choice[3]] = top_choice
+                    interstitial_anchors[original_readname][top_choice[3]] = top_choice
             #
             # parse subtel anchors
             #
@@ -970,7 +989,7 @@ def main(raw_args=None):
         # annotate possible tel fusions
         #
         tel_fusion_plot_num = 0
-        for readname,anchor_dat in interstial_anchors.items():
+        for readname,anchor_dat in interstitial_anchors.items():
             if anchor_dat[0] is not None and anchor_dat[1] is not None:
                 # require both anchors have mapq > 0
                 if anchor_dat[0][0] > 0 and anchor_dat[1][0] > 0:

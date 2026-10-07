@@ -107,7 +107,7 @@ def split_allele_tsv_dat_by_readnames(dat, readname_list):
     print(ind_is_in_readlist.count(True), '/', len(ind_is_in_readlist))
 
 
-def parse_tsv(fn, min_reads=3, min_tvr=100, min_atl=-2000, max_atl=20000, min_maxatl=100, print_warnings=False):
+def parse_tsv(fn, min_reads=3, min_tvr=0, min_atl=-2000, max_atl=20000, min_maxatl=100, print_warnings=False):
     out_dat = []
     fail_dict = {'interstitial':0,
                  'min_tvr':0,

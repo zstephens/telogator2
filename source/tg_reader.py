@@ -70,13 +70,66 @@ class TG_Reader:
         self.current_readname = None
 
     #
-    # returns (readname, readsequence, qualitysequence, is_supplementary)
+    # returns [5mC_probs, 5hmC_probs] (lists of floats, -1.0 if no call), None if absent
+    #
+    def extract_methylation(self, aln):
+        read_len = aln.query_length
+        if read_len is None or read_len == 0:
+            return None
+        try:
+            mm_tag = aln.get_tag('MM')
+            ml_tag = aln.get_tag('ML')
+        except KeyError:
+            return None
+        if not mm_tag or ml_tag is None:
+            return None
+        seq = aln.query_sequence
+        if not seq:
+            return None
+        c_positions = [i for i, b in enumerate(seq) if b == 'C']
+        out_5mc  = [-1.0] * read_len
+        out_5hmc = [-1.0] * read_len
+        ml_values = list(ml_tag)
+        ml_idx = 0
+        for mod_spec in mm_tag.rstrip(';').split(';'):
+            if not mod_spec:
+                continue
+            parts = mod_spec.split(',')
+            descriptor = parts[0]
+            skip_counts = [int(x) for x in parts[1:] if x]
+            if 'C' not in descriptor:
+                ml_idx += len(skip_counts)
+                continue
+            if 'm' in descriptor:
+                out_list = out_5mc
+            elif 'h' in descriptor:
+                out_list = out_5hmc
+            else:
+                ml_idx += len(skip_counts)
+                continue
+            c_idx = 0
+            for skip in skip_counts:
+                c_idx += skip
+                if c_idx >= len(c_positions):
+                    break
+                out_list[c_positions[c_idx]] = ml_values[ml_idx] / 255.0
+                ml_idx += 1
+                c_idx += 1
+        has_data = any(v >= 0 for v in out_5mc) or any(v >= 0 for v in out_5hmc)
+        if not has_data:
+            return None
+        return [out_5mc, out_5hmc]
+
+    #
+    # returns (readname, readsequence, qualitysequence, is_supplementary, methylation)
+    #
+    # theoretically methylation could be embedded as comments in fasta/fastq files but I realllly don't want to deal with that
     #
     def get_next_read(self, with_quality=True):
         if self.filetype == 'FASTQ':
             my_name = self.f.readline().strip()[1:]
             if not my_name:
-                return ('','','',False)
+                return ('', '', '', False, None)
             if self.replace_tabs_with_spaces:
                 my_name = my_name.replace('\t', ' ')
             my_read = self.f.readline().strip()
@@ -84,13 +137,13 @@ class TG_Reader:
             my_qual = self.f.readline().strip()
             if not with_quality:
                 my_qual = ''
-            return (my_name, my_read, my_qual, False)
+            return (my_name, my_read, my_qual, False, None)
         #
         elif self.filetype == 'FASTA':
             if self.current_readname is None:
                 self.current_readname = self.f.readline().strip()[1:]
             if not self.current_readname:
-                return ('','','',False)
+                return ('', '', '', False, None)
             if self.replace_tabs_with_spaces:
                 self.current_readname = self.current_readname.replace('\t', ' ')
             hit_eof = False
@@ -103,11 +156,11 @@ class TG_Reader:
                 if '>' in self.buffer[-1]:
                     break
             if hit_eof:
-                out_dat = (self.current_readname, ''.join(self.buffer), '', False)
+                out_dat = (self.current_readname, ''.join(self.buffer), '', False, None)
                 self.current_readname = None
                 self.buffer = []
             else:
-                out_dat = (self.current_readname, ''.join(self.buffer[:-1]), '', False)
+                out_dat = (self.current_readname, ''.join(self.buffer[:-1]), '', False, None)
                 self.current_readname = self.buffer[-1][1:]
                 self.buffer = []
             return out_dat
@@ -115,16 +168,16 @@ class TG_Reader:
         elif self.filetype in ['BAM', 'CRAM']:
             try:
                 aln = next(self.alns)
-                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary)
+                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary, self.extract_methylation(aln))
             # we reached the end of file
             except StopIteration:
-                return ('','','',False)
+                return ('', '', '', False, None)
             # this can happen if file is truncated
             except OSError:
-                return ('','','',False)
+                return ('', '', '', False, None)
 
     #
-    # returns list of [(readname1, readsequence1, qualitysequence1, issup1), (readname2, readsequence2, qualitysequence2, issup2), ...]
+    # returns list of (readname, readsequence, qualitysequence, issup, methyl) tuples
     #
     def get_all_reads(self):
         all_read_dat = []
@@ -132,7 +185,7 @@ class TG_Reader:
             read_dat = self.get_next_read()
             if not read_dat[0]:
                 break
-            all_read_dat.append((read_dat[0], read_dat[1], read_dat[2], read_dat[3]))
+            all_read_dat.append((read_dat[0], read_dat[1], read_dat[2], read_dat[3], read_dat[4]))
         return all_read_dat
 
     def close(self):
@@ -185,20 +238,20 @@ def _screen_and_compress(reads, kmer, reverse_kmer, min_hits):
 
 
 def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hits, num_processes=1, ref_fasta=''):
-    #
-    # stream the initial repeat screen in bounded, ordered batches
-    #
     all_readcount = tel_readcount = sup_readcount = 0
     total_bp_all = total_bp_tel = 0
     readlens_all, readlens_tel = [], []
+    methyl_rnames = []
+    methyl_dat = {}
     batch = []
+    batch_methyl = []
     batch_bp = 0
     pending = deque()
     max_pending = 2 * num_processes
 
-    def record_batch(lengths, matches):
+    def record_batch(lengths, methyl_list, matches):
         nonlocal all_readcount, tel_readcount, total_bp_all, total_bp_tel
-        for read_len, matched in zip(lengths, matches):
+        for read_len, methyl, matched in zip(lengths, methyl_list, matches):
             all_readcount += 1
             total_bp_all += read_len
             readlens_all.append(read_len)
@@ -206,23 +259,29 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                 tel_readcount += 1
                 total_bp_tel += read_len
                 readlens_tel.append(read_len)
+                if methyl is not None:
+                    idx = len(methyl_rnames)
+                    methyl_rnames.append(methyl[0])
+                    methyl_dat[f'{idx}_5mc']  = methyl[1]
+                    methyl_dat[f'{idx}_5hmc'] = methyl[2]
 
     def submit_batch(executor, output):
-        nonlocal batch, batch_bp
+        nonlocal batch, batch_methyl, batch_bp
         if executor is None:
             matches = _find_telomere_reads([read[1] for read in batch], kmer, reverse_kmer, min_hits)
             for (name, sequence), matched in zip(batch, matches):
                 if matched:
                     output.write(f'>{name}\n{sequence}\n')
-            record_batch([len(sequence) for _, sequence in batch], matches)
+            record_batch([len(sequence) for _, sequence in batch], batch_methyl, matches)
         else:
-            pending.append(([len(sequence) for _, sequence in batch], executor.submit(_screen_and_compress, batch, kmer, reverse_kmer, min_hits)))
+            pending.append(([len(sequence) for _, sequence in batch], batch_methyl, executor.submit(_screen_and_compress, batch, kmer, reverse_kmer, min_hits)))
             if len(pending) >= max_pending:
-                lengths, future = pending.popleft()
+                lengths, methyl_list, future = pending.popleft()
                 matches, compressed = future.result()
-                record_batch(lengths, matches)
+                record_batch(lengths, methyl_list, matches)
                 output.write(compressed)
         batch = []
+        batch_methyl = []
         batch_bp = 0
 
     pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 else nullcontext()
@@ -232,7 +291,7 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
             reader = TG_Reader(input_file, verbose=False, ref_fasta=ref_fasta, bam_threads=num_processes)
             try:
                 while True:
-                    name, sequence, _, is_supplementary = reader.get_next_read(with_quality=False)
+                    name, sequence, _, is_supplementary, methyl = reader.get_next_read(with_quality=False)
                     if not name:
                         break
                     if not sequence:
@@ -241,6 +300,8 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                         sup_readcount += 1
                         continue
                     batch.append((name, sequence))
+                    # store (name, 5mc, 5hmc) if methylation present, else None
+                    batch_methyl.append((name, methyl[0], methyl[1]) if methyl is not None else None)
                     batch_bp += len(sequence)
                     if len(batch) >= 256 or batch_bp >= 4_000_000:
                         submit_batch(executor, output)
@@ -249,14 +310,14 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
         if batch:
             submit_batch(executor, output)
         while pending:
-            lengths, future = pending.popleft()
+            lengths, methyl_list, future = pending.popleft()
             matches, compressed = future.result()
-            record_batch(lengths, matches)
+            record_batch(lengths, methyl_list, matches)
             output.write(compressed)
         if executor is not None and tel_readcount == 0:
             output.write(gzip.compress(b'', mtime=0))
 
-    return (all_readcount, tel_readcount, sup_readcount, total_bp_all, total_bp_tel, readlens_all, readlens_tel)
+    return (all_readcount, tel_readcount, sup_readcount, total_bp_all, total_bp_tel, readlens_all, readlens_tel, methyl_rnames, methyl_dat)
 
 
 if __name__ == '__main__':
