@@ -52,9 +52,9 @@ class TG_Reader:
                     print()
                     print('Warning: trying to open a cram without a specified reference...')
                     print()
-                    self.f = pysam.AlignmentFile(input_filename, "rc", ignore_truncation=True, check_sq=False)
+                    self.f = pysam.AlignmentFile(input_filename, "rc", check_sq=False, threads=bam_threads)
                 else:
-                    self.f = pysam.AlignmentFile(input_filename, "rc", ignore_truncation=True, check_sq=False, reference_filename=ref_fasta)
+                    self.f = pysam.AlignmentFile(input_filename, "rc", check_sq=False, threads=bam_threads, reference_filename=ref_fasta)
             self.alns = self.f.fetch(until_eof=True)
         else:
             if fnl[-3:] == '.gz':
