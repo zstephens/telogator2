@@ -387,3 +387,21 @@ def get_tel_repeat_comp_parallel(all_read_dat, gtrc_params, max_workers=4, max_p
             done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
             for future in done:
                 sorted_gtrc_results.append((pending_futures.pop(future), future.result()))
+
+
+def write_blank_stats_tsv(filename):
+    out_metrics = []
+    out_metrics.append(('num_alleles', 0))
+    out_metrics.append(('num_alleles_fail', 0))
+    out_metrics.append(('tl_mean', 0))
+    out_metrics.append(('tl_median', 0))
+    out_metrics.append(('tl_short', 0))
+    out_metrics.append(('num_telreads', 0))
+    out_metrics.append(('telread_mean_length', 0))
+    out_metrics.append(('telread_n50_length', 0))
+    out_metrics.append(('fail_reads_unmapped', 0))
+    out_metrics.append(('fail_reads_maxatl', 0))
+    out_metrics.append(('fail_reads_interstitial', 0))
+    with open(filename, 'w') as f:
+        f.write('\t'.join([str(n[0]) for n in out_metrics]) + '\n')
+        f.write('\t'.join([str(n[1]) for n in out_metrics]) + '\n')

@@ -15,7 +15,7 @@ from source.tg_align  import quick_compare_tvrs
 from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
 from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
 from source.tg_reader import extract_telomere_reads, quick_grab_all_reads_nodup
-from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv
+from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv, write_blank_stats_tsv
 from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
 from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
 
@@ -452,12 +452,14 @@ def main(raw_args=None):
         print(f' - ({total_bp_all} bp) [{int(total_bp_all/HUMAN_GENOME_BP + 0.5)}x] --> ({total_bp_tel} bp)')
         if tel_readcount <= 0:
             print('Warning: No telomere reads found, stopping here...')
+            write_blank_stats_tsv(QC_STATS)
             exit(0)
     else:
         print('found telomere reads from a previous run, using them instead of reprocessing input file')
     #
     if STOP_AFTER_TELREADS:
         print('--debug-telreads was specified, stopping now.')
+        write_blank_stats_tsv(QC_STATS)
         exit(0)
     #
     sys.stdout.write(f'filtering by read length (>{MINIMUM_READ_LEN}bp)...')
@@ -469,6 +471,7 @@ def main(raw_args=None):
     print(f' - {len(all_read_dat)+readcount_len_filtered} --> {len(all_read_dat)} reads')
     if len(all_read_dat) <= 0:
         print('Warning: No telomere reads remaining, stopping here...')
+        write_blank_stats_tsv(QC_STATS)
         exit(0)
 
     #
@@ -518,6 +521,7 @@ def main(raw_args=None):
     #
     if num_ending_reads <= 0:
         print('Warning: No telomere reads remaining, stopping here...')
+        write_blank_stats_tsv(QC_STATS)
         exit(0)
     #
     if DOWNSAMPLE_READS > 0 and len(kmer_hit_dat) > DOWNSAMPLE_READS:
