@@ -70,66 +70,12 @@ class TG_Reader:
         self.current_readname = None
 
     #
-    # returns [5mC_probs, 5hmC_probs] (lists of floats, -1.0 if no call), None if absent
-    #
-    def extract_methylation(self, aln):
-        read_len = aln.query_length
-        if read_len is None or read_len == 0:
-            return None
-        try:
-            mm_tag = aln.get_tag('MM')
-            ml_tag = aln.get_tag('ML')
-        except KeyError:
-            return None
-        if not mm_tag or ml_tag is None:
-            return None
-        seq = aln.query_sequence
-        if not seq:
-            return None
-        c_positions = [i for i, b in enumerate(seq) if b == 'C']
-        out_5mc  = [-1.0] * read_len
-        out_5hmc = [-1.0] * read_len
-        ml_values = list(ml_tag)
-        ml_idx = 0
-        for mod_spec in mm_tag.rstrip(';').split(';'):
-            if not mod_spec:
-                continue
-            parts = mod_spec.split(',')
-            descriptor = parts[0]
-            skip_counts = [int(x) for x in parts[1:] if x]
-            if 'C' not in descriptor:
-                ml_idx += len(skip_counts)
-                continue
-            if 'm' in descriptor:
-                out_list = out_5mc
-            elif 'h' in descriptor:
-                out_list = out_5hmc
-            else:
-                ml_idx += len(skip_counts)
-                continue
-            c_idx = 0
-            for skip in skip_counts:
-                c_idx += skip
-                if c_idx >= len(c_positions):
-                    break
-                out_list[c_positions[c_idx]] = ml_values[ml_idx] / 255.0
-                ml_idx += 1
-                c_idx += 1
-        has_data = any(v >= 0 for v in out_5mc) or any(v >= 0 for v in out_5hmc)
-        if not has_data:
-            return None
-        return [out_5mc, out_5hmc]
-
-    #
     # returns (readname, readsequence, qualitysequence, is_supplementary, methylation)
     #
     # theoretically methylation could be embedded as comments in fasta/fastq files but I realllly don't want to deal with that
     #
     def get_next_read(self, with_quality=True, defer_methylation=False):
-        # Opt-in for sequence screening: BAM/CRAM return the alignment in the
-        # methylation slot only when both MM and ML tags exist, otherwise None.
-        # Callers can then decode only reads they retain.
-        # The default payload and FASTA/FASTQ behavior are unchanged.
+        #
         if self.filetype == 'FASTQ':
             my_name = self.f.readline().strip()[1:]
             if not my_name:
@@ -175,7 +121,7 @@ class TG_Reader:
                 if defer_methylation:
                     methyl = aln if aln.has_tag('MM') and aln.has_tag('ML') else None
                 else:
-                    methyl = self.extract_methylation(aln)
+                    methyl = extract_methylation(aln)
                 return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary, methyl)
             # we reached the end of file
             except StopIteration:
@@ -198,6 +144,57 @@ class TG_Reader:
 
     def close(self):
         self.f.close()
+
+
+# returns [5mC_probs, 5hmC_probs] (lists of floats, -1.0 if no call), None if absent
+#
+def extract_methylation(aln):
+    read_len = aln.query_length
+    if read_len is None or read_len == 0:
+        return None
+    try:
+        mm_tag = aln.get_tag('MM')
+        ml_tag = aln.get_tag('ML')
+    except KeyError:
+        return None
+    if not mm_tag or ml_tag is None:
+        return None
+    seq = aln.query_sequence
+    if not seq:
+        return None
+    c_positions = [i for i, b in enumerate(seq) if b == 'C']
+    out_5mc  = [-1.0] * read_len
+    out_5hmc = [-1.0] * read_len
+    ml_values = list(ml_tag)
+    ml_idx = 0
+    for mod_spec in mm_tag.rstrip(';').split(';'):
+        if not mod_spec:
+            continue
+        parts = mod_spec.split(',')
+        descriptor = parts[0]
+        skip_counts = [int(x) for x in parts[1:] if x]
+        if 'C' not in descriptor:
+            ml_idx += len(skip_counts)
+            continue
+        if 'm' in descriptor:
+            out_list = out_5mc
+        elif 'h' in descriptor:
+            out_list = out_5hmc
+        else:
+            ml_idx += len(skip_counts)
+            continue
+        c_idx = 0
+        for skip in skip_counts:
+            c_idx += skip
+            if c_idx >= len(c_positions):
+                break
+            out_list[c_positions[c_idx]] = ml_values[ml_idx] / 255.0
+            ml_idx += 1
+            c_idx += 1
+    has_data = any(v >= 0 for v in out_5mc) or any(v >= 0 for v in out_5hmc)
+    if not has_data:
+        return None
+    return [out_5mc, out_5hmc]
 
 
 def quick_grab_all_reads(fn):
@@ -268,10 +265,8 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                 total_bp_tel += read_len
                 readlens_tel.append(read_len)
                 if methyl is not None:
-                    name, reader, aln = methyl
-                    # Decode only selected reads. The unchanged decoder uses the
-                    # in-memory alignment, whose tags survive closing the BAM.
-                    decoded = reader.extract_methylation(aln)
+                    name, aln = methyl
+                    decoded = extract_methylation(aln)
                     if decoded is not None:
                         idx = len(methyl_rnames)
                         methyl_rnames.append(name)
@@ -313,9 +308,7 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                         sup_readcount += 1
                         continue
                     batch.append((name, sequence))
-                    # Keep alignments in the bounded parent-side queue; only
-                    # names and sequences are sent to screening workers.
-                    batch_methyl.append((name, reader, methyl) if methyl is not None else None)
+                    batch_methyl.append((name, methyl) if methyl is not None else None)
                     batch_bp += len(sequence)
                     if len(batch) >= 256 or batch_bp >= 4_000_000:
                         submit_batch(executor, output)
