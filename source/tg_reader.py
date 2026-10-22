@@ -125,7 +125,11 @@ class TG_Reader:
     #
     # theoretically methylation could be embedded as comments in fasta/fastq files but I realllly don't want to deal with that
     #
-    def get_next_read(self, with_quality=True):
+    def get_next_read(self, with_quality=True, defer_methylation=False):
+        # Opt-in for sequence screening: BAM/CRAM return the alignment in the
+        # methylation slot only when both MM and ML tags exist, otherwise None.
+        # Callers can then decode only reads they retain.
+        # The default payload and FASTA/FASTQ behavior are unchanged.
         if self.filetype == 'FASTQ':
             my_name = self.f.readline().strip()[1:]
             if not my_name:
@@ -168,7 +172,11 @@ class TG_Reader:
         elif self.filetype in ['BAM', 'CRAM']:
             try:
                 aln = next(self.alns)
-                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary, self.extract_methylation(aln))
+                if defer_methylation:
+                    methyl = aln if aln.has_tag('MM') and aln.has_tag('ML') else None
+                else:
+                    methyl = self.extract_methylation(aln)
+                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary, methyl)
             # we reached the end of file
             except StopIteration:
                 return ('', '', '', False, None)
@@ -260,10 +268,15 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                 total_bp_tel += read_len
                 readlens_tel.append(read_len)
                 if methyl is not None:
-                    idx = len(methyl_rnames)
-                    methyl_rnames.append(methyl[0])
-                    methyl_dat[f'{idx}_5mc']  = methyl[1]
-                    methyl_dat[f'{idx}_5hmc'] = methyl[2]
+                    name, reader, aln = methyl
+                    # Decode only selected reads. The unchanged decoder uses the
+                    # in-memory alignment, whose tags survive closing the BAM.
+                    decoded = reader.extract_methylation(aln)
+                    if decoded is not None:
+                        idx = len(methyl_rnames)
+                        methyl_rnames.append(name)
+                        methyl_dat[f'{idx}_5mc'] = decoded[0]
+                        methyl_dat[f'{idx}_5hmc'] = decoded[1]
 
     def submit_batch(executor, output):
         nonlocal batch, batch_methyl, batch_bp
@@ -291,7 +304,7 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
             reader = TG_Reader(input_file, verbose=False, ref_fasta=ref_fasta, bam_threads=num_processes)
             try:
                 while True:
-                    name, sequence, _, is_supplementary, methyl = reader.get_next_read(with_quality=False)
+                    name, sequence, _, is_supplementary, methyl = reader.get_next_read(with_quality=False, defer_methylation=True)
                     if not name:
                         break
                     if not sequence:
@@ -300,8 +313,9 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                         sup_readcount += 1
                         continue
                     batch.append((name, sequence))
-                    # store (name, 5mc, 5hmc) if methylation present, else None
-                    batch_methyl.append((name, methyl[0], methyl[1]) if methyl is not None else None)
+                    # Keep alignments in the bounded parent-side queue; only
+                    # names and sequences are sent to screening workers.
+                    batch_methyl.append((name, reader, methyl) if methyl is not None else None)
                     batch_bp += len(sequence)
                     if len(batch) >= 256 or batch_bp >= 4_000_000:
                         submit_batch(executor, output)
