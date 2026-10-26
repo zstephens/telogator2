@@ -914,17 +914,9 @@ def main(raw_args=None):
         print('getting anchors from alignment...')
         ALIGNMENTS_BY_RNAME = {}
         samfile = pysam.AlignmentFile(aln_bam, "rb")
-        refseqs = samfile.references
         for aln in samfile.fetch(until_eof=True):
-            sam_line = str(aln).split('\t')
-            # pysam weirdness:
-            my_ref_ind = sam_line[2].replace('#','')
-            if my_ref_ind.isdigit():
-                sam_line[2] = refseqs[int(my_ref_ind)]
-            elif my_ref_ind == '-1':
-                sam_line[2] = refseqs[-1]
-            else:
-                sam_line[2] = my_ref_ind
+            my_ref = aln.reference_name if aln.reference_name is not None else '*'
+            sam_line = [aln.query_name, str(aln.flag), my_ref, str(aln.reference_start), str(aln.mapping_quality), str(aln.cigarstring), '*', '0', '0', str(aln.query_sequence)]
             [rnm, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
             if rnm not in ALIGNMENTS_BY_RNAME:
                 ALIGNMENTS_BY_RNAME[rnm] = []
