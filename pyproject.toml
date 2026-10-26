@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telogator2"
-version = "2.2.0"
+version = "2.2.4"
 authors = [
     { name="Zachary Stephens", email="stephens.zachary@mayo.edu" },
     { name="Jean-Pierre Kocher" },
@@ -22,7 +22,7 @@ dependencies = [
     "biopython>=1.86",
     "matplotlib>=3.3.4",
     "numpy>=1.19.0",
-    "pysam>=0.16.0,<=0.22.0",
+    "pysam>=0.16.0",
     "pywavelets>=1.1.1",
     "scipy>=1.6.0",
 ]
