@@ -37,7 +37,7 @@ def main(raw_args=None):
     #
     parser = argparse.ArgumentParser(description='Telogator', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     #
-    parser.add_argument('--version', action='version', version='%(prog)s 2.2.4')
+    parser.add_argument('--version', action='version', version='%(prog)s 2.2.5')
     #
     parser.add_argument('-i', type=str, required=True,  metavar='',             nargs='*',      help="* Input reads (fa / fa.gz / fq / fq.gz / bam)")
     parser.add_argument('-o', type=str, required=True,  metavar='output/',                      help="* Path to output directory")

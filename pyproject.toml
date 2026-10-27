@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telogator2"
-version = "2.2.4"
+version = "2.2.5"
 authors = [
     { name="Zachary Stephens", email="stephens.zachary@mayo.edu" },
     { name="Jean-Pierre Kocher" },
