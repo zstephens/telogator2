@@ -441,17 +441,20 @@ def main(raw_args=None):
                                          NUM_PROCESSES,
                                          CRAM_REF_FILE)
         (all_readcount, tel_readcount, sup_readcount, total_bp_all, total_bp_tel, readlens_all, readlens_tel, methyl_rnames, methyl_dat) = etr_out
+        del etr_out
         mv(TELOMERE_READS+'.temp', TELOMERE_READS) # temp file as to not immediately overwrite tel_reads.fa.gz if it's the input
         np.savez_compressed(READLEN_NPZ, readlen_all=np.array(readlens_all,dtype='<i8'), readlen_tel=np.array(readlens_tel,dtype='<i8'))
         del readlens_all
         del readlens_tel
         if methyl_dat:
             np.savez_compressed(METHYL_NPZ, rnames=np.array(methyl_rnames, dtype=object), **{k: np.array(v, dtype='<f4') for k, v in methyl_dat.items()})
+        del methyl_rnames
+        del methyl_dat
         #
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         if sup_readcount:
-            print(f' - skipped {sup_readcount} supplementary alignments')
+            print(f' - skipped {sup_readcount} secondary/supplementary alignments')
         print(f' - {all_readcount} --> {tel_readcount} reads')
         print(f' - ({total_bp_all} bp) [{int(total_bp_all/HUMAN_GENOME_BP + 0.5)}x] --> ({total_bp_tel} bp)')
         if tel_readcount <= 0:
@@ -479,15 +482,14 @@ def main(raw_args=None):
         exit(0)
 
     #
-    # load methylation data (if present)
+    # load methylation data (if present, just readcounts)
+    #  - in_methyl[f'{i}_5mc'], if needed later
     #
-    methyl_by_rname = {}
+    methyl_rnames_set = set()
     if exists_and_is_nonzero(METHYL_NPZ):
-        in_methyl = np.load(METHYL_NPZ, allow_pickle=True)
-        methyl_rnames = list(in_methyl['rnames'])
-        for i, rname in enumerate(methyl_rnames):
-            methyl_by_rname[rname] = [list(in_methyl[f'{i}_5mc']), list(in_methyl[f'{i}_5hmc'])]
-    reads_with_methyl_count = sum([1 for read_dat in all_read_dat if read_dat[0] in methyl_by_rname])
+        with np.load(METHYL_NPZ, allow_pickle=True) as in_methyl:
+            methyl_rnames_set = set(in_methyl['rnames'])
+    reads_with_methyl_count = sum([1 for read_dat in all_read_dat if read_dat[0] in methyl_rnames_set])
     print(f' - {reads_with_methyl_count} reads with methylation data')
 
     #=====================================================#

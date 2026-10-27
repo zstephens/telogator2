@@ -1,5 +1,6 @@
 import pysam
 import gzip
+import numpy as np
 import sys
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
@@ -70,7 +71,7 @@ class TG_Reader:
         self.current_readname = None
 
     #
-    # returns (readname, readsequence, qualitysequence, is_supplementary, methylation)
+    # returns (readname, readsequence, qualitysequence, is_supplementary || is_secondary, methylation)
     #
     # theoretically methylation could be embedded as comments in fasta/fastq files but I realllly don't want to deal with that
     #
@@ -122,7 +123,7 @@ class TG_Reader:
                     methyl = aln if aln.has_tag('MM') and aln.has_tag('ML') else None
                 else:
                     methyl = extract_methylation(aln)
-                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary, methyl)
+                return (aln.qname, aln.query_sequence, aln.qual if with_quality else '', aln.is_supplementary | aln.is_secondary, methyl)
             # we reached the end of file
             except StopIteration:
                 return ('', '', '', False, None)
@@ -270,8 +271,8 @@ def extract_telomere_reads(input_files, output_file, kmer, reverse_kmer, min_hit
                     if decoded is not None:
                         idx = len(methyl_rnames)
                         methyl_rnames.append(name)
-                        methyl_dat[f'{idx}_5mc'] = decoded[0]
-                        methyl_dat[f'{idx}_5hmc'] = decoded[1]
+                        methyl_dat[f'{idx}_5mc'] = np.array(decoded[0], dtype='<f4')
+                        methyl_dat[f'{idx}_5hmc'] = np.array(decoded[1], dtype='<f4')
 
     def submit_batch(executor, output):
         nonlocal batch, batch_methyl, batch_bp
