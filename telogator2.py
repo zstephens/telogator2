@@ -5,19 +5,10 @@ import gzip
 import importlib.resources as ir
 import numpy as np
 import os
-import pysam
 import random
 import subprocess
 import sys
 import time
-
-from source.tg_align  import quick_compare_tvrs
-from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
-from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
-from source.tg_reader import extract_telomere_reads, quick_grab_all_reads_nodup
-from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv, write_blank_stats_tsv
-from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
-from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
 
 TEL_WINDOW_SIZE = 100
 P_VS_Q_AMP_THRESH = 0.5
@@ -31,6 +22,19 @@ HUMAN_GENOME_BP = 3100000000
 
 
 def main(raw_args=None):
+    #
+    # moving some imports into main() such that they're not unnecessarily imported for subprocesses spawned during parallel alignment operations
+    # - this might be mac-specific?
+    #
+    import pysam
+    from source.tg_align  import quick_compare_tvrs
+    from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
+    from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
+    from source.tg_reader import extract_telomere_reads, quick_grab_all_reads_nodup
+    from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv, write_blank_stats_tsv
+    from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
+    from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
+    #
     parser = argparse.ArgumentParser(description='Telogator', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     #
     parser.add_argument('--version', action='version', version='%(prog)s 2.2.4')

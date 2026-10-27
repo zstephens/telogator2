@@ -3,7 +3,6 @@ import numpy as np
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 from source.tg_kmer import get_nonoverlapping_kmer_hits, get_telomere_base_count, get_telomere_kmer_density, get_telomere_regions
-from source.tg_plot import plot_tel_signal
 from source.tg_util import posmax, RC
 
 
@@ -227,7 +226,7 @@ def get_terminating_tl(rdat, pq, gtt_params, telplot_dat=None):
         tl_vals_to_plot = None
         if my_tel_len is not None and my_tel_len > 0:
             tl_vals_to_plot = [0, my_tel_len]
-        print(telplot_title, telplot_fn)
+        from source.tg_plot import plot_tel_signal
         plot_tel_signal(density_data, telplot_title, telplot_fn, tl_vals=tl_vals_to_plot, interstitial_tels=[largest_interstitial_tel])
     #
     if my_tel_len is None or my_tel_len <= 0:

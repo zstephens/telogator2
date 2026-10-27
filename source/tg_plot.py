@@ -1,10 +1,14 @@
-import numpy as np
+import os
+import matplotlib
+if 'MPLBACKEND' not in os.environ:
+    matplotlib.use('Agg')
 import matplotlib.pyplot as mpl
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
 import matplotlib.lines as lines
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
+import numpy as np
 
 from source.tg_align import UNKNOWN
 from source.tg_util  import exists_and_is_nonzero
