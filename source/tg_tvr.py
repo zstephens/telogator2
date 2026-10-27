@@ -1,3 +1,5 @@
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
 import numpy as np
 import matplotlib.pyplot as mpl
 
@@ -225,16 +227,18 @@ def cluster_tvrs(kmer_dat,
         refine_matrix = get_scoring_matrix(canonical_letter, which_type='msa_refinement')
         msa_aligner = get_aligner_object(scoring_matrix=msa_matrix, gap_bool=(True,False), which_type='msa')
         refinement_aligner = get_aligner_object(scoring_matrix=refine_matrix, gap_bool=(True,False), which_type='msa')
-        for i in range(len(out_clust)):
-            clust_inds = [n[1] for n in sorted([(len(colorvecs_for_msa[ci]), ci) for ci in out_clust[i]], reverse=True)[:MAX_MSA_READCOUNT]]
-            my_dists = dist_matrix[np.ix_(clust_inds, clust_inds)]
-            my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
-            initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, num_processes=num_processes)
-            refined_msa = iterative_refinement(initial_msa, refinement_aligner)
-            out_consensus.append(get_final_tvr_consensus(refined_msa,
-                                                         default_char=canonical_letter,
-                                                         untrustworthy_chars=[canonical_letter]+dubious_letters,
-                                                         tiebreak_adj={canonical_letter:1, UNKNOWN:-1}))
+        pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 else nullcontext() # shared worker pool
+        with pool as executor:
+            for i in range(len(out_clust)):
+                clust_inds = [n[1] for n in sorted([(len(colorvecs_for_msa[ci]), ci) for ci in out_clust[i]], reverse=True)[:MAX_MSA_READCOUNT]]
+                my_dists = dist_matrix[np.ix_(clust_inds, clust_inds)]
+                my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
+                initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, executor=executor)
+                refined_msa = iterative_refinement(initial_msa, refinement_aligner, executor=executor)
+                out_consensus.append(get_final_tvr_consensus(refined_msa,
+                                                             default_char=canonical_letter,
+                                                             untrustworthy_chars=[canonical_letter]+dubious_letters,
+                                                             tiebreak_adj={canonical_letter:1, UNKNOWN:-1}))
         if save_msa is not None:
             f = open(save_msa,'w')
             for i in range(len(out_consensus)):

@@ -209,17 +209,12 @@ def pairwise_align(seq1, seq2, aligner):
     return str(alignment[0]), str(alignment[1])
 
 
-def progressive_alignment(sequences, distance_matrix, aligner, num_processes=1):
+def progressive_alignment(sequences, distance_matrix, aligner, executor=None):
 
     def align_to_profile(sequence, profile):
-        alignments = [pairwise_align(seq, sequence, aligner) for seq, _ in profile]
-        max_len = max(len(n[0]) for n in alignments)
-        padded_profile = [(a[0].ljust(max_len, '-'), idx) for (a, idx) in zip(alignments, [idx for _, idx in profile])]
-        padded_profile.append((alignments[0][1].ljust(max_len, '-'), len(sequences) - 1))
-        return padded_profile
-
-    def align_to_profile_parallel(sequence, profile):
-        with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        if executor is None:
+            alignments = [pairwise_align(seq, sequence, aligner) for seq, _ in profile]
+        else:
             future_alignments = [executor.submit(pairwise_align, seq, sequence, aligner) for seq, _ in profile]
             alignments = [future.result() for future in future_alignments]
         max_len = max(len(n[0]) for n in alignments)
@@ -252,16 +247,13 @@ def progressive_alignment(sequences, distance_matrix, aligner, num_processes=1):
         closest_index = np.argmin(distances)
         closest_seq, original_index = remaining.pop(closest_index)
         # align the closest sequence to the current profile
-        if num_processes > 1:
-            alignment = align_to_profile_parallel(closest_seq, alignment)
-        else:
-            alignment = align_to_profile(closest_seq, alignment)
+        alignment = align_to_profile(closest_seq, alignment)
     # sort based on the original sequence indices
     alignment.sort(key=lambda x: x[1])
     return remove_gap_columns([seq for seq, _ in alignment])
 
 
-def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvement_threshold=0.01):
+def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvement_threshold=0.01, executor=None):
 
     def create_profile(alignment):
         profile = {}
@@ -293,22 +285,29 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
     if n_sequences < 3:
         return initial_alignment
     current_alignment = initial_alignment
-    current_score = sum(score_against_profile(seq, create_profile(current_alignment)) for seq in current_alignment)
+    current_profile = create_profile(current_alignment)
+    current_score = sum(score_against_profile(seq, current_profile) for seq in current_alignment)
     #
     for _ in range(max_iterations):
         new_alignment = []
+        future_alignments = []
         for i in range(len(current_alignment)):
             # remove the current sequence from the alignment
             temp_alignment = current_alignment[:i] + current_alignment[i+1:]
             # align the current sequence to a profile created from the remaining sequences
             profile = create_profile(temp_alignment)
             consensus = ''.join(max(col, key=col.get) for col in profile.values())
-            alignment = aligner.align(consensus, current_alignment[i].replace('-', ''))[0]
-            new_alignment.append(str(alignment[1]))
+            if executor is None:
+                new_alignment.append(pairwise_align(consensus, current_alignment[i].replace('-', ''), aligner)[1])
+            else:
+                future_alignments.append(executor.submit(pairwise_align, consensus, current_alignment[i].replace('-', ''), aligner))
+        if executor is not None:
+            new_alignment = [future.result()[1] for future in future_alignments]
         max_len = max(len(seq) for seq in new_alignment)
         new_alignment = [seq.ljust(max_len, '-') for seq in new_alignment]
         #
-        new_score = sum(score_against_profile(seq, create_profile(new_alignment)) for seq in new_alignment)
+        new_profile = create_profile(new_alignment) # same profile for every seq
+        new_score = sum(score_against_profile(seq, new_profile) for seq in new_alignment)
         if abs(current_score) < 1e-6:
             if new_score < current_score:
                 break
