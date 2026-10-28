@@ -158,44 +158,54 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
     dist_matrix = np.zeros((n_seq,n_seq), dtype='<f4')
     tt = time.perf_counter()
     current_i = -1
-    while True:
-        # create a new ProcessPoolExecutor periodically to force process recycling
-        # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
-        #
-        # unrelated bugfix as of oct 7 2026:
-        # -- drain every submitted task before recycling worker pools
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            pending_futures = {}
-            tasks_submitted = 0
-            tasks_exhausted = False
-            while True:
-                while (len(pending_futures) < max_pending and
-                       tasks_submitted < tasks_per_worker * max_workers and
-                       not tasks_exhausted):
-                    try:
-                        (i,j) = next(tasks)
-                        seed = next(seeds)
-                        future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
-                        pending_futures[future] = (i,j)
-                        tasks_submitted += 1
-                    except StopIteration:
-                        tasks_exhausted = True
+    if max_workers == 1:
+        for (i,j) in tasks:
+            seed = next(seeds)
+            my_tvr_dist = tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
+            dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
+            if i > current_i:
+                current_i = i
+                if print_progress:
+                    print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
+        return dist_matrix
+    else:
+        while True:
+            # create a new ProcessPoolExecutor periodically to force process recycling
+            # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
+            #
+            # unrelated bugfix as of oct 7 2026:
+            # -- drain every submitted task before recycling worker pools
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                pending_futures = {}
+                tasks_submitted = 0
+                tasks_exhausted = False
+                while True:
+                    while (len(pending_futures) < max_pending and
+                           tasks_submitted < tasks_per_worker * max_workers and
+                           not tasks_exhausted):
+                        try:
+                            (i,j) = next(tasks)
+                            seed = next(seeds)
+                            future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
+                            pending_futures[future] = (i,j)
+                            tasks_submitted += 1
+                        except StopIteration:
+                            tasks_exhausted = True
+                            break
+                    if not pending_futures:
+                        if tasks_exhausted:
+                            return dist_matrix
                         break
-                if not pending_futures:
-                    if tasks_exhausted:
-                        return dist_matrix
-                    break
-                #
-                done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
-                for future in done:
-                    my_tvr_dist = future.result()
-                    (i,j) = pending_futures.pop(future)
-                    dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
                     #
-                    if i > current_i:
-                        current_i = i
-                        if print_progress:
-                            print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
+                    done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        my_tvr_dist = future.result()
+                        (i,j) = pending_futures.pop(future)
+                        dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
+                        if i > current_i:
+                            current_i = i
+                            if print_progress:
+                                print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
 
 
 def remove_gap_columns(alignment):
@@ -262,6 +272,11 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
             profile[i] = {char: column.count(char) / len(column) for char in set(column)}
         return profile
 
+    sub_scores = None
+    if aligner.substitution_matrix is not None:
+        alphabet = aligner.substitution_matrix.alphabet
+        sub_scores = {(c1, c2): float(aligner.substitution_matrix[c1, c2]) for c1 in alphabet for c2 in alphabet}
+
     def score_against_profile(sequence, profile):
         score = 0
         for i, char in enumerate(sequence):
@@ -274,7 +289,7 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
                             else:
                                 score += aligner.mismatch_score
                         else:
-                            score += freq * aligner.substitution_matrix[char, prof_char]
+                            score += freq * sub_scores[(char, prof_char)]
         return score
 
     n_sequences = len(initial_alignment)

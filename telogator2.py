@@ -864,7 +864,7 @@ def main(raw_args=None):
                     aln_params = '-ax map-ont -Y'
                 elif READ_TYPE == 'hifi':
                     aln_params = '-ax map-hifi -Y'
-                cmd = ALIGNER_EXE + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + UNANCHORED_SUBTELS
+                cmd = f'{ALIGNER_EXE} {aln_params} -t {NUM_PROCESSES} -o {aln_sam} {TELOGATOR_REF} {UNANCHORED_SUBTELS}'
             #
             elif WHICH_ALIGNER == 'winnowmap':
                 aln_params = ''
@@ -872,7 +872,7 @@ def main(raw_args=None):
                     aln_params = '-ax map-ont -Y'
                 elif READ_TYPE == 'hifi':
                     aln_params = '-ax map-pb -Y'
-                cmd = ALIGNER_EXE + ' -W ' + WINNOWMAP_K15 + ' ' + aln_params + ' -o ' + aln_sam + ' ' + TELOGATOR_REF + ' ' + UNANCHORED_SUBTELS
+                cmd = f'{ALIGNER_EXE} -W {WINNOWMAP_K15} {aln_params} -t {NUM_PROCESSES} -o {aln_sam} {TELOGATOR_REF} {UNANCHORED_SUBTELS}'
             #
             elif WHICH_ALIGNER == 'pbmm2':
                 with gzip.open(TELOGATOR_REF,'rt') as f_tr: # pbmm2 wants an uncompressed reference
@@ -880,7 +880,7 @@ def main(raw_args=None):
                         for line in f_tr:
                             f_utr.write(line)
                 pysam.faidx(UNCOMPRESSED_TELOGATOR_REF)
-                cmd = ALIGNER_EXE + ' align ' + UNCOMPRESSED_TELOGATOR_REF + ' ' + UNANCHORED_SUBTELS + ' ' + aln_bam + ' --preset HiFi --sort'
+                cmd = f'{ALIGNER_EXE} align {UNCOMPRESSED_TELOGATOR_REF} {UNANCHORED_SUBTELS} {aln_bam} -j {NUM_PROCESSES} --preset HiFi --sort'
             if len(cmd):
                 with open(aln_log, 'w') as f:
                     try:
