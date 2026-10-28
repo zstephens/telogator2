@@ -1,4 +1,5 @@
 import copy
+import numpy as np
 import os
 import random
 import re
@@ -448,7 +449,15 @@ def get_file_type(fn):
     return (file_type, is_gzipped)
 
 
-def shuffle_seq(s):
+def shuffle_seq(s, rng=None):
+    if rng is None:
+        rng = np.random.default_rng(random.getrandbits(64))
+    arr = np.frombuffer(s.encode('ascii'), dtype=np.uint8).copy()
+    rng.shuffle(arr)
+    return arr.tobytes().decode('ascii')
+
+
+def shuffle_seq_old(s):
     return ''.join(random.sample(s,len(s)))
 
 

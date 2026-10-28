@@ -10,6 +10,9 @@ from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 import numpy as np
 
+import logging
+logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR) # suppress annoying warnings about font substitutions
+
 from source.tg_align import UNKNOWN
 from source.tg_util  import exists_and_is_nonzero
 

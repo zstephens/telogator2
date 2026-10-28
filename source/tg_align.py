@@ -25,6 +25,11 @@ MIN_SEQ_DIST = 0.0001
 # if aln_score is < - IDEN_SCORE_SCALAR_CHEAT * iden_score, then assign MAX_SEQ_DIST
 IDEN_SCORE_SCALAR_CHEAT = 0.900
 
+# compute tvr distances in batches sent to subprocesses
+DIST_BATCHES_PER_WORKER = 4
+# but never put more than this many pairs in a single batch
+DIST_MAX_BATCH_SIZE = 100
+
 # use this many reads when creating MSAs for consensus sequences (chooses longest reads)
 MAX_MSA_READCOUNT = 10
 
@@ -107,10 +112,9 @@ def get_aligner_object(scoring_matrix=None, gap_bool=(True,True), which_type='tv
 
 
 def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, randshuffle=3, rng_seed=None):
+    my_rng = None
     if rng_seed is not None:
-        random.seed(rng_seed)
-        np.random.seed(rng_seed)
-        np.random.default_rng(rng_seed)
+        my_rng = np.random.default_rng(rng_seed)
     #
     if adjust_lens:
         min_len = min(len(tvr_i), len(tvr_j))
@@ -139,7 +143,7 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     # rand score
     rand_scores = []
     for k in range(randshuffle):
-        rand_scores.append(aligner.score(shuffle_seq(seq_i), shuffle_seq(seq_j)))
+        rand_scores.append(aligner.score(shuffle_seq(seq_i, my_rng), shuffle_seq(seq_j, my_rng)))
     rand_score_shuffle = np.mean(rand_scores)
     # convert to distance, bounds checking
     if rand_score_shuffle >= aln_score:
@@ -149,6 +153,19 @@ def tvr_distance(tvr_i, tvr_j, aligner, adjust_lens=True, min_viable=True, rands
     dist_out = max(dist_out, MIN_SEQ_DIST)
     #print(aln_score, iden_score, rand_score_shuffle, dist_out)
     return dist_out
+
+
+_dist_worker_dat = None
+
+
+def _init_dist_worker(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count):
+    global _dist_worker_dat
+    _dist_worker_dat = (sequences, aligner, adjust_lens, min_viable, rand_shuffle_count)
+
+
+def _dist_batch(batch):
+    (sequences, aligner, adjust_lens, min_viable, rand_shuffle_count) = _dist_worker_dat
+    return [(i, j, tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)) for (i, j, seed) in batch]
 
 
 def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, tasks_per_worker=5000, rng_seed=12345, print_progress=False):
@@ -169,29 +186,35 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
                     print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
         return dist_matrix
     else:
+        n_pairs = (n_seq * (n_seq - 1)) // 2
+        batch_size = max(1, min(DIST_MAX_BATCH_SIZE, n_pairs // (DIST_BATCHES_PER_WORKER * max_workers)))
         while True:
             # create a new ProcessPoolExecutor periodically to force process recycling
             # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
+            # -- tasks_per_worker counts pairs, not batches
             #
             # unrelated bugfix as of oct 7 2026:
             # -- drain every submitted task before recycling worker pools
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            with ProcessPoolExecutor(max_workers=max_workers, initializer=_init_dist_worker, initargs=(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count)) as executor:
                 pending_futures = {}
-                tasks_submitted = 0
+                pairs_submitted = 0
                 tasks_exhausted = False
                 while True:
                     while (len(pending_futures) < max_pending and
-                           tasks_submitted < tasks_per_worker * max_workers and
+                           pairs_submitted < tasks_per_worker * max_workers and
                            not tasks_exhausted):
-                        try:
-                            (i,j) = next(tasks)
-                            seed = next(seeds)
-                            future = executor.submit(tvr_distance, sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
-                            pending_futures[future] = (i,j)
-                            tasks_submitted += 1
-                        except StopIteration:
-                            tasks_exhausted = True
-                            break
+                        batch = []
+                        while len(batch) < batch_size:
+                            try:
+                                (i,j) = next(tasks)
+                                batch.append((i, j, next(seeds)))
+                            except StopIteration:
+                                tasks_exhausted = True
+                                break
+                        if batch:
+                            future = executor.submit(_dist_batch, batch)
+                            pending_futures[future] = len(batch)
+                            pairs_submitted += len(batch)
                     if not pending_futures:
                         if tasks_exhausted:
                             return dist_matrix
@@ -199,13 +222,13 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
                     #
                     done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
                     for future in done:
-                        my_tvr_dist = future.result()
-                        (i,j) = pending_futures.pop(future)
-                        dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
-                        if i > current_i:
-                            current_i = i
-                            if print_progress:
-                                print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
+                        pending_futures.pop(future)
+                        for (i, j, my_tvr_dist) in future.result():
+                            dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
+                            if i > current_i:
+                                current_i = i
+                                if print_progress:
+                                    print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
 
 
 def remove_gap_columns(alignment):
