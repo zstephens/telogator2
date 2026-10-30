@@ -1,20 +1,26 @@
 import numpy as np
-import random
+import parasail
 import time
 
-from Bio.Align          import PairwiseAligner, substitution_matrices
 from collections        import Counter, defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-from itertools          import combinations, count, zip_longest
+from itertools          import combinations, zip_longest
 
 from source.tg_util import shuffle_seq
 
 
 # we're going to pretend each kmer color is an amino acid, so alignment tools behave themselves
+# - not needed anymore! I will replace this someday, but it will mean all historical runs will need to be reprocessed
 AMINO = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y']
 AMINO_2_IND = {AMINO[i]:i for i in range(len(AMINO))}
 UNKNOWN = 'A'
 GAP_CHR = '-'
+
+# parasail writes gaps as - in tracebacks, so swap existing gaps to this
+PARASAIL_GAP_STANDIN = 'Z'
+PARASAIL_ALPHABET = ''.join(AMINO) + PARASAIL_GAP_STANDIN
+PARASAIL_MODES = {(True,True):'nw', (True,False):'sg_qe_de', (False,True):'sg_qb_db'}
+PARASAIL_INT16_SAFE = 30000
 
 # when comparing sequences of different lengths, choose min(len(seq1), len(seq2)), but only go this low
 MIN_VIABLE_SEQ_LEN = 1000
@@ -35,7 +41,7 @@ MAX_MSA_READCOUNT = 10
 
 
 def get_scoring_matrix(canon_char, which_type='tvr'):
-    m = substitution_matrices.Array(''.join(AMINO) + GAP_CHR, dims=2)
+    m = {}
     for c1 in AMINO:
         m[c1,c1]                                      = 5.  # normal match
         for c2 in AMINO:
@@ -73,9 +79,77 @@ def get_scoring_matrix(canon_char, which_type='tvr'):
     return m
 
 
+# parasail matrices can't be pickled, so aligners only carry the scores and each process builds (and caches) its own parasail matrix
+_parasail_matrix_cache = {}
+
+
+class TG_Aligner:
+    def __init__(self, substitution_matrix, match_score, mismatch_score, gap_open, gap_extend, gap_bool):
+        self.substitution_matrix = substitution_matrix
+        self.match_score = match_score
+        self.mismatch_score = mismatch_score
+        self.gap_open = gap_open
+        self.gap_extend = gap_extend
+        self.gap_bool = tuple(gap_bool)
+        if self.gap_bool not in PARASAIL_MODES:
+            print(f'Error: unsupported gap_bool {self.gap_bool}')
+            exit(1)
+        self.mode = PARASAIL_MODES[self.gap_bool]
+        #
+        p2b = {c:(GAP_CHR if c == PARASAIL_GAP_STANDIN else c) for c in PARASAIL_ALPHABET}
+        if substitution_matrix is None:
+            score_list = [(match_score if c1 == c2 else mismatch_score) for c1 in PARASAIL_ALPHABET for c2 in PARASAIL_ALPHABET]
+        else:
+            score_list = [substitution_matrix[p2b[c1],p2b[c2]] for c1 in PARASAIL_ALPHABET for c2 in PARASAIL_ALPHABET]
+        if any(n != int(n) for n in score_list + [gap_open, gap_extend]):
+            print('Error: parasail requires integer alignment scores')
+            exit(1)
+        self.matrix_scores = tuple(int(n) for n in score_list)
+
+    def get_parasail_matrix(self):
+        if self.matrix_scores not in _parasail_matrix_cache:
+            p_matrix = parasail.matrix_create(PARASAIL_ALPHABET, 0, 0)
+            n = len(PARASAIL_ALPHABET)
+            for i in range(n):
+                for j in range(n):
+                    p_matrix.set_value(i, j, self.matrix_scores[i*n+j])
+            _parasail_matrix_cache[self.matrix_scores] = p_matrix
+        return _parasail_matrix_cache[self.matrix_scores]
+
+    def run_parasail(self, func_name, seq1, seq2):
+        p_matrix = self.get_parasail_matrix()
+        res = getattr(parasail, f'{func_name}_16')(seq1, seq2, -int(self.gap_open), -int(self.gap_extend), p_matrix)
+        if res.saturated or abs(res.score) > PARASAIL_INT16_SAFE:
+            res = getattr(parasail, f'{func_name}_32')(seq1, seq2, -int(self.gap_open), -int(self.gap_extend), p_matrix)
+        return res
+
+    def empty_gap_score(self, gap_len):
+        if gap_len == 0 or self.gap_bool != (True,True):
+            return 0.
+        return self.gap_open + (gap_len - 1) * self.gap_extend
+
+    def score(self, seq1, seq2):
+        if len(seq1) == 0 or len(seq2) == 0:
+            return self.empty_gap_score(len(seq1) + len(seq2))
+        # striped gives wrong scores when gap_open == gap_extend, using scan instead
+        res = self.run_parasail(f'{self.mode}_scan', seq1.replace(GAP_CHR, PARASAIL_GAP_STANDIN), seq2.replace(GAP_CHR, PARASAIL_GAP_STANDIN))
+        return float(res.score)
+
+    def align(self, seq1, seq2):
+        if len(seq1) == 0 or len(seq2) == 0:
+            return (seq1 + GAP_CHR*len(seq2), GAP_CHR*len(seq1) + seq2)
+        (s1, s2) = (seq1.replace(GAP_CHR, PARASAIL_GAP_STANDIN), seq2.replace(GAP_CHR, PARASAIL_GAP_STANDIN))
+        res = self.run_parasail(f'{self.mode}_trace_scan', s1, s2)
+        traceback = res.traceback
+        (aln1, aln2) = (traceback.query, traceback.ref)
+        # the traceback includes free end gaps, so it should cover both full sequences
+        if aln1.replace(GAP_CHR, '') != s1 or aln2.replace(GAP_CHR, '') != s2:
+            print('Error: parasail traceback does not cover both full sequences')
+            exit(1)
+        return (aln1.replace(PARASAIL_GAP_STANDIN, GAP_CHR), aln2.replace(PARASAIL_GAP_STANDIN, GAP_CHR))
+
+
 def get_aligner_object(scoring_matrix=None, gap_bool=(True,True), which_type='tvr'):
-    aligner = PairwiseAligner()
-    aligner.mode = 'global'
     if which_type == 'tvr':
         gap_open = -4.
         gap_extend = -4.
@@ -85,29 +159,9 @@ def get_aligner_object(scoring_matrix=None, gap_bool=(True,True), which_type='tv
     else:
         print('Error: unknown which_type')
         exit(1)
-    aligner.match_score = 5.
-    aligner.mismatch_score = -4.
-    aligner.open_gap_score = gap_open
-    aligner.extend_gap_score = gap_extend
-
-    if scoring_matrix is not None:
-        aligner.substitution_matrix = scoring_matrix
-
-    def set_gap_score(side, open_val, extend_val):
-        # try new attribute names (1.86+), fall back to old names (1.82-1.85)
-        try:
-            setattr(aligner, f'open_{side}_gap_score', open_val)
-            setattr(aligner, f'extend_{side}_gap_score', extend_val)
-        except AttributeError:
-            setattr(aligner, f'{side}_open_gap_score', open_val)
-            setattr(aligner, f'{side}_extend_gap_score', extend_val)
-
-    for side, apply_penalty in zip(['left', 'right'], gap_bool):
-        if apply_penalty:
-            set_gap_score(side, gap_open, gap_extend)
-        else:
-            set_gap_score(side, 0.0, 0.0)
-
+    match_score = 5.
+    mismatch_score = -4.
+    aligner = TG_Aligner(scoring_matrix, match_score, mismatch_score, gap_open, gap_extend, gap_bool)
     return aligner
 
 
@@ -168,67 +222,61 @@ def _dist_batch(batch):
     return [(i, j, tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)) for (i, j, seed) in batch]
 
 
-def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, tasks_per_worker=5000, rng_seed=12345, print_progress=False):
+def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, rng_seed=12345, print_progress=False):
     n_seq = len(sequences)
     tasks = combinations(range(n_seq),2)
-    seeds = count(rng_seed)
+    n_pairs = (n_seq * (n_seq - 1)) // 2
     dist_matrix = np.zeros((n_seq,n_seq), dtype='<f4')
+    pairs_done = 0
+    current_percent = 0
+    #
     tt = time.perf_counter()
-    current_i = -1
     if max_workers == 1:
         for (i,j) in tasks:
-            seed = next(seeds)
-            my_tvr_dist = tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)
+            my_seed = rng_seed + i*n_seq - (i*(i+1))//2 + (j-i-1)
+            my_tvr_dist = tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, my_seed)
             dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
-            if i > current_i:
-                current_i = i
+            pairs_done += 1
+            new_percent = 100 * pairs_done // n_pairs
+            if new_percent > current_percent:
+                current_percent = new_percent
                 if print_progress:
-                    print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
+                    print(f'progress: {pairs_done}/{n_pairs} ({current_percent}%,  {int(time.perf_counter() - tt)} sec)')
         return dist_matrix
     else:
-        n_pairs = (n_seq * (n_seq - 1)) // 2
+        # submit the most longest pairs first
+        len_order = sorted(range(n_seq), key=lambda x: (len(sequences[x]), x), reverse=True)
         batch_size = max(1, min(DIST_MAX_BATCH_SIZE, n_pairs // (DIST_BATCHES_PER_WORKER * max_workers)))
-        while True:
-            # create a new ProcessPoolExecutor periodically to force process recycling
-            # -- this is inelegant, but needed because of a memory leak in PairwiseAligner (which might be fixed by now for all I know, since we've bumped Biopython version to 1.86)
-            # -- tasks_per_worker counts pairs, not batches
-            #
-            # unrelated bugfix as of oct 7 2026:
-            # -- drain every submitted task before recycling worker pools
-            with ProcessPoolExecutor(max_workers=max_workers, initializer=_init_dist_worker, initargs=(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count)) as executor:
-                pending_futures = {}
-                pairs_submitted = 0
-                tasks_exhausted = False
-                while True:
-                    while (len(pending_futures) < max_pending and
-                           pairs_submitted < tasks_per_worker * max_workers and
-                           not tasks_exhausted):
-                        batch = []
-                        while len(batch) < batch_size:
-                            try:
-                                (i,j) = next(tasks)
-                                batch.append((i, j, next(seeds)))
-                            except StopIteration:
-                                tasks_exhausted = True
-                                break
-                        if batch:
-                            future = executor.submit(_dist_batch, batch)
-                            pending_futures[future] = len(batch)
-                            pairs_submitted += len(batch)
-                    if not pending_futures:
-                        if tasks_exhausted:
-                            return dist_matrix
-                        break
-                    #
-                    done, _ = wait(pending_futures, return_when=FIRST_COMPLETED)
-                    for future in done:
-                        pending_futures.pop(future)
-                        for (i, j, my_tvr_dist) in future.result():
-                            dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
-                            if i > current_i:
-                                current_i = i
-                                if print_progress:
-                                    print(f'progress: {i+1}/{n_seq} ({int(time.perf_counter() - tt)} sec)')
+        tasks = ((min(len_order[a], len_order[b]), max(len_order[a], len_order[b])) for b in range(n_seq) for a in range(b))
+        with ProcessPoolExecutor(max_workers=max_workers, initializer=_init_dist_worker, initargs=(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count)) as executor:
+            pending_futures = set()
+            tasks_exhausted = False
+            while True:
+                while len(pending_futures) < max_pending and not tasks_exhausted:
+                    batch = []
+                    while len(batch) < batch_size:
+                        try:
+                            (i,j) = next(tasks)
+                            my_seed = rng_seed + i*n_seq - (i*(i+1))//2 + (j-i-1)
+                            batch.append((i, j, my_seed))
+                        except StopIteration:
+                            tasks_exhausted = True
+                            break
+                    if batch:
+                        pending_futures.add(executor.submit(_dist_batch, batch))
+                if not pending_futures:
+                    return dist_matrix
+                #
+                done, pending_futures = wait(pending_futures, return_when=FIRST_COMPLETED)
+                for future in done:
+                    for (i, j, my_tvr_dist) in future.result():
+                        dist_matrix[i,j] = dist_matrix[j,i] = my_tvr_dist
+                    pairs_done += len(future.result())
+                    new_percent = 100 * pairs_done // n_pairs
+                    if new_percent > current_percent:
+                        current_percent = new_percent
+                        if print_progress:
+                            print(f'progress: {pairs_done}/{n_pairs} ({current_percent}%,  {int(time.perf_counter() - tt)} sec)')
 
 
 def remove_gap_columns(alignment):
@@ -238,8 +286,7 @@ def remove_gap_columns(alignment):
 
 
 def pairwise_align(seq1, seq2, aligner):
-    alignment = aligner.align(seq1, seq2)[0]
-    return str(alignment[0]), str(alignment[1])
+    return aligner.align(seq1, seq2)
 
 
 def progressive_alignment(sequences, distance_matrix, aligner, executor=None):
@@ -292,13 +339,10 @@ def iterative_refinement(initial_alignment, aligner, max_iterations=10, improvem
         profile = {}
         for i in range(len(alignment[0])):
             column = [seq[i] for seq in alignment]
-            profile[i] = {char: column.count(char) / len(column) for char in set(column)}
+            profile[i] = {char: column.count(char) / len(column) for char in dict.fromkeys(column)}
         return profile
 
-    sub_scores = None
-    if aligner.substitution_matrix is not None:
-        alphabet = aligner.substitution_matrix.alphabet
-        sub_scores = {(c1, c2): float(aligner.substitution_matrix[c1, c2]) for c1 in alphabet for c2 in alphabet}
+    sub_scores = aligner.substitution_matrix
 
     def score_against_profile(sequence, profile):
         score = 0
