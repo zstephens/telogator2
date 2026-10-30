@@ -1,5 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import nullcontext
+import hashlib
 import numpy as np
 import matplotlib.pyplot as mpl
 
@@ -31,6 +32,10 @@ CANON_END_DENS = 0.700
 TVR_CANON_FILT_PARAMS_STRICT  = (10, 0.125, 100)
 TVR_CANON_FILT_PARAMS_LENIENT = ( 5, 0.250,  50)
 
+_msa_consensus_cache = {}
+_msa_cache_hits = 0
+_msa_cache_misses = 0
+
 
 def cluster_tvrs(kmer_dat,
                  repeats_metadata,
@@ -46,6 +51,7 @@ def cluster_tvrs(kmer_dat,
                  num_processes=4,
                  rng_seed=12345,
                  clustering_only=False,
+                 msa_reads_only=False,
                  print_matrix_progress=False):
     #
     #   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel_anchor_dist, read_orientation, readname, anchor_mapq, fasta_dat]
@@ -146,12 +152,14 @@ def cluster_tvrs(kmer_dat,
     #
     # PAIRWISE ALIGNMENT OF ALL SEQUENCES
     #
-    if dist_in is None or exists_and_is_nonzero(dist_in) is False:
-        if aln_mode == 'ms':
-            scoring_matrix = None
-        elif aln_mode == 'ds':
-            scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
-        aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
+    if aln_mode == 'ms':
+        scoring_matrix = None
+    elif aln_mode == 'ds':
+        scoring_matrix = get_scoring_matrix(canonical_letter, which_type='tvr')
+    aligner = get_aligner_object(scoring_matrix=scoring_matrix, gap_bool=(True, True), which_type='tvr')
+    if msa_reads_only:
+        dist_matrix = None # computed later, only for the msa reads and only if the msa isn't cached
+    elif dist_in is None or exists_and_is_nonzero(dist_in) is False:
         dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_workers=num_processes, print_progress=print_matrix_progress, rng_seed=rng_seed)
         dist_matrix /= MAX_SEQ_DIST
         if dist_in is not None:
@@ -164,7 +172,9 @@ def cluster_tvrs(kmer_dat,
     # hierarchal clustering + dendrogram plotting
     #
     out_clust = [list(range(len(tvrtels_for_clustering)))]
-    if len(tvrtels_for_clustering) > 1:
+    if msa_reads_only:
+        out_clust = [[n[1] for n in sorted([(kmer_dat[n][1],n) for n in range(n_reads)], reverse=True)]]
+    elif len(tvrtels_for_clustering) > 1:
         dist_array = squareform(dist_matrix)
         Zread = linkage(dist_array, method='ward')
         max_distance = np.max(Zread[:,2])
@@ -227,18 +237,34 @@ def cluster_tvrs(kmer_dat,
         refine_matrix = get_scoring_matrix(canonical_letter, which_type='msa_refinement')
         msa_aligner = get_aligner_object(scoring_matrix=msa_matrix, gap_bool=(True,False), which_type='msa')
         refinement_aligner = get_aligner_object(scoring_matrix=refine_matrix, gap_bool=(True,False), which_type='msa')
-        pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 else nullcontext() # shared worker pool
+        msa_jobs = []
+        for i in range(len(out_clust)):
+            clust_inds = [n[1] for n in sorted([(len(colorvecs_for_msa[ci]), ci) for ci in out_clust[i]], reverse=True)[:MAX_MSA_READCOUNT]]
+            my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
+            msa_key = hashlib.sha1('|'.join(my_seqs_tvr).encode('ascii')).hexdigest()
+            msa_jobs.append((clust_inds, my_seqs_tvr, msa_key))
+            #if msa_key in _msa_consensus_cache:
+            #    print('[cache HIT]')
+            #else:
+            #    print('[cache miss]')
+        uncached_inds = sorted(set(sum([n[0] for n in msa_jobs if n[2] not in _msa_consensus_cache], [])))
+        if dist_matrix is None and len(uncached_inds):
+            dist_matrix = get_dist_matrix_parallel(tvrtels_for_clustering, aligner, True, True, rand_shuffle_count, max_workers=num_processes, rng_seed=rng_seed, which_inds=uncached_inds)
+            dist_matrix /= MAX_SEQ_DIST
+        pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 and len(uncached_inds) else nullcontext() # shared worker pool
         with pool as executor:
-            for i in range(len(out_clust)):
-                clust_inds = [n[1] for n in sorted([(len(colorvecs_for_msa[ci]), ci) for ci in out_clust[i]], reverse=True)[:MAX_MSA_READCOUNT]]
+            for (clust_inds, my_seqs_tvr, msa_key) in msa_jobs:
+                if msa_key in _msa_consensus_cache:
+                    out_consensus.append(_msa_consensus_cache[msa_key])
+                    continue
                 my_dists = dist_matrix[np.ix_(clust_inds, clust_inds)]
-                my_seqs_tvr = [colorvecs_for_msa[ci] for ci in clust_inds]
                 initial_msa = progressive_alignment(my_seqs_tvr, my_dists, msa_aligner, executor=executor)
                 refined_msa = iterative_refinement(initial_msa, refinement_aligner, executor=executor)
                 out_consensus.append(get_final_tvr_consensus(refined_msa,
                                                              default_char=canonical_letter,
                                                              untrustworthy_chars=[canonical_letter]+dubious_letters,
                                                              tiebreak_adj={canonical_letter:1, UNKNOWN:-1}))
+                _msa_consensus_cache[msa_key] = out_consensus[-1]
         if save_msa is not None:
             f = open(save_msa,'w')
             for i in range(len(out_consensus)):

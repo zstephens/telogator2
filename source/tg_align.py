@@ -222,10 +222,13 @@ def _dist_batch(batch):
     return [(i, j, tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)) for (i, j, seed) in batch]
 
 
-def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, rng_seed=12345, print_progress=False):
+def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, rng_seed=12345, print_progress=False, which_inds=None):
     n_seq = len(sequences)
-    tasks = combinations(range(n_seq),2)
-    n_pairs = (n_seq * (n_seq - 1)) // 2
+    if which_inds is None:
+        which_inds = range(n_seq)
+    which_inds = sorted(which_inds)
+    tasks = combinations(which_inds,2)
+    n_pairs = (len(which_inds) * (len(which_inds) - 1)) // 2
     dist_matrix = np.zeros((n_seq,n_seq), dtype='<f4')
     pairs_done = 0
     current_percent = 0
@@ -245,9 +248,9 @@ def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_s
         return dist_matrix
     else:
         # submit the most longest pairs first
-        len_order = sorted(range(n_seq), key=lambda x: (len(sequences[x]), x), reverse=True)
+        len_order = sorted(which_inds, key=lambda x: (len(sequences[x]), x), reverse=True)
         batch_size = max(1, min(DIST_MAX_BATCH_SIZE, n_pairs // (DIST_BATCHES_PER_WORKER * max_workers)))
-        tasks = ((min(len_order[a], len_order[b]), max(len_order[a], len_order[b])) for b in range(n_seq) for a in range(b))
+        tasks = ((min(len_order[a], len_order[b]), max(len_order[a], len_order[b])) for b in range(len(len_order)) for a in range(b))
         with ProcessPoolExecutor(max_workers=max_workers, initializer=_init_dist_worker, initargs=(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count)) as executor:
             pending_futures = set()
             tasks_exhausted = False

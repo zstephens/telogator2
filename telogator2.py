@@ -320,10 +320,11 @@ def main(raw_args=None):
                            'overwrite_figures':not(DONT_OVERWRITE_PLOTS)}
     #
     final_clust_params = {'aln_mode':'ds',
-                          'tvr_truncate':1000,
-                          'rand_shuffle_count':1,
+                          'tvr_truncate':TVR_TRUNCATE_ITER_2,
+                          'rand_shuffle_count':RAND_SHUFFLE_ITER_2,
                           'tree_cut':100.,                 # arbitrarily high
                           'clustering_only':False,
+                          'msa_reads_only':not(PLOT_FINAL_CLUST), # only need the full distance matrix if we're plotting dendrograms
                           'num_processes':NUM_PROCESSES,
                           'rng_seed':RNG_SEED}
 
