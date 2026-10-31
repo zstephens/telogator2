@@ -367,7 +367,7 @@ def get_tel_repeat_comp_parallel(all_read_dat, gtrc_params, max_workers=4, max_p
                         all_nontel_end.append(result_nontelend)
                     if result_isubtels is not None:
                         my_rnm = all_read_dat[i][0]
-                        interstitial_subtels.append(result_isubtels)
+                        interstitial_subtels.extend(result_isubtels)
                         interstitial_khd_by_readname[my_rnm] = result_ikhd
                         interstitial_khd_rev_by_readname[my_rnm] = result_ikhdrev
                     reads_removed_term_tel += skipped_termtel * 1
