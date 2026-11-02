@@ -254,6 +254,9 @@ def cluster_tvrs(kmer_dat,
         pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 and len(uncached_inds) else nullcontext() # shared worker pool
         with pool as executor:
             for (clust_inds, my_seqs_tvr, msa_key) in msa_jobs:
+                if len(clust_inds) == 0:
+                    out_consensus.append('')
+                    continue
                 if msa_key in _msa_consensus_cache:
                     out_consensus.append(_msa_consensus_cache[msa_key])
                     continue
