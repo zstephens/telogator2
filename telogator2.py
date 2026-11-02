@@ -1009,6 +1009,7 @@ def main(raw_args=None):
         #
         for clustnum in sorted(top_alns_by_cluster.keys()):
             chr_arm_scores = {}
+            contig_scores = {}
             anchors_by_ref = {}
             readnames_by_ref = {}
             for (readname,aln) in top_alns_by_cluster[clustnum]:
@@ -1016,13 +1017,16 @@ def main(raw_args=None):
                 my_refspan = abs(aln[3] - aln[4])
                 my_anchor = aln[4] # second refpos is always anchor coord?
                 #my_orr = aln[5]
-                my_mapq = aln[6]
                 if my_ref != '*':
-                    if my_ref not in chr_arm_scores:
-                        chr_arm_scores[my_ref] = 0.
+                    my_chr = my_ref.split('_')[1]
+                    if my_chr not in chr_arm_scores:
+                        chr_arm_scores[my_chr] = 0.
+                    if my_ref not in contig_scores:
+                        contig_scores[my_ref] = 0.
                         anchors_by_ref[my_ref] = []
                         readnames_by_ref[my_ref] = []
-                    chr_arm_scores[my_ref] += my_refspan * ((my_mapq + 1) / (MAX_QUAL_SCORE + 1))
+                    chr_arm_scores[my_chr] += my_refspan
+                    contig_scores[my_ref] += my_refspan
                     anchors_by_ref[my_ref].append(my_anchor)
                     readnames_by_ref[my_ref].append(readname)
             total_score = sum(chr_arm_scores.values())
@@ -1038,16 +1042,10 @@ def main(raw_args=None):
                 anchor_pos = []
                 ref_builds = []
                 my_chrs    = []
-                chrs_encountered_so_far = {}
-                for n in my_anchors:
-                    my_chr  = n.split('_')[1]
-                    my_samp = n.split('_')[0]
-                    my_pos  = int(np.median(anchors_by_ref[n]))
-                    if my_chr in chrs_encountered_so_far:
-                        continue
-                    chrs_encountered_so_far[my_chr] = True
-                    anchor_pos.append(str(my_pos))
-                    ref_builds.append(my_samp)
+                for my_chr in my_anchors:
+                    best_ref = sorted([(contig_scores[k], k) for k in contig_scores if k.split('_')[1] == my_chr], reverse=True)[0][1]
+                    anchor_pos.append(str(int(np.median(anchors_by_ref[best_ref]))))
+                    ref_builds.append(best_ref.split('_')[0])
                     my_chrs.append(my_chr)
                 ALLELE_TEL_DAT[clustnum][0] = ','.join(my_chrs)    # assign chr
                 ALLELE_TEL_DAT[clustnum][1] = ','.join(anchor_pos) # assign pos
