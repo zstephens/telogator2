@@ -472,3 +472,39 @@ def get_nucl_consensus(sequences):
 def quick_compare_tvrs(tvr_1, tvr_2):
     aligner = get_aligner_object(gap_bool=(True,False), which_type='tvr')
     return tvr_distance(tvr_1, tvr_2, aligner, adjust_lens=False, min_viable=False) / MAX_SEQ_DIST
+
+
+def find_subtel_divergence(group1, group2, window=500, max_dist=10000, max_reads=5, min_reads=3, min_margin=0.01, min_frac_consistent=0.75, n_consecutive=2, end_trim=500):
+    my_matrix = parasail.matrix_create('ACGTN', 2, -3)
+    group1 = sorted(group1, key=len, reverse=True)[:max_reads]
+    group2 = sorted(group2, key=len, reverse=True)[:max_reads]
+    window_dat = []
+    n_in_a_row = 0
+    for w_start in range(0, max_dist, window):
+        w_end = w_start + window
+        w1 = [s[len(s)-w_end:len(s)-w_start] for s in group1 if len(s) >= w_end + end_trim]
+        w2 = [s[len(s)-w_end:len(s)-w_start] for s in group2 if len(s) >= w_end + end_trim]
+        if len(w1) < min_reads or len(w2) < min_reads:
+            break
+        reads = w1 + w2
+        labels = [0]*len(w1) + [1]*len(w2)
+        ident = {}
+        for i in range(len(reads)):
+            for j in range(i+1, len(reads)):
+                res = parasail.sg_stats_scan_32(reads[i], reads[j], 5, 2, my_matrix)
+                ident[(i,j)] = ident[(j,i)] = res.matches / max(res.length, 1)
+        prefers_own = [0, 0]
+        for i in range(len(reads)):
+            own = [ident[(i,j)] for j in range(len(reads)) if j != i and labels[j] == labels[i]]
+            other = [ident[(i,j)] for j in range(len(reads)) if labels[j] != labels[i]]
+            if np.mean(own) - np.mean(other) >= min_margin:
+                prefers_own[labels[i]] += 1
+        frac1, frac2 = prefers_own[0] / len(w1), prefers_own[1] / len(w2)
+        window_dat.append((w_start, frac1, frac2))
+        if frac1 >= min_frac_consistent and frac2 >= min_frac_consistent:
+            n_in_a_row += 1
+            if n_in_a_row >= n_consecutive:
+                return w_start - (n_consecutive-1)*window, window_dat
+        else:
+            n_in_a_row = 0
+    return None, window_dat

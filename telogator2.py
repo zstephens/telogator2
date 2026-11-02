@@ -18,6 +18,9 @@ DUMMY_TEL_MAPQ = 60
 MAX_QUAL_SCORE = 60
 ANCHORING_ASSIGNMENT_FRAC = 0.150
 #
+SUBTEL_SPLIT_MIN_READS = 3
+SUBTEL_SPLIT_MIN_FRAC = 0.200
+#
 HUMAN_GENOME_BP = 3100000000
 
 
@@ -27,11 +30,11 @@ def main(raw_args=None):
     # - this might be mac-specific?
     #
     import pysam
-    from source.tg_align  import quick_compare_tvrs
+    from source.tg_align  import find_subtel_divergence, quick_compare_tvrs
     from source.tg_kmer   import get_canonical_letter, read_kmer_tsv
     from source.tg_plot   import convert_colorvec_to_kmerhits, make_tvr_plots, plot_fusion, plot_kmer_hits, plot_some_tvrs, readlen_plot, tel_len_violin_plot
     from source.tg_reader import extract_telomere_reads, quick_grab_all_reads_nodup
-    from source.tg_tel    import get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv, write_blank_stats_tsv
+    from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv, write_blank_stats_tsv
     from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
     from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
     #
@@ -62,6 +65,13 @@ def main(raw_args=None):
     parser.add_argument('-ts', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] Subtel cluster refinement")
     parser.add_argument('-th', type=float, required=False, metavar='0.050', default=0.050, help="[TREECUT] Collapsing aligned alleles")
     #
+    parser.add_argument('--collapse-small',  type=float, required=False, metavar='0.120',  default=0.120,    help="[TREECUT] Merging small alleles into their best partner on the same arm")
+    parser.add_argument('--collapse-alone',  type=float, required=False, metavar='0.100',  default=0.100,    help="[TREECUT] Same, if the arm has only one other well-covered allele")
+    parser.add_argument('--collapse-cross',  type=float, required=False, metavar='0.080',  default=0.080,    help="[TREECUT] Merging small alleles into best partner on a different arm (0 = off)")
+    parser.add_argument('--collapse-rel',    type=float, required=False, metavar='0.50',   default=0.50,     help="Alleles with <= this fraction of the median readcount are 'small'")
+    parser.add_argument('--collapse-margin', type=float, required=False, metavar='0.050',  default=0.050,    help="Best partner must be at least this much closer than the runner-up")
+    parser.add_argument('--subtel-split',    type=str,   required=False, metavar='report', default='report', help="Alleles whose reads anchor to two arms with divergent subtels: off / report / split", choices=['off', 'report', 'split'])
+    #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
     parser.add_argument('-afa-a', type=int, required=False, metavar='100',   default=100,   help="[ALL_FINAL_ALLELES.PNG] Min ATL to include allele")
@@ -78,15 +88,15 @@ def main(raw_args=None):
     parser.add_argument('--plot-fusions',   required=False, action='store_true', default=False, help="[DEBUG] Plot tel fusions for all reads")
     parser.add_argument('--dont-reprocess', required=False, action='store_true', default=False, help="[DEBUG] Use existing intermediary files (for redoing failed runs)")
     parser.add_argument('--debug-replot',   required=False, action='store_true', default=False, help="[DEBUG] Regenerate plots that already exist")
-    parser.add_argument('--debug-nosubtel', required=False, action='store_true', default=False, help="[DEBUG] Skip subtel cluster refinement")
+    parser.add_argument('--debug-subtel',   required=False, action='store_true', default=False, help="[DEBUG] Do subtel cluster refinement (old method)")
     parser.add_argument('--debug-noanchor', required=False, action='store_true', default=False, help="[DEBUG] Do not align reads or do any anchoring")
     parser.add_argument('--debug-telreads', required=False, action='store_true', default=False, help="[DEBUG] Stop immediately after extracting tel reads")
     parser.add_argument('--debug-progress', required=False, action='store_true', default=False, help="[DEBUG] Print progress to screen during init matrix computation")
     parser.add_argument('--debug-dendro',   required=False, action='store_true', default=False, help="[DEBUG] Plot dendrogram during init clustering")
     parser.add_argument('--debug-collapse', required=False, action='store_true', default=False, help="[DEBUG] Plot TVR distances during final collapse")
+    parser.add_argument('--skip-collapse',  required=False, action='store_true', default=False, help="[DEBUG] Skip final collapse")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     #
-    parser.add_argument('--collapse-hom',  type=int, required=False, metavar='',        default=1000, help="Merge similar alleles mapped <= this bp from each other")
     parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='',   help="/path/to/minimap2")
     parser.add_argument('--pbmm2',         type=str, required=False, metavar='exe',     default='',   help="/path/to/pbmm2")
     parser.add_argument('--winnowmap',     type=str, required=False, metavar='exe',     default='',   help="/path/to/winnowmap")
@@ -138,7 +148,7 @@ def main(raw_args=None):
     #
     DONT_OVERWRITE_PLOTS  = not(args.debug_replot)     # (True = don't replot figures if they already exist)
     ALWAYS_REPROCESS      = not(args.dont_reprocess)   # (True = don't write out .npz matrices, always recompute)
-    SKIP_SUBTEL_REFINE    = args.debug_nosubtel
+    DO_SUBTEL_REFINE      = args.debug_subtel
     SKIP_ANCHORING        = args.debug_noanchor
     STOP_AFTER_TELREADS   = args.debug_telreads
     PRINT_PROGRESS        = args.debug_progress
@@ -154,7 +164,13 @@ def main(raw_args=None):
     FILT_TERM_NONTEL      = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
     FILT_TERM_SUBTEL      = args.filt_sub         # reads must terminate in at least this much subtel sequence
     FAST_ALIGNMENT        = args.fast_aln
-    COLLAPSE_HOM_BP       = args.collapse_hom
+    SKIP_COLLAPSE         = args.skip_collapse
+    COLLAPSE_SMALL_DIST   = args.collapse_small
+    COLLAPSE_ALONE_DIST   = args.collapse_alone
+    COLLAPSE_SMALL_REL    = args.collapse_rel
+    COLLAPSE_MARGIN       = args.collapse_margin
+    COLLAPSE_CROSS_DIST   = args.collapse_cross
+    SUBTEL_SPLIT_MODE     = args.subtel_split
 
     MIN_INTERSTITIAL_TL = 100
     MIN_FUSION_ANCHOR = 1000
@@ -740,7 +756,7 @@ def main(raw_args=None):
     #
     #=====================================================#
 
-    if SKIP_SUBTEL_REFINE:
+    if not(DO_SUBTEL_REFINE):
         print('skipping subtel cluster refinement...')
         final_clustered_read_inds = []
         for sci, (my_chr, subclust_read_inds, my_subtels) in enumerate(clusters_with_tvrs):
@@ -840,6 +856,7 @@ def main(raw_args=None):
     #
     #=====================================================#
 
+    DO_NOT_MERGE = []
     if SKIP_ANCHORING is False:
         aln_log = ALIGNED_SUBTELS + '.log'
         aln_sam = ALIGNED_SUBTELS + '.sam'
@@ -1005,6 +1022,81 @@ def main(raw_args=None):
                         plot_fusion(readname, anchor_dat[0], anchor_dat[1], khd_tuple, KMER_METADATA, plot_fn)
                     tel_fusion_plot_num += 1
         #
+        # check for alleles whose reads anchor to two different arms and whose subtels diverge
+        #
+        if SUBTEL_SPLIT_MODE != 'off':
+            sys.stdout.write('checking for alleles with divergent subtels...')
+            sys.stdout.flush()
+            tt = time.perf_counter()
+            subtel_seq_by_readname = {n[0]:n[1] for n in subtels_out}
+            subtel_split_report = []
+            for clustnum in sorted(top_alns_by_cluster.keys()):
+                readnames_by_arm = {}
+                for (readname,aln) in top_alns_by_cluster[clustnum]:
+                    if aln[2] != '*' and readname in subtel_seq_by_readname:
+                        readnames_by_arm.setdefault(aln[2].split('_')[1], []).append(readname)
+                if len(readnames_by_arm) < 2:
+                    continue
+                sorted_arms = sorted(readnames_by_arm.keys(), key=lambda k: (-len(readnames_by_arm[k]), k))
+                (arm_1, arm_2) = (sorted_arms[0], sorted_arms[1])
+                n_anchored = sum([len(n) for n in readnames_by_arm.values()])
+                if len(readnames_by_arm[arm_2]) < max(SUBTEL_SPLIT_MIN_READS, SUBTEL_SPLIT_MIN_FRAC * n_anchored):
+                    continue
+                (div_pos, div_dat) = find_subtel_divergence([subtel_seq_by_readname[n] for n in readnames_by_arm[arm_1]],
+                                                            [subtel_seq_by_readname[n] for n in readnames_by_arm[arm_2]])
+                if div_pos is None:
+                    continue
+                my_action = 'reported'
+                if SUBTEL_SPLIT_MODE == 'split':
+                    if len(readnames_by_arm[arm_1]) >= MIN_READS_PER_PHASE and len(readnames_by_arm[arm_2]) >= MIN_READS_PER_PHASE:
+                        # move the reads anchored to the second arm into a new allele (same tvr, so read TLs are unchanged)
+                        new_clustnum = len(ALLELE_TEL_DAT)
+                        # (a read can appear more than once in an allele, so move as many copies of each read as were anchored to the second arm)
+                        move_counts = {}
+                        for n in readnames_by_arm[arm_2]:
+                            my_rname = '_'.join(n.split('_')[2:])
+                            move_counts[my_rname] = move_counts.get(my_rname, 0) + 1
+                        old_dat = ALLELE_TEL_DAT[clustnum]
+                        read_cols = [old_dat[5].split(','), old_dat[6].split(','), old_dat[7].split(','), old_dat[10].split(',')]
+                        keep_inds = []
+                        move_inds = []
+                        for i in range(len(read_cols[3])):
+                            if move_counts.get(read_cols[3][i], 0) > 0:
+                                move_inds.append(i)
+                                move_counts[read_cols[3][i]] -= 1
+                            else:
+                                keep_inds.append(i)
+                        new_dats = []
+                        for my_inds in [keep_inds, move_inds]:
+                            my_dat = [n for n in old_dat]
+                            my_tls = [int(read_cols[0][i]) for i in my_inds]
+                            my_dat[4]  = str(int(choose_tl_from_observations(my_tls, ALLELE_TL_METHOD)))
+                            my_dat[5]  = ','.join([read_cols[0][i] for i in my_inds])
+                            my_dat[6]  = ','.join([read_cols[1][i] for i in my_inds])
+                            my_dat[7]  = ','.join([read_cols[2][i] for i in my_inds])
+                            my_dat[10] = ','.join([read_cols[3][i] for i in my_inds])
+                            new_dats.append(my_dat)
+                        new_dats[1][3] = str(new_clustnum)
+                        ALLELE_TEL_DAT[clustnum] = new_dats[0]
+                        ALLELE_TEL_DAT.append(new_dats[1])
+                        move_qnames = set(readnames_by_arm[arm_2])
+                        top_alns_by_cluster[new_clustnum] = [n for n in top_alns_by_cluster[clustnum] if n[0] in move_qnames]
+                        top_alns_by_cluster[clustnum] = [n for n in top_alns_by_cluster[clustnum] if n[0] not in move_qnames]
+                        DO_NOT_MERGE.append((str(clustnum), str(new_clustnum)))
+                        my_action = f'split (new allele {new_clustnum})'
+                    else:
+                        my_action = 'not split (too few reads)'
+                subtel_split_report.append((clustnum, arm_1, len(readnames_by_arm[arm_1]), arm_2, len(readnames_by_arm[arm_2]), div_pos, my_action))
+            with open(OUT_DIR_ANCHOR + 'subtel_divergence.tsv', 'w') as f:
+                f.write('#allele_id\tarm_1\treads_1\tarm_2\treads_2\tdivergence_dist_from_tvr\taction\n')
+                for n in subtel_split_report:
+                    f.write('\t'.join([str(m) for m in n]) + '\n')
+            sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
+            sys.stdout.flush()
+            print(f' - {len(subtel_split_report)} alleles with reads anchored to two arms and divergent subtels')
+            for n in subtel_split_report:
+                print(f'   allele {n[0]}: {n[1]} ({n[2]} reads) / {n[3]} ({n[4]} reads), diverging {n[5]} bp from tvr -> {n[6]}')
+        #
         # subtel assignment
         #
         for clustnum in sorted(top_alns_by_cluster.keys()):
@@ -1074,52 +1166,107 @@ def main(raw_args=None):
     #
     #=====================================================#
 
-    if COLLAPSE_HOM_BP > 0:
-        sys.stdout.write(f'merging alleles mapped within {COLLAPSE_HOM_BP}bp of each other...')
+    if not(SKIP_COLLAPSE):
+        sys.stdout.write('merging similar alleles...')
         sys.stdout.flush()
         tt = time.perf_counter()
         n_alleles_before_collapsing = len(ALLELE_TEL_DAT)
-        plot_num = 0
-        while True:
-            del_ind = None
-            for i in range(len(ALLELE_TEL_DAT)):
-                for j in range(i+1, len(ALLELE_TEL_DAT)):
-                    if all([ALLELE_TEL_DAT[i][0].split(',')[0] == ALLELE_TEL_DAT[j][0].split(',')[0],
-                            ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[j][2].split(',')[0],
-                            abs(int(ALLELE_TEL_DAT[i][1].split(',')[0]) - int(ALLELE_TEL_DAT[j][1].split(',')[0])) <= COLLAPSE_HOM_BP]):
-                        my_dist = TREECUT_HOM_COLLAPSE * 2
-                        tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
-                        if len(tvr_i) and len(tvr_j):
-                            my_dist = quick_compare_tvrs(tvr_i, tvr_j)
-                        if DEBUG_COLLAPSE:
-                            print(tvr_i)
-                            print(tvr_j)
-                            print()
-                            print(f'DEBUG: ({ALLELE_TEL_DAT[i][3]}) vs. ({ALLELE_TEL_DAT[j][3]}): {my_dist} <= {TREECUT_HOM_COLLAPSE} : {my_dist <= TREECUT_HOM_COLLAPSE}')
-                            print()
-                        if my_dist <= TREECUT_HOM_COLLAPSE:
-                            which_ind, merged_dat = merge_allele_tsv_dat(ALLELE_TEL_DAT[i], ALLELE_TEL_DAT[j], ALLELE_TL_METHOD)
-                            if which_ind == 0:
-                                ALLELE_TEL_DAT[i] = merged_dat
-                                del_ind = j
-                            else:
-                                ALLELE_TEL_DAT[j] = merged_dat
-                                del_ind = i
-                            plot_fn_col2 = OUT_DIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
-                            if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
-                                plot_some_tvrs([tvr_i, tvr_j],
-                                               [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])],
-                                               KMER_METADATA,
-                                               plot_fn_col2,
-                                               custom_plot_params={'custom_title':f'tvr dist = {my_dist:.3f}'})
-                            plot_num += 1
-                            break
-                if del_ind is not None:
-                    break
-            if del_ind is not None:
-                del ALLELE_TEL_DAT[del_ind]
-            else:
-                break
+        random.seed(RNG_SEED)
+        #
+        # [t1] any two alleles on the same arm with dist <= TREECUT_HOM_COLLAPSE
+        # [t2] a small allele merges into its closest larger allele on the same arm, if dist <= COLLAPSE_SMALL_DIST
+        #  - COLLAPSE_ALONE_DIST if the arm has < 2 well-covered alleles besides it, since it might be the arm's second allele and it beats the runner-up by >= COLLAPSE_MARGIN
+        # [t3] (optional) small alleles with no partner on their own arm: same, against alleles on other arms
+        #
+        my_arms = [n[0].split(',')[0] for n in ALLELE_TEL_DAT]
+        my_readcounts = [len(n[5].split(',')) for n in ALLELE_TEL_DAT]
+        median_readcount = np.median(my_readcounts)
+        is_small = [bool(n / median_readcount <= COLLAPSE_SMALL_REL) for n in my_readcounts]
+        # dist is None for blank tvrs
+        collapse_dist = {}
+        for i in range(len(ALLELE_TEL_DAT)):
+            for j in range(i+1, len(ALLELE_TEL_DAT)):
+                if my_arms[i] == my_arms[j] or (COLLAPSE_CROSS_DIST > 0 and (is_small[i] or is_small[j])):
+                    tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
+                    collapse_dist[(i,j)] = collapse_dist[(j,i)] = quick_compare_tvrs(tvr_i, tvr_j) if len(tvr_i) and len(tvr_j) else None
+        # pairs split apart by the subtel check that won't be merged back together
+        ind_by_id = {n[3].rstrip('i'):i for i,n in enumerate(ALLELE_TEL_DAT)}
+        blocked_pairs = set()
+        for (id_1, id_2) in DO_NOT_MERGE:
+            if id_1 in ind_by_id and id_2 in ind_by_id:
+                blocked_pairs.add((ind_by_id[id_1], ind_by_id[id_2]))
+                blocked_pairs.add((ind_by_id[id_2], ind_by_id[id_1]))
+        merge_pairs = []
+        # [t1]
+        for i in range(len(ALLELE_TEL_DAT)):
+            for j in range(i+1, len(ALLELE_TEL_DAT)):
+                if my_arms[i] == my_arms[j]:
+                    my_dist = collapse_dist[(i,j)]
+                    if my_dist is not None and my_dist <= TREECUT_HOM_COLLAPSE and (i,j) not in blocked_pairs:
+                        merge_pairs.append((i, j, my_dist, 1))
+        # [t2] + [t3]
+        for i in range(len(ALLELE_TEL_DAT)):
+            if is_small[i] is False or 'i' in ALLELE_TEL_DAT[i][3] or my_arms[i] in [UNCLUST_CHR, BLANK_CHR]:
+                continue
+            same_arm = [j for j in range(len(ALLELE_TEL_DAT)) if j != i and my_arms[j] == my_arms[i] and my_readcounts[j] > my_readcounts[i]]
+            n_big = len([j for j in same_arm if is_small[j] is False])
+            candidates = sorted([(collapse_dist[(i,j)], j) for j in same_arm if collapse_dist[(i,j)] is not None and (i,j) not in blocked_pairs])
+            my_thresh = COLLAPSE_SMALL_DIST if n_big >= 2 else COLLAPSE_ALONE_DIST
+            if candidates:
+                # if this allele could be the arm's second allele, only merge it into an allele anchored to the same reference contig
+                second_dist = candidates[1][0] if len(candidates) > 1 else 1.0
+                same_contig = ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[candidates[0][1]][2].split(',')[0]
+                if candidates[0][0] <= my_thresh and second_dist - candidates[0][0] >= COLLAPSE_MARGIN and (n_big >= 2 or same_contig):
+                    merge_pairs.append((i, candidates[0][1], candidates[0][0], 2))
+                    continue
+            if COLLAPSE_CROSS_DIST > 0:
+                other_arms = [j for j in range(len(ALLELE_TEL_DAT)) if j != i and my_arms[j] != my_arms[i] and my_readcounts[j] > my_readcounts[i] and 'i' not in ALLELE_TEL_DAT[j][3]]
+                candidates = sorted([(collapse_dist[(i,j)], j) for j in other_arms if collapse_dist[(i,j)] is not None and (i,j) not in blocked_pairs])
+                if candidates:
+                    second_dist = candidates[1][0] if len(candidates) > 1 else 1.0
+                    if candidates[0][0] <= COLLAPSE_CROSS_DIST and second_dist - candidates[0][0] >= COLLAPSE_MARGIN:
+                        merge_pairs.append((i, candidates[0][1], candidates[0][0], 3))
+        #
+        # group the merges (merge each group into its allele with the most reads)
+        #
+        group_of = list(range(len(ALLELE_TEL_DAT)))
+        for (i, j, my_dist, my_tier) in merge_pairs:
+            (old_group, new_group) = (group_of[i], group_of[j])
+            if old_group != new_group:
+                group_of = [new_group if n == old_group else n for n in group_of]
+        groups = {}
+        for i in range(len(ALLELE_TEL_DAT)):
+            groups.setdefault(group_of[i], []).append(i)
+        #
+        for plot_num, (i, j, my_dist, my_tier) in enumerate(merge_pairs):
+            tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
+            if DEBUG_COLLAPSE:
+                print(tvr_i)
+                print(tvr_j)
+                print()
+                print(f'DEBUG: [tier {my_tier}] ({ALLELE_TEL_DAT[i][3]}) vs. ({ALLELE_TEL_DAT[j][3]}): {my_dist}')
+                print()
+            plot_fn_col2 = OUT_DIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
+            if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
+                plot_some_tvrs([tvr_i, tvr_j],
+                               [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])],
+                               KMER_METADATA,
+                               plot_fn_col2,
+                               custom_plot_params={'custom_title':f'tier {my_tier}, tvr dist = {my_dist:.3f}'})
+        #
+        collapsed_dat = []
+        for group_inds in sorted(groups.values()):
+            keep_ind = max(group_inds, key=lambda n: (my_readcounts[n], -n))
+            merged_dat = [n for n in ALLELE_TEL_DAT[keep_ind]]
+            for n in sorted(group_inds, key=lambda n: (-my_readcounts[n], n)):
+                if n == keep_ind:
+                    continue
+                absorbed_dat = [m for m in ALLELE_TEL_DAT[n]]
+                tvr_adj = int(absorbed_dat[8]) - int(merged_dat[8])
+                absorbed_dat[5] = ','.join([str(int(m) + tvr_adj) for m in absorbed_dat[5].split(',')])
+                which_ind, merged_dat = merge_allele_tsv_dat(merged_dat, absorbed_dat, ALLELE_TL_METHOD)
+            collapsed_dat.append(merged_dat)
+        ALLELE_TEL_DAT = collapsed_dat
         sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
         sys.stdout.flush()
         print(f' - {n_alleles_before_collapsing} --> {len(ALLELE_TEL_DAT)} alleles')
