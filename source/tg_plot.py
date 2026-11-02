@@ -149,7 +149,7 @@ def plot_tel_signal(density_data, f_title, fig_name, tl_vals=None, interstitial_
     mpl.rcdefaults()
 
 
-def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=None, draw_boundaries=None, plot_params={}):
+def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=None, draw_boundaries=None, plot_readcounts=None, plot_params={}):
     #
     #   kmer_dat[i] = [[kmer1_hits, kmer2_hits, ...], tlen, tel-anchor-dist, read_orientation, read_name, read_mapq, read_fasta]
     #
@@ -265,6 +265,13 @@ def plot_kmer_hits(kmer_dat, kmer_colors, my_chr, my_pos, fig_name, clust_dat=No
             #
             my_adj_params = [my_tlen, max_tlen, msa_adj, x_axis_adj]
             plot_kmer_hits_on_current_plot(my_kmer_hits, kmer_colors, my_adj_params, which_tel=which_tel, xlim=xlim)
+            #
+            if plot_readcounts is not None:
+                rc_text = f'{plot_readcounts[my_ind_all]} read' + ('' if plot_readcounts[my_ind_all] == 1 else 's')
+                if which_tel == 'p':
+                    current_ax.text(0.005, 0.5, rc_text, transform=current_ax.transAxes, ha='left', va='center', fontsize=0.75*stock_params['font.size'], bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=0))
+                else:
+                    current_ax.text(0.995, 0.5, rc_text, transform=current_ax.transAxes, ha='right', va='center', fontsize=0.75*stock_params['font.size'], bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=0))
             #
             if draw_boundaries is not None:
                 if which_tel == 'p':
