@@ -1156,13 +1156,12 @@ def main(raw_args=None):
         sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], -1 * int(n[4]), int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
         ALLELE_TEL_DAT = [ALLELE_TEL_DAT[n[4]] for n in sorted_ad_inds]
 
-
     #=====================================================#
     #
     # [7] COLLAPSE SIMILAR ALLELES MAPPED NEAR EACH OTHER
     #
     #=====================================================#
- 
+
     if not(SKIP_COLLAPSE):
         sys.stdout.write('merging similar alleles...')
         sys.stdout.flush()
@@ -1207,7 +1206,13 @@ def main(raw_args=None):
                 continue
             same_arm = [j for j in range(len(ALLELE_TEL_DAT)) if j != i and my_arms[j] == my_arms[i] and my_readcounts[j] > my_readcounts[i]]
             n_big = len([j for j in same_arm if is_small[j] is False])
-            candidates = sorted([(collapse_dist[(i,j)], j) for j in same_arm if collapse_dist[(i,j)] is not None and (i,j) not in blocked_pairs])
+            # just compare prefixes, small alleles are often reads that ended partway through another allele's longer tvr
+            candidates = []
+            for j in same_arm:
+                if collapse_dist[(i,j)] is not None and (i,j) not in blocked_pairs:
+                    prefix_dist = quick_compare_tvrs(ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9][:len(ALLELE_TEL_DAT[i][9])])
+                    candidates.append((min(collapse_dist[(i,j)], prefix_dist), j))
+            candidates = sorted(candidates)
             if candidates:
                 same_contig = ALLELE_TEL_DAT[i][2].split(',')[0] == ALLELE_TEL_DAT[candidates[0][1]][2].split(',')[0]
                 if candidates[0][0] <= COLLAPSE_SMALL_DIST and (n_big >= 2 or same_contig):
@@ -1231,25 +1236,34 @@ def main(raw_args=None):
         for i in range(len(ALLELE_TEL_DAT)):
             groups.setdefault(group_of[i], []).append(i)
         #
-        for plot_num, (i, j, my_dist, my_tier) in enumerate(merge_pairs):
-            tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
-            if DEBUG_COLLAPSE:
-                print(tvr_i)
-                print(tvr_j)
+        if DEBUG_COLLAPSE:
+            for (i, j, my_dist, my_tier) in merge_pairs:
+                print(ALLELE_TEL_DAT[i][9])
+                print(ALLELE_TEL_DAT[j][9])
                 print()
                 print(f'DEBUG: [tier {my_tier}] ({ALLELE_TEL_DAT[i][3]}) vs. ({ALLELE_TEL_DAT[j][3]}): {my_dist}')
                 print()
-            plot_fn_col2 = OUT_DIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
-            if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
-                plot_some_tvrs([tvr_i, tvr_j],
-                               [' '.join(ALLELE_TEL_DAT[i][:3]), ' '.join(ALLELE_TEL_DAT[j][:3])],
-                               KMER_METADATA,
-                               plot_fn_col2,
-                               custom_plot_params={'custom_title':f'tier {my_tier}, tvr dist = {my_dist:.3f}'})
+        #
+        merge_links = {}
+        for (i, j, my_dist, my_tier) in merge_pairs:
+            if (i,j) not in merge_links or my_tier < merge_links[(i,j)][1]:
+                merge_links[(i,j)] = (my_dist, my_tier)
         #
         collapsed_dat = []
+        plot_num = 0
         for group_inds in sorted(groups.values()):
+            # keep the allele with the most reads, absorb the rest in order of decreasing readcount
             group_order = [n[1] for n in sorted([(-my_readcounts[n], n) for n in group_inds])]
+            if len(group_order) > 1:
+                plot_fn_col2 = OUT_DIR_COL2 + f'merge_{str(plot_num).zfill(3)}.png'
+                plot_num += 1
+                if exists_and_is_nonzero(plot_fn_col2) is False or DONT_OVERWRITE_PLOTS is False:
+                    my_links = [f'{ALLELE_TEL_DAT[i][3]}->{ALLELE_TEL_DAT[j][3]} (tier {my_tier}, {my_dist:.3f})' for ((i, j), (my_dist, my_tier)) in sorted(merge_links.items()) if i in group_inds]
+                    plot_some_tvrs([ALLELE_TEL_DAT[n][9] for n in group_order],
+                                   [' '.join(ALLELE_TEL_DAT[n][:3]) + f' ({ALLELE_TEL_DAT[n][3]}, {my_readcounts[n]} reads)' for n in group_order],
+                                   KMER_METADATA,
+                                   plot_fn_col2,
+                                   custom_plot_params={'custom_title':', '.join(my_links)})
             merged_dat = [n for n in ALLELE_TEL_DAT[group_order[0]]]
             for n in group_order[1:]:
                 absorbed_dat = [m for m in ALLELE_TEL_DAT[n]]
