@@ -936,7 +936,7 @@ def main(raw_args=None):
         samfile = pysam.AlignmentFile(aln_bam, "rb")
         for aln in samfile.fetch(until_eof=True):
             my_ref = aln.reference_name if aln.reference_name is not None else '*'
-            sam_line = [aln.query_name, str(aln.flag), my_ref, str(aln.reference_start), str(aln.mapping_quality), str(aln.cigarstring), '*', '0', '0', str(aln.query_sequence)]
+            sam_line = [aln.query_name or '*', str(aln.flag), my_ref, str(aln.reference_start + 1), str(aln.mapping_quality), aln.cigarstring or '', '*', '0', '0', aln.query_sequence or '']
             [rnm, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
             if rnm not in ALIGNMENTS_BY_RNAME:
                 ALIGNMENTS_BY_RNAME[rnm] = []
