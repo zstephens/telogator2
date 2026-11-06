@@ -44,7 +44,7 @@ telogator2 -i test_data/hg002-ont-1p.fa.gz \
 
 ## Notes:
 
-An aligner executable must be specified, via either `--minimap2`, `--winnowmap`, or `--pbmm2`.
+Telogator2 assumes minimap2 exists in PATH, otherwise the aligner executable must be specified via `--minimap2`.
 
 `-i` accepts fa, fa.gz, fq, fq.gz, or bam (multiple can be provided, e.g. `-i reads1.fa reads2.fa`). For Revio reads sequenced with SMRTLink13 and onward, we advise including both the "hifi" BAM and "fail" BAM as input.
 

@@ -95,10 +95,7 @@ def main(raw_args=None):
     parser.add_argument('--skip-collapse',  required=False, action='store_true', default=False, help="[DEBUG] Skip final collapse")
     parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
     #
-    parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='',   help="/path/to/minimap2")
-    parser.add_argument('--pbmm2',         type=str, required=False, metavar='exe',     default='',   help="/path/to/pbmm2")
-    parser.add_argument('--winnowmap',     type=str, required=False, metavar='exe',     default='',   help="/path/to/winnowmap")
-    parser.add_argument('--winnowmap-k15', type=str, required=False, metavar='k15.txt', default='',   help="high freq kmers file (only needed for winnowmap)")
+    parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='minimap2', help="/path/to/minimap2")
     parser.add_argument('--ref',           type=str, required=False, metavar='ref.fa',  default='',   help="Reference filename (only needed if input is cram)")
     parser.add_argument('--rng',           type=int, required=False, metavar='-1',      default=-1,   help="RNG seed value")
     #
@@ -139,9 +136,6 @@ def main(raw_args=None):
     # executables
     #
     MINIMAP2_EXE  = args.minimap2
-    WINNOWMAP_EXE = args.winnowmap
-    WINNOWMAP_K15 = args.winnowmap_k15
-    PBMM2_EXE     = args.pbmm2
 
     # debug params
     #
@@ -246,9 +240,9 @@ def main(raw_args=None):
     QC_CMD      = OUT_QC_DIR + 'cmd.txt'
     QC_STATS    = OUT_QC_DIR + 'stats.tsv'
     QC_RNG      = OUT_QC_DIR + 'rng.txt'
-    UNCOMPRESSED_TELOGATOR_REF = OUT_CLUST_DIR + 'telogator-ref.fa'
     UNANCHORED_SUBTELS = OUT_DIR_ANCHOR + 'unanchored_subtels.fa.gz'
     ALIGNED_SUBTELS    = OUT_DIR_ANCHOR + 'subtel_aln'
+    ARM_VOTE_SCORES    = OUT_DIR_ANCHOR + 'arm_scores.tsv'
 
     # rng
     if RNG_SEED <= -1:
@@ -341,26 +335,8 @@ def main(raw_args=None):
     #
     # check exes
     #
-    if len([n for n in [MINIMAP2_EXE, WINNOWMAP_EXE, PBMM2_EXE] if len(n)]) == 0:
-        print('Warning: no aligner was specified, trying "minimap2"...')
-        MINIMAP2_EXE = 'minimap2'
-    elif len([n for n in [MINIMAP2_EXE, WINNOWMAP_EXE, PBMM2_EXE] if len(n)]) > 1:
-        print('Error: multiple aligners specified, use only one of the following:')
-        print(' --minimap2')
-        print(' --winnowmap')
-        print(' --pbmm2')
-        exit(1)
-    if len(MINIMAP2_EXE):
-        ALIGNER_EXE = MINIMAP2_EXE
-        WHICH_ALIGNER = 'minimap2'
-    elif len(WINNOWMAP_EXE):
-        ALIGNER_EXE = WINNOWMAP_EXE
-        WHICH_ALIGNER = 'winnowmap'
-    elif len(PBMM2_EXE):
-        ALIGNER_EXE = PBMM2_EXE
-        WHICH_ALIGNER = 'pbmm2'
-    if check_aligner_exe(ALIGNER_EXE) is False:
-        print(f'Error: {WHICH_ALIGNER} executable not found.')
+    if check_aligner_exe(MINIMAP2_EXE) is False:
+        print(f'Error: minimap2 executable not found: {MINIMAP2_EXE}')
         exit(1)
 
     #
@@ -380,10 +356,6 @@ def main(raw_args=None):
     else:
         print('using default subtel reference')
         TELOGATOR_REF = str(ir.files("source").joinpath('resources/telogator-ref.fa.gz'))
-        WINNOWMAP_K15 = str(ir.files("source").joinpath('resources/telogator-ref-k15.txt'))
-    if WHICH_ALIGNER == 'winnowmap' and WINNOWMAP_K15 == '':
-        print('Error: winnowmap was chosen as aligner but no --winnowmap-k15 was provided.')
-        exit(1)
 
     #
     # parse telomere kmer data
@@ -869,32 +841,8 @@ def main(raw_args=None):
                 for n in interstitial_subtels:
                     if len(n[1]) > 0:
                         f.write(f'>{n[0]}\n{n[1]}\n')
-            #
-            cmd = ''
-            #
-            if WHICH_ALIGNER == 'minimap2':
-                aln_params = ''
-                if READ_TYPE == 'ont':
-                    aln_params = '-ax map-ont -Y'
-                elif READ_TYPE == 'hifi':
-                    aln_params = '-ax map-hifi -Y'
-                cmd = f'{ALIGNER_EXE} {aln_params} -t {NUM_PROCESSES} -o {aln_sam} {TELOGATOR_REF} {UNANCHORED_SUBTELS}'
-            #
-            elif WHICH_ALIGNER == 'winnowmap':
-                aln_params = ''
-                if READ_TYPE == 'ont':
-                    aln_params = '-ax map-ont -Y'
-                elif READ_TYPE == 'hifi':
-                    aln_params = '-ax map-pb -Y'
-                cmd = f'{ALIGNER_EXE} -W {WINNOWMAP_K15} {aln_params} -t {NUM_PROCESSES} -o {aln_sam} {TELOGATOR_REF} {UNANCHORED_SUBTELS}'
-            #
-            elif WHICH_ALIGNER == 'pbmm2':
-                with gzip.open(TELOGATOR_REF,'rt') as f_tr: # pbmm2 wants an uncompressed reference
-                    with open(UNCOMPRESSED_TELOGATOR_REF,'w') as f_utr:
-                        for line in f_tr:
-                            f_utr.write(line)
-                pysam.faidx(UNCOMPRESSED_TELOGATOR_REF)
-                cmd = f'{ALIGNER_EXE} align {UNCOMPRESSED_TELOGATOR_REF} {UNANCHORED_SUBTELS} {aln_bam} -j {NUM_PROCESSES} --preset HiFi --sort'
+            aln_preset = {'ont':'map-ont', 'hifi':'map-hifi'}[READ_TYPE]
+            cmd = f'{MINIMAP2_EXE} -ax {aln_preset} -Y -t {NUM_PROCESSES} -o {aln_sam} {TELOGATOR_REF} {UNANCHORED_SUBTELS}'
             if len(cmd):
                 with open(aln_log, 'w') as f:
                     try:
@@ -909,19 +857,15 @@ def main(raw_args=None):
                         print(cmd)
                         print()
                         exit(1)
-            if exists_and_is_nonzero(aln_sam) is False and exists_and_is_nonzero(aln_bam) is False:
+            if exists_and_is_nonzero(aln_sam) is False:
                 print()
                 print('Error: subtel alignment failed. Check the log:')
                 print(f'{aln_log}')
                 exit(1)
             #
-            if WHICH_ALIGNER == 'pbmm2':
-                rm(UNCOMPRESSED_TELOGATOR_REF)
-                rm(UNCOMPRESSED_TELOGATOR_REF+'.fai')
-            else:
-                pysam.sort("-o", aln_bam, aln_sam)
-                pysam.index(aln_bam)
-                rm(aln_sam)
+            pysam.sort("-o", aln_bam, aln_sam)
+            pysam.index(aln_bam)
+            rm(aln_sam)
             sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
             sys.stdout.flush()
             if exists_and_is_nonzero(aln_bam) is False:
@@ -938,12 +882,15 @@ def main(raw_args=None):
             my_ref = aln.reference_name if aln.reference_name is not None else '*'
             sam_line = [aln.query_name or '*', str(aln.flag), my_ref, str(aln.reference_start + 1), str(aln.mapping_quality), aln.cigarstring or '', '*', '0', '0', aln.query_sequence or '']
             [rnm, pos, read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat] = parse_read(sam_line)
+            my_as = aln.get_tag('AS') if aln.has_tag('AS') else None
+            my_de = aln.get_tag('de') if aln.has_tag('de') else None
             if rnm not in ALIGNMENTS_BY_RNAME:
                 ALIGNMENTS_BY_RNAME[rnm] = []
-            ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat])
+            ALIGNMENTS_BY_RNAME[rnm].append([read_pos_1, read_pos_2, ref, pos1, pos2, orientation, mapq, rdat, my_as, my_de])
         samfile.close()
         #
         top_alns_by_cluster = {}
+        arm_votes_by_cluster = {}
         best_mapq_by_readname = {}
         interstitial_anchors = {}
         for readname in ALIGNMENTS_BY_RNAME:
@@ -987,20 +934,36 @@ def main(raw_args=None):
                 original_readname = '_'.join(readname.split('_')[2:])
                 sorted_choices = []
                 for i,aln in enumerate(ALIGNMENTS_BY_RNAME[readname]):
-                    dist_to_end = len(aln[7]) - max(aln[0], aln[1])
-                    read_span = abs(aln[1] - aln[0])
                     my_mapq = aln[6]
-                    sorted_choices.append((read_span, my_mapq, -dist_to_end, i)) # sorting first by span, then by mapq
+                    my_as = aln[8] if aln[8] is not None else -1
+                    my_de = aln[9] if aln[9] is not None else 1.
+                    sorted_choices.append((my_as, -my_de, my_mapq, -i)) # sorting first by alignment score, then by divergence
                     if original_readname not in best_mapq_by_readname:
                         best_mapq_by_readname[original_readname] = my_mapq
                     elif my_mapq > best_mapq_by_readname[original_readname]:
                         best_mapq_by_readname[original_readname] = my_mapq
                 sorted_choices = sorted(sorted_choices, reverse=True)
-                top_i = sorted_choices[0][3]
+                top_i = -sorted_choices[0][3]
                 my_cluster = int(readname.split('_')[0][8:])
                 if my_cluster not in top_alns_by_cluster:
                     top_alns_by_cluster[my_cluster] = []
                 top_alns_by_cluster[my_cluster].append((readname, copy.deepcopy(ALIGNMENTS_BY_RNAME[readname][top_i])))
+                #
+                # each read votes for its highest-scoring alignment, weighted by that AS, split evenly between tied arms
+                #
+                best_by_arm = {}
+                for aln in ALIGNMENTS_BY_RNAME[readname]:
+                    if aln[2] == '*' or aln[8] is None:
+                        continue
+                    my_arm = aln[2].split('_')[1]
+                    if my_arm not in best_by_arm or aln[8] > best_by_arm[my_arm][8]:
+                        best_by_arm[my_arm] = aln
+                if best_by_arm:
+                    read_best_as = max([n[8] for n in best_by_arm.values()])
+                    top_arms = [k for k in best_by_arm if best_by_arm[k][8] == read_best_as]
+                    if my_cluster not in arm_votes_by_cluster:
+                        arm_votes_by_cluster[my_cluster] = []
+                    arm_votes_by_cluster[my_cluster].append((readname, {k:(read_best_as/len(top_arms), copy.deepcopy(best_by_arm[k])) for k in top_arms}))
         #
         # annotate possible tel fusions
         #
@@ -1078,6 +1041,8 @@ def main(raw_args=None):
                         move_qnames = set(readnames_by_arm[arm_2])
                         top_alns_by_cluster[new_clustnum] = [n for n in top_alns_by_cluster[clustnum] if n[0] in move_qnames]
                         top_alns_by_cluster[clustnum] = [n for n in top_alns_by_cluster[clustnum] if n[0] not in move_qnames]
+                        arm_votes_by_cluster[new_clustnum] = [n for n in arm_votes_by_cluster.get(clustnum, []) if n[0] in move_qnames]
+                        arm_votes_by_cluster[clustnum] = [n for n in arm_votes_by_cluster.get(clustnum, []) if n[0] not in move_qnames]
                         DO_NOT_MERGE.append((str(clustnum), str(new_clustnum)))
                         my_action = f'split (new allele {new_clustnum})'
                     else:
@@ -1095,29 +1060,30 @@ def main(raw_args=None):
         #
         # subtel assignment
         #
+        arm_score_report = []
         for clustnum in sorted(top_alns_by_cluster.keys()):
             chr_arm_scores = {}
             contig_scores = {}
             anchors_by_ref = {}
             readnames_by_ref = {}
-            for (readname,aln) in top_alns_by_cluster[clustnum]:
-                my_ref = aln[2]
-                my_refspan = abs(aln[3] - aln[4])
-                my_anchor = aln[4] # second refpos is always anchor coord?
-                #my_orr = aln[5]
-                if my_ref != '*':
-                    my_chr = my_ref.split('_')[1]
+            my_votes = arm_votes_by_cluster.get(clustnum, [])
+            for (readname,arm_dat) in my_votes:
+                for (my_chr,(my_weight,aln)) in arm_dat.items():
+                    my_ref = aln[2]
+                    my_anchor = aln[4] # second refpos is always anchor coord?
                     if my_chr not in chr_arm_scores:
                         chr_arm_scores[my_chr] = 0.
                     if my_ref not in contig_scores:
                         contig_scores[my_ref] = 0.
                         anchors_by_ref[my_ref] = []
                         readnames_by_ref[my_ref] = []
-                    chr_arm_scores[my_chr] += my_refspan
-                    contig_scores[my_ref] += my_refspan
+                    chr_arm_scores[my_chr] += my_weight
+                    contig_scores[my_ref] += my_weight
                     anchors_by_ref[my_ref].append(my_anchor)
                     readnames_by_ref[my_ref].append(readname)
             total_score = sum(chr_arm_scores.values())
+            if total_score > 0:
+                arm_score_report.append((clustnum, len(my_votes), sorted([(chr_arm_scores[k]/total_score, k) for k in chr_arm_scores], reverse=True)))
             #
             my_anchors = []
             if total_score > 0:
@@ -1151,6 +1117,12 @@ def main(raw_args=None):
                     else:
                         clust_mapq.append(0)
                 ALLELE_TEL_DAT[clustnum][7] = ','.join([str(n) for n in clust_mapq])
+
+        # write out per-allele arm scores (for debugging)
+        with open(ARM_VOTE_SCORES, 'w') as f:
+            f.write('#allele_id\tanchored_reads\tarm_scores\n')
+            for (clustnum, n_votes, sorted_scores) in arm_score_report:
+                f.write(f'{ALLELE_TEL_DAT[clustnum][3]}\t{n_votes}\t' + ','.join([f'{k}:{v:.3f}' for (v,k) in sorted_scores]) + '\n')
 
         # resort out allele dat by chr & atl & pos
         sorted_ad_inds = sorted([(LEXICO_2_IND[n[0].split(',')[0][:-1]], n[0].split(',')[0][-1], -1 * int(n[4]), int(n[1].split(',')[0]), i) for i,n in enumerate(ALLELE_TEL_DAT)])
