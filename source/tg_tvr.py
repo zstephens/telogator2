@@ -104,13 +104,7 @@ def cluster_tvrs(kmer_dat,
     all_colorvecs = []
     for i in range(n_reads):
         [my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[i]
-        my_letters = [UNKNOWN for n in range(my_tlen)]
-        for ki in range(len(my_kmer_hits)):
-            if len(my_kmer_hits[ki]):
-                for kmer_span in my_kmer_hits[ki]:
-                    for j in range(kmer_span[0], kmer_span[1]):
-                        my_letters[j] = kmer_letters[ki]
-        all_colorvecs.append(''.join(my_letters))
+        all_colorvecs.append(kmer_hits_to_colorvec(my_kmer_hits, my_tlen, kmer_letters))
 
     #
     # identify subtel / tvr boundary
@@ -122,18 +116,8 @@ def cluster_tvrs(kmer_dat,
     colorvecs_for_msa = []
     err_end_lens      = []
     for i in range(len(all_colorvecs)):
-        # identify subtel/tvr boundary based on density of unknown characters
-        (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
-        # lets walk backwards with a smaller window to see if there are some tvrs we missed
-        (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
-        seq_right = recovered_tvr[::-1] + seq_right
-        seq_left = rest_is_subtel[::-1]
-        # adjust subtel boundary so that tvr does not begin with an unknown character
-        adj = 0
-        while seq_right[adj] == UNKNOWN and adj < len(seq_right)-1:
-            adj += 1
-        seq_left = seq_left + seq_right[:adj]
-        seq_right = seq_right[adj:]
+        # identify subtel/tvr boundary
+        (seq_left, seq_right) = find_subtel_tvr_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, readname=kmer_dat[i][4])
         # denoise tvr+tel section
         seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter]+tvr_letters)
         # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
@@ -254,9 +238,6 @@ def cluster_tvrs(kmer_dat,
         pool = ProcessPoolExecutor(max_workers=num_processes) if num_processes > 1 and len(uncached_inds) else nullcontext() # shared worker pool
         with pool as executor:
             for (clust_inds, my_seqs_tvr, msa_key) in msa_jobs:
-                if len(clust_inds) == 0:
-                    out_consensus.append('')
-                    continue
                 if msa_key in _msa_consensus_cache:
                     out_consensus.append(_msa_consensus_cache[msa_key])
                     continue
@@ -479,6 +460,37 @@ def cluster_consensus_tvrs(sequences,
     return out_clust
 
 
+def kmer_hits_to_colorvec(kmer_hits, seq_len, kmer_letters):
+    # kmer_hits[ki] = [(start, end), ...] for kmer ki --> one letter per base, UNKNOWN where there are no kmer hits
+    my_letters = [UNKNOWN for n in range(seq_len)]
+    for ki in range(len(kmer_hits)):
+        if len(kmer_hits[ki]):
+            for kmer_span in kmer_hits[ki]:
+                for j in range(kmer_span[0], kmer_span[1]):
+                    my_letters[j] = kmer_letters[ki]
+    return ''.join(my_letters)
+
+
+def find_subtel_tvr_boundary(colorvec, unknown_letters, readname=''):
+    #
+    # colorvec is in q orientation (subtel on the left, tvr + tel on the right), returns (subtel colorvec, tvr+tel colorvec)
+    # - this is where read subtels get cut, make_telogator_ref.py uses it too so that reference masks end in the same place
+    #
+    # identify subtel/tvr boundary based on density of unknown characters
+    (seq_left, seq_right) = find_density_boundary(colorvec, unknown_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=readname)
+    # lets walk backwards with a smaller window to see if there are some tvrs we missed
+    (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], unknown_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=readname)
+    seq_right = recovered_tvr[::-1] + seq_right
+    seq_left = rest_is_subtel[::-1]
+    # adjust subtel boundary so that tvr does not begin with an unknown character
+    adj = 0
+    while seq_right[adj] == UNKNOWN and adj < len(seq_right)-1:
+        adj += 1
+    seq_left = seq_left + seq_right[:adj]
+    seq_right = seq_right[adj:]
+    return (seq_left, seq_right)
+
+
 def find_density_boundary(sequence, which_letter, win_size, dens_thresh, thresh_dir='below', starting_coord=0, use_lowest_dens=False, debug_plot=False, readname=''):
     my_unknown = np.zeros(len(sequence))
     for j in range(starting_coord, len(sequence)):
@@ -600,28 +612,12 @@ def quick_get_tvrtel_lens(kmer_dat, repeats_metadata):
     all_colorvecs = []
     for i in range(len(kmer_dat)):
         [my_kmer_hits, my_tlen, my_dbta, my_orr, my_rname, my_mapq, my_fastadat] = kmer_dat[i]
-        my_letters = [UNKNOWN for n in range(my_tlen)]
-        for ki in range(len(my_kmer_hits)):
-            if len(my_kmer_hits[ki]):
-                for kmer_span in my_kmer_hits[ki]:
-                    for j in range(kmer_span[0], kmer_span[1]):
-                        my_letters[j] = kmer_letters[ki]
-        all_colorvecs.append(''.join(my_letters))
+        all_colorvecs.append(kmer_hits_to_colorvec(my_kmer_hits, my_tlen, kmer_letters))
     #
     all_tvrtel_lens = []
     for i in range(len(all_colorvecs)):
-        # identify subtel/tvr boundary based on density of unknown characters
-        (seq_left, seq_right) = find_density_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE, UNKNOWN_END_DENS, thresh_dir='below', debug_plot=False, readname=kmer_dat[i][4])
-        # lets walk backwards with a smaller window to see if there are some tvrs we missed
-        (recovered_tvr, rest_is_subtel) = find_density_boundary(seq_left[::-1], [UNKNOWN]+subfilt_letters, UNKNOWN_WIN_SIZE_FINE, UNKNOWN_END_DENS_FINE, thresh_dir='above', debug_plot=False, readname=kmer_dat[i][4])
-        seq_right = recovered_tvr[::-1] + seq_right
-        seq_left = rest_is_subtel[::-1]
-        # adjust subtel boundary so that tvr does not begin with an unknown character
-        adj = 0
-        while seq_right[adj] == UNKNOWN and adj < len(seq_right)-1:
-            adj += 1
-        seq_left = seq_left + seq_right[:adj]
-        seq_right = seq_right[adj:]
+        # identify subtel/tvr boundary
+        (seq_left, seq_right) = find_subtel_tvr_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, readname=kmer_dat[i][4])
         all_tvrtel_lens.append(len(seq_right))
     #
     return all_tvrtel_lens

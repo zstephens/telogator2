@@ -101,14 +101,14 @@ The main results are in `tlens_by_allele.tsv`, which has the following columns:
 
 ## Human subtelomere references
 
-The reference sequence used for telomere anchoring currently contains the first and last 500kb of each chromosome from the following T2T assemblies:
+The reference sequence used for telomere anchoring currently contains the first and last 250kb of each chromosome from the following T2T assemblies:
 
-* `T2T-chm13` - https://github.com/marbl/CHM13
-* `T2T-yao` - https://ngdc.cncb.ac.cn/bioproject/browse/PRJCA017932
-* `T2T-cn1` - https://github.com/T2T-CN1/CN1
-* `T2T-hg002` - https://github.com/marbl/hg002
-* `T2T-ksa001` - https://github.com/bio-ontology-research-group/KSA001
-* `T2T-i002c` - https://github.com/LHG-GG/I002C
+* `chm13` - https://github.com/marbl/CHM13
+* `hg002` - https://github.com/marbl/hg002
+* `cn1` - https://github.com/T2T-CN1/CN1
+* `yao` - https://ngdc.cncb.ac.cn/bioproject/browse/PRJCA017932
+* `i002c` - https://github.com/LHG-GG/I002C
+* `hg06807` - https://data.humanpangenome.org/assemblies
 
 More subtelomere contigs may be added as they become available.
 
