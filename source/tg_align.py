@@ -20,7 +20,7 @@ GAP_CHR = '-'
 PARASAIL_GAP_STANDIN = 'Z'
 PARASAIL_ALPHABET = ''.join(AMINO) + PARASAIL_GAP_STANDIN
 PARASAIL_MODES = {(True,True):'nw', (True,False):'sg_qe_de', (False,True):'sg_qb_db'}
-PARASAIL_INT16_SAFE = 30000
+PARASAIL_INT16_SAFE = 2**15 - 1
 
 # when comparing sequences of different lengths, choose min(len(seq1), len(seq2)), but only go this low
 MIN_VIABLE_SEQ_LEN = 1000
@@ -105,6 +105,7 @@ class TG_Aligner:
             print('Error: parasail requires integer alignment scores')
             exit(1)
         self.matrix_scores = tuple(int(n) for n in score_list)
+        self.max_score = max(self.matrix_scores)
 
     def get_parasail_matrix(self):
         if self.matrix_scores not in _parasail_matrix_cache:
@@ -118,10 +119,13 @@ class TG_Aligner:
 
     def run_parasail(self, func_name, seq1, seq2):
         p_matrix = self.get_parasail_matrix()
-        res = getattr(parasail, f'{func_name}_16')(seq1, seq2, -int(self.gap_open), -int(self.gap_extend), p_matrix)
-        if res.saturated or abs(res.score) > PARASAIL_INT16_SAFE:
-            res = getattr(parasail, f'{func_name}_32')(seq1, seq2, -int(self.gap_open), -int(self.gap_extend), p_matrix)
-        return res
+        # only try 16-bit if no chance of overflow
+        if self.max_score * min(len(seq1), len(seq2)) <= PARASAIL_INT16_SAFE:
+            res = getattr(parasail, f'{func_name}_16')(seq1, seq2, -int(self.gap_open), -int(self.gap_extend), p_matrix)
+            if not res.saturated and abs(res.score) <= PARASAIL_INT16_SAFE:
+                return res
+            del res
+        return getattr(parasail, f'{func_name}_32')(seq1, seq2, -int(self.gap_open), -int(self.gap_extend), p_matrix)
 
     def empty_gap_score(self, gap_len):
         if gap_len == 0 or self.gap_bool != (True,True):
