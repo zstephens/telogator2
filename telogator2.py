@@ -71,7 +71,7 @@ def main(raw_args=None):
     parser.add_argument('--subtel-split',   type=str,   required=False, metavar='report', default='report', help="Split clusters with different subtels: off / report / split", choices=['off', 'report', 'split'])
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
-    parser.add_argument('-afa-t', type=int, required=False, metavar='1000',  default=1000,  help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
+    parser.add_argument('-afa-t', type=int, required=False, metavar='500',   default=500,   help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
     parser.add_argument('-afa-a', type=int, required=False, metavar='100',   default=100,   help="[ALL_FINAL_ALLELES.PNG] Min ATL to include allele")
     #
     parser.add_argument('-va-y', type=int, required=False, metavar='20000', default=20000, help="[VIOLIN_ATL.PNG] Y axis max")
@@ -93,7 +93,7 @@ def main(raw_args=None):
     parser.add_argument('--debug-dendro',   required=False, action='store_true', default=False, help="[DEBUG] Plot dendrogram during init clustering")
     parser.add_argument('--debug-collapse', required=False, action='store_true', default=False, help="[DEBUG] Plot TVR distances during final collapse")
     parser.add_argument('--skip-collapse',  required=False, action='store_true', default=False, help="[DEBUG] Skip final collapse")
-    parser.add_argument('--fast-aln',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use faster but less accurate pairwise alignment")
+    parser.add_argument('--accurate',       required=False, action='store_true', default=False, help="[PERFORMANCE] Use slower but more accurate TVR scoring")
     #
     parser.add_argument('--minimap2',      type=str, required=False, metavar='exe',     default='minimap2', help="/path/to/minimap2")
     parser.add_argument('--ref',           type=str, required=False, metavar='ref.fa',  default='',   help="Reference filename (only needed if input is cram)")
@@ -156,7 +156,7 @@ def main(raw_args=None):
     FILT_TERM_TEL         = args.filt_tel         # reads must terminate in at least this much tel sequence
     FILT_TERM_NONTEL      = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
     FILT_TERM_SUBTEL      = args.filt_sub         # reads must terminate in at least this much subtel sequence
-    FAST_ALIGNMENT        = args.fast_aln
+    ACCURATE_TVR          = args.accurate
     SKIP_COLLAPSE         = args.skip_collapse
     SUBTEL_SPLIT_MODE     = args.subtel_split
 
@@ -258,16 +258,15 @@ def main(raw_args=None):
     TVR_TRUNCATE_ITER_1 = 2000
     TVR_TRUNCATE_ITER_2 = 3000
     SUBTEL_TRUNCATE = 3000
-    RAND_SHUFFLE_ITER_0 = 2
-    RAND_SHUFFLE_ITER_1 = 3
-    RAND_SHUFFLE_ITER_2 = 3
+    RAND_SHUFFLE_ITER_0 = 1
+    RAND_SHUFFLE_ITER_1 = 1
+    RAND_SHUFFLE_ITER_2 = 1
     TVR_REFINE_ITERATIONS = [1,2]
     TVR_ITERATIONS_TO_PLOT = [1]*PLOT_TVR_CLUST_ITER_1 + [2]*PLOT_TVR_CLUST_ITER_2
-    if FAST_ALIGNMENT:
-        RAND_SHUFFLE_ITER_0 = 1
-        RAND_SHUFFLE_ITER_1 = 1
-        RAND_SHUFFLE_ITER_2 = 1
-        TVR_REFINE_ITERATIONS = [2]
+    if ACCURATE_TVR:
+        RAND_SHUFFLE_ITER_0 = 2
+        RAND_SHUFFLE_ITER_1 = 3
+        RAND_SHUFFLE_ITER_2 = 3
 
     # TVR clustering parameters by iteration
     tvr_clust_params = [None, None, None]
