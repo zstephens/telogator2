@@ -227,46 +227,7 @@ def _dist_batch(batch):
     return [(i, j, tvr_distance(sequences[i], sequences[j], aligner, adjust_lens, min_viable, rand_shuffle_count, seed)) for (i, j, seed) in batch]
 
 
-#
-# TEMPORARY: dump the inputs + output of every get_dist_matrix_parallel() call to tvr_dist_dump/ (in the working directory)
-#
-DUMP_DIR = 'tvr_dist_dump/'
-_dump_count = 0
-
-
 def get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, rng_seed=12345, print_progress=False, which_inds=None):
-    global _dump_count
-    import gzip, pickle, sys
-    caller = sys._getframe(1)
-    my_locals = caller.f_locals
-    caller_info = {'function':caller.f_code.co_name, 'line':caller.f_lineno}
-    for k in ['tree_cut', 'linkage_method', 'aln_mode', 'tvr_truncate', 'my_chr', 'my_pos', 'clustering_only', 'msa_reads_only']:
-        if k in my_locals:
-            caller_info[k] = my_locals[k]
-    if 'kmer_dat' in my_locals and len(my_locals['kmer_dat']) == len(sequences):
-        caller_info['readnames'] = [n[4] for n in my_locals['kmer_dat']]
-    aligner_info = {k:getattr(aligner, k, None) for k in ['match_score', 'mismatch_score', 'gap_open', 'gap_extend', 'gap_bool', 'mode', 'matrix_scores']}
-    try:
-        pickle.dumps(aligner.substitution_matrix)
-        aligner_info['substitution_matrix'] = aligner.substitution_matrix
-    except Exception:
-        aligner_info['substitution_matrix'] = repr(aligner.substitution_matrix)
-    tt = time.perf_counter()
-    dist_matrix = _get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=max_workers, max_pending=max_pending, rng_seed=rng_seed, print_progress=print_progress, which_inds=which_inds)
-    my_inds = sorted(which_inds) if which_inds is not None else list(range(len(sequences)))
-    (iu_a, iu_b) = np.triu_indices(len(my_inds), k=1)
-    my_inds_arr = np.array(my_inds, dtype='int64')
-    dump_dat = {'sequences':list(sequences), 'which_inds':my_inds, 'adjust_lens':adjust_lens, 'min_viable':min_viable, 'rand_shuffle_count':rand_shuffle_count, 'rng_seed':rng_seed,
-                'aligner':aligner_info, 'caller':caller_info, 'elapsed_sec':time.perf_counter() - tt,
-                'dist_condensed':dist_matrix[my_inds_arr[iu_a], my_inds_arr[iu_b]].astype('<f4')}
-    os.makedirs(DUMP_DIR, exist_ok=True)
-    with gzip.open(os.path.join(DUMP_DIR, f'call_{_dump_count:05d}.pkl.gz'), 'wb') as f:
-        pickle.dump(dump_dat, f)
-    _dump_count += 1
-    return dist_matrix
-
-
-def _get_dist_matrix_parallel(sequences, aligner, adjust_lens, min_viable, rand_shuffle_count, max_workers=4, max_pending=100, rng_seed=12345, print_progress=False, which_inds=None):
     n_seq = len(sequences)
     if which_inds is None:
         which_inds = range(n_seq)
