@@ -59,7 +59,7 @@ Sequencing platforms have different sequencing error types, as such we recommend
 
 Telogator2 may be unable to analyze older Nanopore data, as reads basecalled with Guppy have prohibitively high sequencing error rates in telomere regions.
 
-For large datasets, such as data from enrichment methods described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431) or [Schmidt et al.](https://www.nature.com/articles/s41467-024-48917-7), higher thresholds may be needed to reduce false positives: `-r ont -n 10`.  
+For large datasets, such as those from enrichment methods described by [Karimian et al.](https://www.science.org/doi/abs/10.1126/science.ado0431) or [Schmidt et al.](https://www.nature.com/articles/s41467-024-48917-7), downsampling may be necessary (e.g. `-d 5000`). Additionally, due to the shorter readlengths and reduced subtelomere content (in part attributable to the proximity of certain restriction sites to telomere boundaries), lowered filtering criteria may be needed to recover all alleles (e.g. `-l 1000 --filt-subtel 100`).
 
 By default Telogator2 is run with 4 processes. Runtime can be greatly reduced by specifying more, e.g. `-p 8` or `-p 16`, based on your system's available CPU resources.
 

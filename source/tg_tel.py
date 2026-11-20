@@ -6,6 +6,10 @@ from source.tg_kmer import get_nonoverlapping_kmer_hits, get_telomere_base_count
 from source.tg_util import posmax, RC
 
 
+# how much subtel sequence (past the terminating tel) is included in the kmer analysis of each read
+TVR_SUBTEL_WINDOW = 1000
+
+
 def choose_tl_from_observations(allele_tlens, ALLELE_TL_METHOD, skip_negative_vals=False):
     if skip_negative_vals:
         atls = [n for n in allele_tlens if n > 0]
@@ -297,7 +301,7 @@ def gtrc_parallel_job(my_read_dat, tel_signal_plot_num, gtrc_params):
         skipped_termsub = True
     #
     if all([n is False for n in [skipped_termtel, skipped_termunk, skipped_termsub]]):
-        my_subtel_end = max(len(my_rdat)-my_terminating_tel-FILT_TERM_SUBTEL, 0)
+        my_subtel_end = max(len(my_rdat)-my_terminating_tel-TVR_SUBTEL_WINDOW, 0)
         my_teltvr_seq = my_rdat[my_subtel_end:]
         # if there's no terminating tel at all, then lets pretend entire read is tvr+tel
         if len(my_teltvr_seq) == 0:

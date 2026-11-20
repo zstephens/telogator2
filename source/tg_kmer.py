@@ -3,7 +3,7 @@ import re
 
 import numpy as np
 
-from source.tg_util import exists_and_is_nonzero, RC
+from source.tg_util import exists_and_is_nonzero
 
 INCLUDE_SUBTEL_BUFF = 500
 
@@ -63,25 +63,27 @@ def get_canonical_letter(fn, READ_TYPE):
     return None
 
 
+def get_kmer_coverage(read_dat, kmer_list):
+    # positions covered by at least one regex hit of any kmer in the list
+    starts = []
+    ends = []
+    for kmer in kmer_list:
+        for n in re.finditer(kmer, read_dat):
+            starts.append(n.start(0))
+            ends.append(n.end(0))
+    delta = np.zeros(len(read_dat) + 1, dtype='<i8')
+    np.add.at(delta, np.array(starts, dtype='<i8'), 1)
+    np.add.at(delta, np.array(ends, dtype='<i8'), -1)
+    return np.cumsum(delta[:-1]) > 0
+
+
 def get_telomere_kmer_density(read_dat, kmer_list, tel_window, mode='hifi', smoothing=False):
-    re_hits = [[], []]
-    for i in range(len(kmer_list)):
-        re_hits[0].extend([(n.start(0), n.end(0), i, 0) for n in re.finditer(kmer_list[i], read_dat)])
-    #
-    tel_hit_p0 = np.zeros(len(read_dat))
-    tel_hit_p1 = np.zeros(len(read_dat))
-    for re_hit in re_hits[0]:
-        tel_hit_p0[re_hit[0]:re_hit[1]] = 1
-    for re_hit in re_hits[1]:
-        tel_hit_p1[re_hit[0]:re_hit[1]] = 1
-    tel_hit_cum_e0 = np.cumsum(tel_hit_p0)
-    tel_hit_cum_e1 = np.cumsum(tel_hit_p1)
-    #
-    tel_density_e0 = []
-    tel_density_e1 = []
-    for i in range(len(read_dat) - tel_window):
-        tel_density_e0.append(float(tel_hit_cum_e0[i+tel_window] - tel_hit_cum_e0[i]) / tel_window)
-        tel_density_e1.append(float(tel_hit_cum_e1[i+tel_window] - tel_hit_cum_e1[i]) / tel_window)
+    n_win = len(read_dat) - tel_window
+    if n_win <= 0:
+        return ([], [])
+    tel_hit_cum_e0 = np.cumsum(get_kmer_coverage(read_dat, kmer_list), dtype='f8')
+    tel_density_e0 = (tel_hit_cum_e0[tel_window:tel_window+n_win] - tel_hit_cum_e0[:n_win]) / tel_window
+    tel_density_e1 = np.zeros(n_win)
     #
     if smoothing:
         tel_density_e0 = wavelet_smooth(tel_density_e0)
@@ -91,15 +93,7 @@ def get_telomere_kmer_density(read_dat, kmer_list, tel_window, mode='hifi', smoo
 
 
 def get_telomere_base_count(read_dat, kmer_list, mode='hifi'):
-    re_hits = []
-    for i in range(len(kmer_list)):
-        re_hits.extend([(n.start(0), n.end(0), i, 0) for n in re.finditer(kmer_list[i], read_dat)])
-    #
-    tel_hit = np.zeros(len(read_dat),dtype='<i4')
-    for re_hit in re_hits:
-        tel_hit[re_hit[0]:re_hit[1]] = 1
-    tel_hit = tel_hit.tolist()
-    return tel_hit.count(1)
+    return int(np.count_nonzero(get_kmer_coverage(read_dat, kmer_list)))
 
 
 def get_telomere_regions(td_p_e0, td_p_e1, td_q_e0, td_q_e1, tel_window, pthresh, mode='hifi', smoothing=True):
@@ -111,33 +105,19 @@ def get_telomere_regions(td_p_e0, td_p_e1, td_q_e0, td_q_e1, tel_window, pthresh
     if max_win_pos < tel_window:
         return ([], [[0,0,None]])
     #
-    for i in range(min_win_pos):
-        p_vs_q_power[i] = td_p_e0[i] - td_q_e0[i]
+    p_vs_q_power[:min_win_pos] = np.asarray(td_p_e0[:min_win_pos], dtype='f8') - np.asarray(td_q_e0[:min_win_pos], dtype='f8')
     if smoothing:
         p_vs_q_power = wavelet_smooth(p_vs_q_power)
     p_vs_q_power = p_vs_q_power[:-tel_window]
     #
-    if p_vs_q_power[0] >= pthresh:
-        tel_regions[-1][2] = 'p'
-    elif p_vs_q_power[0] <= -pthresh:
-        tel_regions[-1][2] = 'q'
-    for i in range(1,len(p_vs_q_power)):
-        if tel_regions[-1][2] == 'p' and p_vs_q_power[i] >= pthresh:
-            tel_regions[-1][1] = i+1
-        elif tel_regions[-1][2] == 'q' and p_vs_q_power[i] <= -pthresh:
-            tel_regions[-1][1] = i+1
-        elif tel_regions[-1][2] is None and abs(p_vs_q_power[i]) < pthresh:
-            tel_regions[-1][1] = i+1
-        else:
-            if tel_regions[-1][1] is None:  # previous region was only 1bp wide, ugh
-                tel_regions[-1][1] = tel_regions[-1][0]+1
-            tel_regions.append([i,None,None])
-            if p_vs_q_power[i] >= pthresh:
-                tel_regions[-1][2] = 'p'
-            elif p_vs_q_power[i] <= -pthresh:
-                tel_regions[-1][2] = 'q'
-    if tel_regions[-1][1] is None:
-        tel_regions[-1][1] = len(p_vs_q_power)-1
+    # 1 = p, 2 = q, 0 = neither; regions are runs of the same state
+    state = np.where(p_vs_q_power >= pthresh, 1, np.where(p_vs_q_power <= -pthresh, 2, 0))
+    run_starts = np.concatenate([[0], np.flatnonzero(state[1:] != state[:-1]) + 1]).tolist()
+    run_ends = run_starts[1:] + [len(state)]
+    state_label = {0:None, 1:'p', 2:'q'}
+    tel_regions = [[run_starts[i], run_ends[i], state_label[int(state[run_starts[i]])]] for i in range(len(run_starts))]
+    if run_ends[-1] - run_starts[-1] == 1:  # last region only 1bp wide
+        tel_regions[-1][1] = len(state) - 1
     #
     return (p_vs_q_power, tel_regions)
 
@@ -171,60 +151,58 @@ def wavelet_smooth(x, wavelet="db4", smoothing_level=5, fail_sigma=1e-3):
 
 
 def get_nonoverlapping_kmer_hits(my_telseq, KMER_LIST, KMER_ISSUBSTRING, mode='hifi'):
+    seq_len = len(my_telseq)
+    raw_starts = []
+    raw_ends = []
+    raw_cumcov = []
+    for kmer in KMER_LIST:
+        hits = [(n.start(0), n.end(0)) for n in re.finditer(kmer, my_telseq)]
+        my_s = np.array([n[0] for n in hits], dtype='<i8')
+        my_e = np.array([n[1] for n in hits], dtype='<i8')
+        delta = np.zeros(seq_len + 1, dtype='<i8')
+        np.add.at(delta, my_s, 1)
+        np.add.at(delta, my_e, -1)
+        raw_starts.append(my_s)
+        raw_ends.append(my_e)
+        # cumulative count of covered positions, so coverage of [s,e) = cumcov[e] - cumcov[s]
+        raw_cumcov.append(np.concatenate([[0], np.cumsum(np.cumsum(delta[:-1]) > 0)]))
+    #
+    # remove hits of kmers that overlap with a hit from any of their superstrings,
+    #
+    col_starts = []
+    col_ends = []
+    for kmer_list_i in range(len(KMER_LIST)):
+        my_s = raw_starts[kmer_list_i]
+        my_e = raw_ends[kmer_list_i]
+        keep = np.ones(len(my_s), dtype=bool)
+        for sub_i in KMER_ISSUBSTRING[kmer_list_i]:
+            keep &= (raw_cumcov[sub_i][my_e] - raw_cumcov[sub_i][my_s]) == 0
+        my_s = my_s[keep]
+        my_e = my_e[keep]
+        if len(my_s):
+            new_block = np.concatenate([[True], my_s[1:] != my_e[:-1]])
+            block_id = np.cumsum(new_block) - 1
+            block_end = np.zeros(int(block_id[-1]) + 1, dtype='<i8')
+            block_end[block_id] = my_e  # last write per block wins = end of the block's last hit
+            my_s = my_s[new_block]
+            my_e = block_end
+        col_starts.append(my_s)
+        col_ends.append(my_e)
+    #
+    # truncate hits overlapping the prefix of another hit:
+    #
+    all_starts = np.concatenate(col_starts) if col_starts else np.zeros(0, dtype='<i8')
+    all_kmer = np.concatenate([np.full(len(n), i, dtype='<i8') for (i, n) in enumerate(col_starts)]) if col_starts else np.zeros(0, dtype='<i8')
     out_dat = []
-    coord_hit_dict = []
     for kmer_list_i in range(len(KMER_LIST)):
-        # get all hits
-        raw_hits = [(n.start(0), n.end(0)) for n in re.finditer(KMER_LIST[kmer_list_i], my_telseq)]
-        coord_hit_dict.append({})
-        for kmer_span in raw_hits:
-            for j in range(kmer_span[0],kmer_span[1]):
-                coord_hit_dict[-1][j] = True
-        out_dat.append([n for n in raw_hits])
-    #
-    # remove hits of kmers that overlap with a hit from any of their superstrings
-    #
-    for kmer_list_i in range(len(KMER_LIST)):
-        del_list = []
-        for ksi in range(len(out_dat[kmer_list_i])):
-            kmer_span  = out_dat[kmer_list_i][ksi]
-            are_we_hit = False
-            for sub_i in KMER_ISSUBSTRING[kmer_list_i]:
-                for j in range(kmer_span[0], kmer_span[1]):
-                    if j in coord_hit_dict[sub_i]:
-                        are_we_hit = True
-                        break
-                if are_we_hit:
-                    break
-            if are_we_hit:
-                del_list.append(ksi)
-        for di in sorted(del_list, reverse=True):
-            del out_dat[kmer_list_i][di]
-    #
-    # collapse adjacent hits into larger blocks (so we have less polygons to plot)
-    #
-    for kmer_list_i in range(len(KMER_LIST)):
-        collapsed_kmer_spans = [[n[0],n[1]] for n in out_dat[kmer_list_i]]
-        for j in range(len(collapsed_kmer_spans)-1,0,-1):
-            if collapsed_kmer_spans[j-1][1] == collapsed_kmer_spans[j][0]:
-                collapsed_kmer_spans[j-1][1] = collapsed_kmer_spans[j][1]
-                del collapsed_kmer_spans[j]
-        out_dat[kmer_list_i] = [n for n in collapsed_kmer_spans]
-    #
-    # truncate hits overlapping the prefix of another hit
-    #
-    del_list = []
-    for kmer_list_i in range(len(KMER_LIST)):
-        for kmer_list_j in range(len(KMER_LIST)):
-            if kmer_list_j == kmer_list_i:
-                continue
-            for ksi in range(len(out_dat[kmer_list_i])):
-                for ksj in range(len(out_dat[kmer_list_j])):
-                    kmer_span_i = out_dat[kmer_list_i][ksi]
-                    kmer_span_j = out_dat[kmer_list_j][ksj]
-                    if kmer_span_j[0] > kmer_span_i[1]:
-                        break
-                    if kmer_span_i[0] < kmer_span_j[0] and kmer_span_i[1] > kmer_span_j[0]:
-                        out_dat[kmer_list_i][ksi] = [kmer_span_i[0], kmer_span_j[0]]
+        my_s = col_starts[kmer_list_i]
+        my_e = col_ends[kmer_list_i].copy()
+        other_starts = np.sort(all_starts[all_kmer != kmer_list_i])
+        if len(my_s) and len(other_starts):
+            next_i = np.searchsorted(other_starts, my_s, side='right')
+            has_next = next_i < len(other_starts)
+            next_start = np.where(has_next, other_starts[np.minimum(next_i, len(other_starts) - 1)], my_e)
+            my_e = np.where(has_next & (next_start < my_e), next_start, my_e)
+        out_dat.append(np.column_stack([my_s, my_e]).tolist() if len(my_s) else [])
     #
     return out_dat
