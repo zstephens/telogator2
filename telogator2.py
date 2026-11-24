@@ -305,7 +305,7 @@ def main(raw_args=None):
                              'adjust_lens':False,
                              'rand_shuffle_count':3,
                              'tree_cut':COLLAPSE_DIST,
-                             'linkage_method':'single',
+                             'linkage_method':'average',
                              'normalize_dist_matrix':True,
                              'num_processes':NUM_PROCESSES,
                              'rng_seed':RNG_SEED,
