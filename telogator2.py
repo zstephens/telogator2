@@ -56,9 +56,10 @@ def main(raw_args=None):
     parser.add_argument('-d', type=int, required=False, metavar='-1',           default=-1,     help="Downsample to this many telomere reads")
     parser.add_argument('-p', type=int, required=False, metavar='4',            default=4,      help="Number of processes to use")
     #
-    parser.add_argument('--filt-tel',    type=int, required=False, metavar='400',  default=400,  help="[FILTERING] Remove reads that end in < this much tel")
-    parser.add_argument('--filt-nontel', type=int, required=False, metavar='100',  default=100,  help="[FILTERING] Remove reads that end in > this much non-tel")
-    parser.add_argument('--filt-sub',    type=int, required=False, metavar='1000', default=1000, help="[FILTERING] Remove reads that end in < this much subtel")
+    parser.add_argument('--filt-tel',    type=int, required=False, metavar='400',        default=400,  help="[FILTERING] Remove reads that end in < this much tel")
+    parser.add_argument('--filt-nontel', type=int, required=False, metavar='100',        default=100,  help="[FILTERING] Remove reads that end in > this much non-tel")
+    parser.add_argument('--filt-sub',    type=int, required=False, metavar='1000',       default=1000, help="[FILTERING] Remove reads that end in < this much subtel")
+    parser.add_argument('--read-groups', type=str, required=False, metavar='groups.tsv', default='',   help="TSV of apriori clusters to start with")
     #
     parser.add_argument('-t0', type=float, required=False, metavar='0.200', default=0.200, help="[TREECUT] TVR clustering (iteration 0)")
     parser.add_argument('-t1', type=float, required=False, metavar='0.150', default=0.150, help="[TREECUT] TVR clustering (iteration 1)")
@@ -68,7 +69,7 @@ def main(raw_args=None):
     parser.add_argument('--collapse-dist',  type=float, required=False, metavar='0.050',  default=0.050,    help="[COLLAPSE] Merging clusters with similar TVRs")
     parser.add_argument('--collapse-small', type=float, required=False, metavar='0.120',  default=0.120,    help="[COLLAPSE] Merging small alleles into best match on same arm")
     parser.add_argument('--collapse-cross', type=float, required=False, metavar='0.080',  default=0.080,    help="[COLLAPSE] Merging small alleles into best match on different arm")
-    parser.add_argument('--subtel-split',   type=str,   required=False, metavar='report', default='report', help="Split clusters with different subtels: off / report / split", choices=['off', 'report', 'split'])
+    parser.add_argument('--subtel-split',   type=str,   required=False, metavar='split',  default='split',  help="Split clusters with different subtels: off / report / split", choices=['off', 'report', 'split'])
     #
     parser.add_argument('-afa-x', type=int, required=False, metavar='15000', default=15000, help="[ALL_FINAL_ALLELES.PNG] X axis max")
     parser.add_argument('-afa-t', type=int, required=False, metavar='500',   default=500,   help="[ALL_FINAL_ALLELES.PNG] X axis tick steps")
@@ -113,6 +114,7 @@ def main(raw_args=None):
     MIN_READS_PER_PHASE = args.n
     ALLELE_TL_METHOD    = args.m
     DOWNSAMPLE_READS    = args.d
+
     NUM_PROCESSES       = args.p
     CRAM_REF_FILE       = args.ref
     RNG_SEED            = args.rng
@@ -156,6 +158,7 @@ def main(raw_args=None):
     FILT_TERM_TEL         = args.filt_tel         # reads must terminate in at least this much tel sequence
     FILT_TERM_NONTEL      = args.filt_nontel      # remove reads that have more than this much terminating nontel sequence
     FILT_TERM_SUBTEL      = args.filt_sub         # reads must terminate in at least this much subtel sequence
+    READ_GROUPS_FILE      = args.read_groups
     ACCURATE_TVR          = args.accurate
     SKIP_COLLAPSE         = args.skip_collapse
     SUBTEL_SPLIT_MODE     = args.subtel_split
@@ -385,6 +388,21 @@ def main(raw_args=None):
         exit(1)
 
     #
+    # apriori read groups, initial clustering is done separately within each group
+    #
+    READ_GROUPS = {}
+    if READ_GROUPS_FILE != '':
+        if exists_and_is_nonzero(READ_GROUPS_FILE) is False:
+            print(f'Error: --read-groups file not found: {READ_GROUPS_FILE}')
+            exit(1)
+        with open(READ_GROUPS_FILE, 'r') as f:
+            for line in f:
+                splt = line.strip().split('\t')
+                if line[0] != '#' and len(splt) >= 2:
+                    READ_GROUPS[splt[0]] = splt[1]
+        print(f'read groups: {len(READ_GROUPS)} reads --> {len(set(READ_GROUPS.values()))} groups')
+
+    #
     # param lists that are needed in both anchored and unanchored mode
     #
     gatd_params = [ALLELE_TL_METHOD, MIN_READS_PER_PHASE]
@@ -541,22 +559,42 @@ def main(raw_args=None):
     if PRINT_PROGRESS:
         print()
     tt = time.perf_counter()
-    tvr_clust_params[0]['fig_name'] = None
-    tvr_clust_params[0]['dist_in'] = f'{OUT_DIR_INIT}npz/i0_dist-matrix.npz'
-    if PLOT_INIT_DENDRO:
-        tvr_clust_params[0]['fig_name'] = f'{OUT_DIR_INIT}dendro/i0_dendrogram.png'
-    if ALWAYS_REPROCESS:
-        rm(tvr_clust_params[0]['dist_in'])
     #
-    init_clust_dat = cluster_tvrs(kmer_hit_dat, KMER_METADATA,  **tvr_clust_params[0])
+    read_partitions = {}
+    for khd_i in range(len(kmer_hit_dat)):
+        my_rnm = kmer_hit_dat[khd_i][4]
+        my_group = ''
+        if my_rnm in READ_GROUPS:
+            my_group = READ_GROUPS[my_rnm]
+        if my_group not in read_partitions:
+            read_partitions[my_group] = []
+        read_partitions[my_group].append(khd_i)
     #
     init_clusters = []
     unclustered_inds = []
-    for clust_inds in init_clust_dat[0]:
-        if len(clust_inds) >= MIN_READS_PER_PHASE:
-            init_clusters.append(clust_inds)
-        else:
-            unclustered_inds.extend(clust_inds)
+    for (part_i, part_name) in enumerate(sorted(read_partitions.keys())):
+        part_inds = read_partitions[part_name]
+        if len(part_inds) < MIN_READS_PER_PHASE:
+            unclustered_inds.extend(part_inds)
+            continue
+        zfcn = ''
+        if len(read_partitions) > 1:
+            zfcn = '_' + str(part_i).zfill(3)
+        tvr_clust_params[0]['fig_name'] = None
+        tvr_clust_params[0]['dist_in'] = f'{OUT_DIR_INIT}npz/i0_dist-matrix{zfcn}.npz'
+        if PLOT_INIT_DENDRO:
+            tvr_clust_params[0]['fig_name'] = f'{OUT_DIR_INIT}dendro/i0_dendrogram{zfcn}.png'
+        if ALWAYS_REPROCESS:
+            rm(tvr_clust_params[0]['dist_in'])
+        #
+        khd_subset = kmer_hit_dat if len(read_partitions) == 1 else [kmer_hit_dat[n] for n in part_inds]
+        init_clust_dat = cluster_tvrs(khd_subset, KMER_METADATA, **tvr_clust_params[0])
+        #
+        for clust_inds in init_clust_dat[0]:
+            if len(clust_inds) >= MIN_READS_PER_PHASE:
+                init_clusters.append([part_inds[n] for n in clust_inds])
+            else:
+                unclustered_inds.extend([part_inds[n] for n in clust_inds])
     sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
     sys.stdout.flush()
     print(f' - {len(init_clusters)} clusters ({sum([len(n) for n in init_clusters])} reads)')
@@ -604,8 +642,11 @@ def main(raw_args=None):
                         make_tvr_plots(khd_subset, init_refine_clust_dat, which_chr, UNCLUST_POS, telcompplot_fn, telcompcons_fn, mtp_params)
                 #
                 num_pass_subclust_reads = []
-                for sub_clust in init_refine_clust_dat[0]:
+                for sci,sub_clust in enumerate(init_refine_clust_dat[0]):
                     next_clust = [current_clust_inds[n] for n in sub_clust]
+                    # on the last iteration blank tvr clusters go to out_blank_inds, so don't also mark them as unclustered
+                    if tvr_clust_iter == TVR_REFINE_ITERATIONS[-1] and init_refine_clust_dat[7][sci] <= 0:
+                        continue
                     if len(next_clust) >= MIN_READS_PER_PHASE:
                         next_iteration_clusters.append([n for n in next_clust])
                         num_pass_subclust_reads.append(len(next_clust))
@@ -980,7 +1021,7 @@ def main(raw_args=None):
                         plot_fusion(readname, anchor_dat[0], anchor_dat[1], khd_tuple, KMER_METADATA, plot_fn)
                     tel_fusion_plot_num += 1
         #
-        # check for alleles whose reads anchor to two different arms and whose subtels diverge
+        # check for alleles whose reads anchor to different arms and whose subtels diverge
         #
         if SUBTEL_SPLIT_MODE != 'off':
             sys.stdout.write('checking for alleles with divergent subtels...')
@@ -989,39 +1030,49 @@ def main(raw_args=None):
             subtel_seq_by_readname = {n[0]:n[1] for n in subtels_out}
             subtel_split_report = []
             for clustnum in sorted(top_alns_by_cluster.keys()):
-                readnames_by_arm = {}
-                for (readname,aln) in top_alns_by_cluster[clustnum]:
-                    if aln[2] != '*' and readname in subtel_seq_by_readname:
-                        readnames_by_arm.setdefault(aln[2].split('_')[1], []).append(readname)
-                if len(readnames_by_arm) < 2:
-                    continue
-                sorted_arms = sorted(readnames_by_arm.keys(), key=lambda k: (-len(readnames_by_arm[k]), k))
-                (arm_1, arm_2) = (sorted_arms[0], sorted_arms[1])
-                n_anchored = sum([len(n) for n in readnames_by_arm.values()])
-                if len(readnames_by_arm[arm_2]) < max(SUBTEL_SPLIT_MIN_READS, SUBTEL_SPLIT_MIN_FRAC * n_anchored):
-                    continue
-                (div_pos, div_dat) = find_subtel_divergence([subtel_seq_by_readname[n] for n in readnames_by_arm[arm_1]],
-                                                            [subtel_seq_by_readname[n] for n in readnames_by_arm[arm_2]])
-                if div_pos is None:
-                    continue
-                my_action = 'reported'
-                if SUBTEL_SPLIT_MODE == 'split':
-                    if len(readnames_by_arm[arm_1]) >= MIN_READS_PER_PHASE and len(readnames_by_arm[arm_2]) >= MIN_READS_PER_PHASE:
+                split_pieces = [clustnum]
+                kept_arms = []
+                reported_arms = []
+                while True:
+                    readnames_by_arm = {}
+                    for (readname,aln) in top_alns_by_cluster[clustnum]:
+                        if aln[2] != '*' and readname in subtel_seq_by_readname:
+                            my_arm = aln[2].split('_')[1]
+                            if my_arm in reported_arms:
+                                continue
+                            if my_arm not in readnames_by_arm:
+                                readnames_by_arm[my_arm] = []
+                            readnames_by_arm[my_arm].append(readname)
+                    sorted_arms = [n[1] for n in sorted([(-len(readnames_by_arm[k]), k) for k in readnames_by_arm.keys()])]
+                    candidate_arms = [n for n in sorted_arms[1:] if n not in kept_arms]
+                    if len(candidate_arms) == 0:
+                        break
+                    (arm_1, arm_2) = (sorted_arms[0], candidate_arms[0])
+                    n_anchored = sum([len(n) for n in readnames_by_arm.values()])
+                    # candidates are sorted by read count, so if this one is too small the rest are too
+                    if len(readnames_by_arm[arm_2]) < max(SUBTEL_SPLIT_MIN_READS, SUBTEL_SPLIT_MIN_FRAC * n_anchored):
+                        break
+                    (div_pos, div_dat) = find_subtel_divergence([subtel_seq_by_readname[n] for n in readnames_by_arm[arm_1]], [subtel_seq_by_readname[n] for n in readnames_by_arm[arm_2]])
+                    if div_pos is None:
+                        kept_arms.append(arm_2)
+                        continue
+                    my_action = 'reported'
+                    if SUBTEL_SPLIT_MODE != 'split':
+                        reported_arms.append(arm_2)
+                    elif len(readnames_by_arm[arm_1]) < MIN_READS_PER_PHASE or len(readnames_by_arm[arm_2]) < MIN_READS_PER_PHASE:
+                        my_action = 'not split (too few reads)'
+                        kept_arms.append(arm_2)
+                    else:
                         # move the reads anchored to the second arm into a new allele (same tvr, so read TLs are unchanged)
                         new_clustnum = len(ALLELE_TEL_DAT)
-                        # (a read can appear more than once in an allele, so move as many copies of each read as were anchored to the second arm)
-                        move_counts = {}
-                        for n in readnames_by_arm[arm_2]:
-                            my_rname = '_'.join(n.split('_')[2:])
-                            move_counts[my_rname] = move_counts.get(my_rname, 0) + 1
+                        move_rnames = set(['_'.join(n.split('_')[2:]) for n in readnames_by_arm[arm_2]])
                         old_dat = ALLELE_TEL_DAT[clustnum]
                         read_cols = [old_dat[5].split(','), old_dat[6].split(','), old_dat[7].split(','), old_dat[10].split(',')]
                         keep_inds = []
                         move_inds = []
                         for i in range(len(read_cols[3])):
-                            if move_counts.get(read_cols[3][i], 0) > 0:
+                            if read_cols[3][i] in move_rnames:
                                 move_inds.append(i)
-                                move_counts[read_cols[3][i]] -= 1
                             else:
                                 keep_inds.append(i)
                         new_dats = []
@@ -1038,22 +1089,27 @@ def main(raw_args=None):
                         ALLELE_TEL_DAT[clustnum] = new_dats[0]
                         ALLELE_TEL_DAT.append(new_dats[1])
                         move_qnames = set(readnames_by_arm[arm_2])
+                        old_votes = []
+                        if clustnum in arm_votes_by_cluster:
+                            old_votes = arm_votes_by_cluster[clustnum]
                         top_alns_by_cluster[new_clustnum] = [n for n in top_alns_by_cluster[clustnum] if n[0] in move_qnames]
                         top_alns_by_cluster[clustnum] = [n for n in top_alns_by_cluster[clustnum] if n[0] not in move_qnames]
-                        arm_votes_by_cluster[new_clustnum] = [n for n in arm_votes_by_cluster.get(clustnum, []) if n[0] in move_qnames]
-                        arm_votes_by_cluster[clustnum] = [n for n in arm_votes_by_cluster.get(clustnum, []) if n[0] not in move_qnames]
-                        DO_NOT_MERGE.append((str(clustnum), str(new_clustnum)))
+                        arm_votes_by_cluster[new_clustnum] = [n for n in old_votes if n[0] in move_qnames]
+                        arm_votes_by_cluster[clustnum] = [n for n in old_votes if n[0] not in move_qnames]
+                        split_pieces.append(new_clustnum)
                         my_action = f'split (new allele {new_clustnum})'
-                    else:
-                        my_action = 'not split (too few reads)'
-                subtel_split_report.append((clustnum, arm_1, len(readnames_by_arm[arm_1]), arm_2, len(readnames_by_arm[arm_2]), div_pos, my_action))
+                    subtel_split_report.append((clustnum, arm_1, len(readnames_by_arm[arm_1]), arm_2, len(readnames_by_arm[arm_2]), div_pos, my_action))
+                # none of the pieces of a split allele should be merged back together
+                for i in range(len(split_pieces)):
+                    for j in range(i+1, len(split_pieces)):
+                        DO_NOT_MERGE.append((str(split_pieces[i]), str(split_pieces[j])))
             with open(OUT_DIR_ANCHOR + 'subtel_divergence.tsv', 'w') as f:
                 f.write('#allele_id\tarm_1\treads_1\tarm_2\treads_2\tdivergence_dist_from_tvr\taction\n')
                 for n in subtel_split_report:
                     f.write('\t'.join([str(m) for m in n]) + '\n')
             sys.stdout.write(' (' + str(int(time.perf_counter() - tt)) + ' sec)\n')
             sys.stdout.flush()
-            print(f' - {len(subtel_split_report)} alleles with reads anchored to two arms and divergent subtels')
+            print(f' - {len(subtel_split_report)} divergent subtels found in {len(set([n[0] for n in subtel_split_report]))} alleles with reads anchored to multiple arms')
             for n in subtel_split_report:
                 print(f'   allele {n[0]}: {n[1]} ({n[2]} reads) / {n[3]} ({n[4]} reads), diverging {n[5]} bp from tvr -> {n[6]}')
         #

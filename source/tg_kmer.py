@@ -109,6 +109,8 @@ def get_telomere_regions(td_p_e0, td_p_e1, td_q_e0, td_q_e1, tel_window, pthresh
     if smoothing:
         p_vs_q_power = wavelet_smooth(p_vs_q_power)
     p_vs_q_power = p_vs_q_power[:-tel_window]
+    if len(p_vs_q_power) == 0:
+        return ([], [[0,0,None]])
     #
     # 1 = p, 2 = q, 0 = neither; regions are runs of the same state
     state = np.where(p_vs_q_power >= pthresh, 1, np.where(p_vs_q_power <= -pthresh, 2, 0))
