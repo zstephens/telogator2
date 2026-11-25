@@ -63,6 +63,11 @@ UNCLUST_POS = 0
 
 SMALL_NUMBER = 1e-6
 
+# allele id flags
+INTERSTITIAL_FLAG  = 'i'
+LOW_READCOUNT_FLAG = 'l'
+ALLELE_FLAGS = INTERSTITIAL_FLAG + LOW_READCOUNT_FLAG
+
 INTERSTITIAL_TEL_REGIONS = [('chm13_chr2q',         51395,  52589,  'p-1194'),
                             ('chm13_chr3q',         47928,  49762,  'q-1834'),
                             ('chm13_chr4q',         20760,  24132,  'q-3372'),
@@ -593,6 +598,14 @@ def annotate_interstitial_tel(mychr, mypos, buffer=2000):
         if mychr == tr[0] and mypos >= tr[1]-buffer and mypos <= tr[2]+buffer:
             return True
     return False
+
+
+def get_allele_flags(allele_id):
+    return set([c for c in allele_id if c in ALLELE_FLAGS])
+
+
+def strip_allele_flags(allele_id):
+    return ''.join([c for c in allele_id if c not in ALLELE_FLAGS])
 
 
 def cluster_list(input_list, delta, which_val=None):

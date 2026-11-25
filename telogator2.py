@@ -23,6 +23,8 @@ SUBTEL_SPLIT_MIN_FRAC = 0.200
 #
 COLLAPSE_SMALL_REL = 0.500 # threshold for defining 'small' clusters with fewer reads than expected (fraction of median readcount)
 #
+LOW_READCOUNT_REL = 0.200  # alleles with fewer reads than this are excluded from final plotting (fraction of median readcount)
+#
 HUMAN_GENOME_BP = 3100000000
 
 
@@ -38,7 +40,7 @@ def main(raw_args=None):
     from source.tg_reader import extract_telomere_reads, quick_grab_all_reads_nodup
     from source.tg_tel    import choose_tl_from_observations, get_allele_tsv_dat, get_tel_repeat_comp_parallel, merge_allele_tsv_dat, parse_tsv, write_blank_stats_tsv
     from source.tg_tvr    import cluster_consensus_tvrs, cluster_tvrs, quick_get_tvrtel_lens
-    from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_paths_from_string, BLANK_CHR, UNCLUST_CHR, UNCLUST_POS
+    from source.tg_util   import annotate_interstitial_tel, check_aligner_exe, compute_n50, dir_exists, exists_and_is_nonzero, get_allele_flags, get_downsample_inds, get_file_type, LEXICO_2_IND, makedir, mv, parse_read, RC, rm, strip_allele_flags, strip_paths_from_string, BLANK_CHR, INTERSTITIAL_FLAG, LOW_READCOUNT_FLAG, UNCLUST_CHR, UNCLUST_POS
     #
     parser = argparse.ArgumentParser(description='Telogator', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     #
@@ -1088,6 +1090,7 @@ def main(raw_args=None):
                         new_dats[1][3] = str(new_clustnum)
                         ALLELE_TEL_DAT[clustnum] = new_dats[0]
                         ALLELE_TEL_DAT.append(new_dats[1])
+                        allele_consensus.append(allele_consensus[clustnum])
                         move_qnames = set(readnames_by_arm[arm_2])
                         old_votes = []
                         if clustnum in arm_votes_by_cluster:
@@ -1162,7 +1165,7 @@ def main(raw_args=None):
                 # annotate alignments to known interstitial telomere regions
                 any_interstitial = any([annotate_interstitial_tel(ref_builds[n]+'_'+my_chrs[n], int(anchor_pos[n])) for n in range(len(my_chrs))])
                 if any_interstitial:
-                    ALLELE_TEL_DAT[clustnum][3] += 'i'
+                    ALLELE_TEL_DAT[clustnum][3] += INTERSTITIAL_FLAG
                 # assign mapq values
                 clust_readnames = ALLELE_TEL_DAT[clustnum][10].split(',')
                 clust_mapq = []
@@ -1213,7 +1216,7 @@ def main(raw_args=None):
                     tvr_i, tvr_j = ALLELE_TEL_DAT[i][9], ALLELE_TEL_DAT[j][9]
                     collapse_dist[(i,j)] = collapse_dist[(j,i)] = quick_compare_tvrs(tvr_i, tvr_j) if len(tvr_i) and len(tvr_j) else None
         # pairs split apart by the subtel check that won't be merged back together
-        ind_by_id = {n[3].rstrip('i'):i for i,n in enumerate(ALLELE_TEL_DAT)}
+        ind_by_id = {strip_allele_flags(n[3]):i for i,n in enumerate(ALLELE_TEL_DAT)}
         blocked_pairs = set()
         for (id_1, id_2) in DO_NOT_MERGE:
             if id_1 in ind_by_id and id_2 in ind_by_id:
@@ -1229,7 +1232,7 @@ def main(raw_args=None):
                         merge_pairs.append((i, j, my_dist, 1))
         # [t2]
         for i in range(len(ALLELE_TEL_DAT)):
-            if is_small[i] is False or 'i' in ALLELE_TEL_DAT[i][3] or my_arms[i] in [UNCLUST_CHR, BLANK_CHR]:
+            if is_small[i] is False or INTERSTITIAL_FLAG in get_allele_flags(ALLELE_TEL_DAT[i][3]) or my_arms[i] in [UNCLUST_CHR, BLANK_CHR]:
                 continue
             same_arm = [j for j in range(len(ALLELE_TEL_DAT)) if j != i and my_arms[j] == my_arms[i] and my_readcounts[j] > my_readcounts[i]]
             n_big = len([j for j in same_arm if is_small[j] is False])
@@ -1247,7 +1250,7 @@ def main(raw_args=None):
                     continue
             # [t3]
             if COLLAPSE_CROSS_DIST > 0:
-                other_arms = [j for j in range(len(ALLELE_TEL_DAT)) if j != i and my_arms[j] != my_arms[i] and my_readcounts[j] > my_readcounts[i] and 'i' not in ALLELE_TEL_DAT[j][3]]
+                other_arms = [j for j in range(len(ALLELE_TEL_DAT)) if j != i and my_arms[j] != my_arms[i] and my_readcounts[j] > my_readcounts[i] and INTERSTITIAL_FLAG not in get_allele_flags(ALLELE_TEL_DAT[j][3])]
                 candidates = sorted([(collapse_dist[(i,j)], j) for j in other_arms if collapse_dist[(i,j)] is not None and (i,j) not in blocked_pairs])
                 if candidates and candidates[0][0] <= COLLAPSE_CROSS_DIST:
                     merge_pairs.append((i, candidates[0][1], candidates[0][0], 3))
@@ -1303,6 +1306,22 @@ def main(raw_args=None):
         sys.stdout.flush()
         print(f' - {n_alleles_before_collapsing} --> {len(ALLELE_TEL_DAT)} alleles')
 
+    #
+    # flag alleles with far fewer reads than expected, as they usually represent artifacts
+    #
+    my_readcounts = [len(n[5].split(',')) for n in ALLELE_TEL_DAT]
+    ref_readcounts = [my_readcounts[i] for i,n in enumerate(ALLELE_TEL_DAT) if n[0].split(',')[0] not in [UNCLUST_CHR, BLANK_CHR] and INTERSTITIAL_FLAG not in get_allele_flags(n[3])]
+    if len(ref_readcounts) == 0:
+        ref_readcounts = my_readcounts
+    if len(ref_readcounts):
+        min_readcount = LOW_READCOUNT_REL * np.median(ref_readcounts)
+        num_flagged = 0
+        for i in range(len(ALLELE_TEL_DAT)):
+            if my_readcounts[i] < min_readcount:
+                ALLELE_TEL_DAT[i][3] += LOW_READCOUNT_FLAG
+                num_flagged += 1
+        print(f'flagged {num_flagged} alleles with < {min_readcount:.1f} reads ({LOW_READCOUNT_REL} x median readcount)')
+
     #=====================================================#
     #
     # [8] WRITE OUT THE FINAL RESULTS
@@ -1339,8 +1358,9 @@ def main(raw_args=None):
             my_tvr_len = int(atd[8])
             if my_chr in [UNCLUST_CHR, BLANK_CHR]:
                 my_chr = 'unanchored'
-            if 'i' in atd[3]:
-                continue # don't include interstitial alleles in violin
+            my_flags = get_allele_flags(atd[3])
+            if INTERSTITIAL_FLAG in my_flags or LOW_READCOUNT_FLAG in my_flags:
+                continue # don't include interstitial or low readcount alleles in violin
             for i in range(len(atl_by_arm)):
                 if my_chr not in atl_by_arm[i]:
                     atl_by_arm[i][my_chr] = [my_tvr_len + int(n) for n in atd[5].split(',')]
@@ -1363,15 +1383,14 @@ def main(raw_args=None):
     current_i = 0
     num_alleles_too_short = 0
     num_alleles_interstitial = 0
+    num_alleles_lowcount = 0
     num_alleles_unmapped = 0
     num_pass_alleles = 0
     readlens_final = []
-    readcount_fail_final_filters = [0, 0, 0]
+    readcount_fail_final_filters = [0, 0, 0, 0]
     for atd in ALLELE_TEL_DAT:
-        my_id = atd[3].split(',')[0]
-        while my_id[-1].isdigit() is False:
-            my_id = my_id[:-1]
-        my_id = int(my_id)
+        my_id = int(strip_allele_flags(atd[3].split(',')[0]))
+        my_flags = get_allele_flags(atd[3])
         my_rep_atl = int(atd[4])
         #my_max_atl = max([int(n) for n in atd[5].split(',')])
         my_tvr_len = int(atd[8])
@@ -1384,9 +1403,13 @@ def main(raw_args=None):
             num_alleles_too_short += 1
             readcount_fail_final_filters[1] += n_reads
             continue
-        if 'i' in atd[3]:
+        if INTERSTITIAL_FLAG in my_flags:
             num_alleles_interstitial += 1
             readcount_fail_final_filters[2] += n_reads
+            continue
+        if LOW_READCOUNT_FLAG in my_flags:
+            num_alleles_lowcount += 1
+            readcount_fail_final_filters[3] += n_reads
             continue
         num_pass_alleles += 1
         if int(atd[8]) <= 0:
@@ -1433,6 +1456,7 @@ def main(raw_args=None):
     print(f' - {num_alleles_unmapped} alleles unmapped ({readcount_fail_final_filters[0]} reads)')
     print(f' - {num_alleles_too_short} alleles with atl < {MIN_ATL_FOR_FINAL_PLOTTING} bp ({readcount_fail_final_filters[1]} reads)')
     print(f' - {num_alleles_interstitial} interstitial alelles ({readcount_fail_final_filters[2]} reads)')
+    print(f' - {num_alleles_lowcount} alleles with low readcount ({readcount_fail_final_filters[3]} reads)')
     #
     out_metrics = []
     metric_allele_tls = []
@@ -1453,6 +1477,7 @@ def main(raw_args=None):
     out_metrics.append(('fail_reads_unmapped', readcount_fail_final_filters[0]))
     out_metrics.append(('fail_reads_maxatl', readcount_fail_final_filters[1]))
     out_metrics.append(('fail_reads_interstitial', readcount_fail_final_filters[2]))
+    out_metrics.append(('fail_reads_lowcount', readcount_fail_final_filters[3]))
     #
     with open(QC_STATS, 'w') as f:
         f.write('\t'.join([str(n[0]) for n in out_metrics]) + '\n')
