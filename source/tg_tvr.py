@@ -120,8 +120,8 @@ def cluster_tvrs(kmer_dat,
         (seq_left, seq_right) = find_subtel_tvr_boundary(all_colorvecs[i], [UNKNOWN]+subfilt_letters, readname=kmer_dat[i][4])
         # denoise tvr+tel section
         seq_right_denoise = denoise_colorvec(seq_right, replace_char=canonical_letter, chars_to_delete=denoise_letters, chars_to_merge=[canonical_letter]+tvr_letters)
-        # remove ends of reads that might be sequencing artifacts, based on density of canonical characters
-        (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], [canonical_letter], CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
+        # remove ends of reads that might be sequencing artifacts, based on density of canonical+tvr characters
+        (err_left, err_right) = find_density_boundary(seq_right_denoise[::-1], [canonical_letter]+letters_worth_chasing, CANON_WIN_SIZE, CANON_END_DENS, thresh_dir='above')
         #
         cleaned_colorvecs.append(seq_left + err_right[::-1])    # the entire denoised read (for plotting)
         err_end_lens.append(len(err_left))                      # needed for adjusting offsets in plots
